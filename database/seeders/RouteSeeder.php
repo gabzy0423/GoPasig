@@ -1,0 +1,289 @@
+<?php
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use App\Models\Route;
+use App\Models\Stop;
+use App\Models\Bus;
+
+class RouteSeeder extends Seeder
+{
+    /**
+     * Run the database seeds.
+     */
+    public function run(): void
+    {
+        // 1. Create the 4 operational routes
+        $route1 = Route::create([
+            'id' => 1,
+            'name' => 'Route 1',
+            'color' => '#003F87',
+            'description' => 'SPED (Caruncho Ave.) to Temporary Pasig City Hall',
+            'polyline_coordinates' => [
+                [14.5593, 121.0805],
+                [14.5620, 121.0820],
+                [14.5680, 121.0760],
+                [14.5710, 121.0710],
+                [14.5780, 121.0650],
+                [14.5838, 121.0620]
+            ],
+            'travel_time_minutes' => 25,
+        ]);
+
+        $route2 = Route::create([
+            'id' => 2,
+            'name' => 'Route 2',
+            'color' => '#BA7517',
+            'description' => 'SPED (Caruncho Ave.) to Ligaya (Santolan) via PCGH',
+            'polyline_coordinates' => [
+                [14.5593, 121.0805],
+                [14.5580, 121.0750],
+                [14.5540, 121.0620],
+                [14.5520, 121.0560],
+                [14.5500, 121.0500]
+            ],
+            'travel_time_minutes' => 35,
+        ]);
+
+        $route3 = Route::create([
+            'id' => 3,
+            'name' => 'Route 3',
+            'color' => '#639922',
+            'description' => 'SPED (Caruncho Ave.) to One San Miguel Ave via Shaw',
+            'polyline_coordinates' => [
+                [14.5593, 121.0805],
+                [14.5650, 121.0750],
+                [14.5690, 121.0700],
+                [14.5680, 121.0580],
+                [14.5750, 121.0450],
+                [14.5786, 121.0360]
+            ],
+            'travel_time_minutes' => 40,
+        ]);
+
+        $route4 = Route::create([
+            'id' => 4,
+            'name' => 'Route 4',
+            'color' => '#E24B4A',
+            'description' => 'SPED (Caruncho Ave.) to Nagpayong (Pinagbuhatan) via Urbano Velasco',
+            'polyline_coordinates' => [
+                [14.5593, 121.0805],
+                [14.5520, 121.0830],
+                [14.5480, 121.0880],
+                [14.5450, 121.0920]
+            ],
+            'travel_time_minutes' => 30,
+        ]);
+
+        // 2. Create Stops assigned to these routes
+        // Route 1 stops (Point to point)
+        Stop::create([
+            'route_id' => $route1->id,
+            'name' => 'SPED Terminal (Caruncho Ave.)',
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'sequence' => 1,
+            'amenities' => 'Shelter, Security, Ticket Booth, Charging Station'
+        ]);
+        Stop::create([
+            'route_id' => $route1->id,
+            'name' => 'Temporary Pasig City Hall',
+            'lat' => 14.5838,
+            'lng' => 121.0620,
+            'sequence' => 2,
+            'amenities' => 'Premium Station, Wi-Fi, Security Guard'
+        ]);
+
+        // Route 2 stops
+        Stop::create([
+            'route_id' => $route2->id,
+            'name' => 'SPED Terminal (Caruncho Ave.)',
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'sequence' => 1,
+            'amenities' => 'Shelter, Security, Ticket Booth, Charging Station'
+        ]);
+        Stop::create([
+            'route_id' => $route2->id,
+            'name' => 'Pasig City General Hospital (Maybunga)',
+            'lat' => 14.5680,
+            'lng' => 121.0760,
+            'sequence' => 2,
+            'amenities' => 'Shelter, CCTV, Well-lit'
+        ]);
+        Stop::create([
+            'route_id' => $route2->id,
+            'name' => 'Ligaya (Santolan) Terminal',
+            'lat' => 14.5500,
+            'lng' => 121.0500,
+            'sequence' => 3,
+            'amenities' => 'Shelter, Security Post'
+        ]);
+
+        // Route 3 stops
+        Stop::create([
+            'route_id' => $route3->id,
+            'name' => 'SPED Terminal (Caruncho Ave.)',
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'sequence' => 1,
+            'amenities' => 'Shelter, Security, Ticket Booth, Charging Station'
+        ]);
+        Stop::create([
+            'route_id' => $route3->id,
+            'name' => 'Shaw Blvd. Crossing',
+            'lat' => 14.5680,
+            'lng' => 121.0580,
+            'sequence' => 2,
+            'amenities' => 'Shelter, Near Shaw Transit hub'
+        ]);
+        Stop::create([
+            'route_id' => $route3->id,
+            'name' => 'One San Miguel Ave (San Antonio)',
+            'lat' => 14.5786,
+            'lng' => 121.0360,
+            'sequence' => 3,
+            'amenities' => 'Shelter, CCTV, Charging Station'
+        ]);
+
+        // Route 4 stops
+        Stop::create([
+            'route_id' => $route4->id,
+            'name' => 'SPED Terminal (Caruncho Ave.)',
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'sequence' => 1,
+            'amenities' => 'Shelter, Security, Ticket Booth, Charging Station'
+        ]);
+        Stop::create([
+            'route_id' => $route4->id,
+            'name' => 'Urbano Velasco Ave.',
+            'lat' => 14.5520,
+            'lng' => 121.0830,
+            'sequence' => 2,
+            'amenities' => 'Shelter, Near Market'
+        ]);
+        Stop::create([
+            'route_id' => $route4->id,
+            'name' => 'Nagpayong (Pinagbuhatan) Terminal',
+            'lat' => 14.5450,
+            'lng' => 121.0920,
+            'sequence' => 3,
+            'amenities' => 'Shelter, Security Post'
+        ]);
+
+        // 3. Create Buses (all inactive and ready in standby pool)
+        Bus::create([
+            'plate_number' => 'PAS-439',
+            'route_id' => null,
+            'driver_name' => null,
+            'capacity' => 45,
+            'speed' => 0,
+            'passengers' => 0,
+            'next_stop' => null,
+            'eta' => 0,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'status' => 'inactive'
+        ]);
+
+        Bus::create([
+            'plate_number' => 'PAS-112',
+            'route_id' => null,
+            'driver_name' => null,
+            'capacity' => 45,
+            'speed' => 0,
+            'passengers' => 0,
+            'next_stop' => null,
+            'eta' => 0,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'status' => 'inactive'
+        ]);
+
+        Bus::create([
+            'plate_number' => 'PAS-204',
+            'route_id' => null,
+            'driver_name' => null,
+            'capacity' => 45,
+            'speed' => 0,
+            'passengers' => 0,
+            'next_stop' => null,
+            'eta' => 0,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'status' => 'inactive'
+        ]);
+
+        Bus::create([
+            'plate_number' => 'PAS-309',
+            'route_id' => null,
+            'driver_name' => null,
+            'capacity' => 45,
+            'speed' => 0,
+            'passengers' => 0,
+            'next_stop' => null,
+            'eta' => 0,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'status' => 'inactive'
+        ]);
+
+        Bus::create([
+            'plate_number' => 'PAS-881',
+            'route_id' => null,
+            'driver_name' => null,
+            'capacity' => 45,
+            'speed' => 0,
+            'passengers' => 0,
+            'next_stop' => null,
+            'eta' => 0,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'status' => 'inactive'
+        ]);
+
+        Bus::create([
+            'plate_number' => 'PAS-661',
+            'route_id' => null,
+            'driver_name' => null,
+            'capacity' => 45,
+            'speed' => 0,
+            'passengers' => 0,
+            'next_stop' => null,
+            'eta' => 0,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'status' => 'inactive'
+        ]);
+
+        Bus::create([
+            'plate_number' => 'PAS-552',
+            'route_id' => null,
+            'driver_name' => null,
+            'capacity' => 45,
+            'speed' => 0,
+            'passengers' => 0,
+            'next_stop' => null,
+            'eta' => 0,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'status' => 'inactive'
+        ]);
+
+        Bus::create([
+            'plate_number' => 'PAS-773',
+            'route_id' => null,
+            'driver_name' => null,
+            'capacity' => 45,
+            'speed' => 0,
+            'passengers' => 0,
+            'next_stop' => null,
+            'eta' => 0,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'status' => 'inactive'
+        ]);
+    }
+}

@@ -1,0 +1,35 @@
+---
+description: Blade, Tailwind v4, Vite, and responsive UI conventions
+globs: resources/views/**/*.blade.php,resources/css/**/*.css,resources/js/**/*.js
+alwaysApply: false
+---
+
+# Frontend Rules
+
+## Blade components
+
+- Reusable UI → `resources/views/components/` (`<x-alert-banner />`, `<x-admin.* />`, etc.).
+- Page shells → `resources/views/layouts/` with `@extends` + `@section`.
+- Feature pages → `auth/`, `admin/`, `fleet/`, `driver/`, `commuter/`.
+
+## Tailwind v4
+
+- Utilities in templates; shared tokens/animations in `resources/css/app.css` `@theme`.
+- Brand colors: `#10234a` (primary navy), slate scale for neutrals.
+- Responsive: mobile-first (`sm:`, `md:`, `lg:`); hide/show panels like login aside pattern.
+
+## Assets
+
+```blade
+@vite(['resources/css/app.css', 'resources/js/app.js'])
+```
+
+## Do not
+
+- Add business logic to views.
+- Ship non-responsive layouts for fleet/admin dashboards.
+- Introduce React/Vue without explicit request.
+
+## Verify
+
+`npm run dev` or `npm run build`; check mobile width and form error states.

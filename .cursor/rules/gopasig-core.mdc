@@ -1,0 +1,40 @@
+---
+description: GoPasig core architecture — clean layers, thin controllers, no spaghetti
+alwaysApply: true
+---
+
+# GoPasig Core Standards
+
+## Stack
+
+Laravel (PHP), Blade, Tailwind CSS v4, Vite. Fleet/transit domain: admin, dispatcher (fleet), driver, commuter roles.
+
+## Clean architecture
+
+```
+HTTP Request → Route → Middleware → Controller → Form Request / Service → Model → View or JSON
+```
+
+- **Routes**: map URLs only; avoid closures with business logic.
+- **Controllers**: thin — coordinate and return responses.
+- **Form Requests**: validation and request-level auth (see `LoginRequest`).
+- **Services** (`app/Services/`): business rules when controllers grow.
+- **Models**: data access, relationships, scopes.
+- **Views**: presentation only; use Blade components.
+
+## Anti-spaghetti rules
+
+- Do not duplicate markup — use Blade components in `resources/views/components/`.
+- Do not put queries or role logic in Blade or route closures.
+- Prefer one class per responsibility over god files.
+- Minimize scope of each change; match existing naming and folder layout.
+
+## Security defaults
+
+- `@csrf` on state-changing web forms.
+- Validate all input via Form Requests.
+- Role protection via middleware (`role:admin`, etc.) or policies.
+
+## Subagents
+
+Delegate when appropriate: `/frontend`, `/backend`, `/debugging`, `/database`.

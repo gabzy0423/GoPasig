@@ -1,0 +1,171 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Models\Driver;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
+
+class DriverController extends Controller
+{
+    /**
+     * Display a listing of drivers and associated stats.
+     */
+    public function index()
+    {
+        $drivers = Driver::orderBy('created_at', 'desc')->get();
+
+        // Calculate Stats
+        $onDuty = Driver::where('status', 'active')->count();
+        $offDuty = Driver::where('status', 'inactive')->count();
+        $suspended = Driver::where('status', 'suspended')->count();
+
+        // License Expiring in <= 30 Days (Urgent or Expired)
+        $today = Carbon::today();
+        $thirtyDaysFromNow = Carbon::today()->addDays(30);
+        $expiring = Driver::whereBetween('license_expiry', [$today->toDateString(), $thirtyDaysFromNow->toDateString()])
+            ->orWhere('license_expiry', '<', $today->toDateString())
+            ->count();
+
+        return response()->json([
+            'success' => true,
+            'drivers' => $drivers,
+            'stats' => [
+                'on_duty' => $onDuty,
+                'off_duty' => $offDuty,
+                'suspended' => $suspended,
+                'expiring' => $expiring,
+            ]
+        ]);
+    }
+
+    /**
+     * Store a newly created driver in storage.
+     */
+    public function store(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'first_name' => 'required|string|min:2',
+            'last_name' => 'required|string|min:2',
+            'emp_id' => 'required|string|unique:drivers,emp_id',
+            'license_number' => 'required|string|unique:drivers,license_number',
+            'license_expiry' => 'required|date',
+            'status' => 'required|in:active,inactive,suspended',
+            'contact_number' => 'nullable|string',
+            'address' => 'nullable|string',
+            'emergency_contact' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error. Please verify input formats.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Set default mock trip history for realistic seeding if empty
+        $tripHistory = [];
+
+        $driver = Driver::create([
+            'first_name' => $request->first_name,
+            'last_name' => $request->last_name,
+            'emp_id' => $request->emp_id,
+            'license_number' => $request->license_number,
+            'license_expiry' => $request->license_expiry,
+            'status' => $request->status,
+            'contact_number' => $request->contact_number,
+            'address' => $request->address,
+            'emergency_contact' => $request->emergency_contact,
+            'trips_today' => 0,
+            'pax_today' => 0,
+            'performance_score' => 100,
+            'incidents_30' => 0,
+            'trip_history' => $tripHistory,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Driver {$driver->first_name} {$driver->last_name} registered successfully!",
+            'driver' => $driver
+        ]);
+    }
+
+    /**
+     * Update the specified driver details.
+     */
+    public function update(Request $request, Driver $driver)
+    {
+        $validator = Validator::make($request->all(), [
+            'first_name' => 'required|string|min:2',
+            'last_name' => 'required|string|min:2',
+            'license_number' => 'required|string|unique:drivers,license_number,' . $driver->id,
+            'license_expiry' => 'required|date',
+            'status' => 'required|in:active,inactive,suspended',
+            'contact_number' => 'nullable|string',
+            'address' => 'nullable|string',
+            'emergency_contact' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error. Please verify input formats.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Keep the old driver status if they were active or off duty unless they explicitly suspended them
+        $oldStatus = $driver->status;
+
+        $driver->update([
+            'first_name' => $request->first_name,
+            'last_name' => $request->last_name,
+            'license_number' => $request->license_number,
+            'license_expiry' => $request->license_expiry,
+            'status' => $request->status,
+            'contact_number' => $request->contact_number,
+            'address' => $request->address,
+            'emergency_contact' => $request->emergency_contact,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Driver {$driver->first_name} {$driver->last_name} updated successfully!",
+            'driver' => $driver
+        ]);
+    }
+
+    /**
+     * Remove the specified driver from storage.
+     */
+    public function destroy(Driver $driver)
+    {
+        $name = "{$driver->first_name} {$driver->last_name}";
+        $driver->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Driver record {$name} deleted successfully!"
+        ]);
+    }
+
+    /**
+     * Toggle suspend / unsuspend operational state.
+     */
+    public function toggleSuspend(Driver $driver)
+    {
+        $willSuspend = $driver->status !== 'suspended';
+        $driver->status = $willSuspend ? 'suspended' : 'inactive';
+        $driver->save();
+
+        $action = $willSuspend ? 'suspended' : 'unsuspended';
+        return response()->json([
+            'success' => true,
+            'message' => "Driver {$driver->first_name} {$driver->last_name} {$action} successfully!",
+            'driver' => $driver
+        ]);
+    }
+}

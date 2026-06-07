@@ -1,0 +1,42 @@
+---
+description: RESTful API conventions for Laravel JSON endpoints
+globs: routes/api.php,app/Http/Controllers/Api/**/*.php,app/Http/Resources/**/*.php
+alwaysApply: false
+---
+
+# RESTful API Rules
+
+## Routing
+
+```php
+Route::middleware('auth:sanctum')->group(function () {
+    Route::apiResource('trips', Api\TripController::class);
+});
+```
+
+- Nouns, plural resources: `/api/trips`, `/api/buses/{bus}`.
+- HTTP verbs: GET (read), POST (create), PUT/PATCH (update), DELETE (destroy).
+
+## Controllers
+
+- Namespace: `App\Http\Controllers\Api\`.
+- Return `JsonResource`, `ResourceCollection`, or `response()->json()` with correct status:
+  - `201` created, `204` deleted, `422` validation, `403` forbidden, `404` not found.
+
+## Validation and auth
+
+- Form Requests for every mutating endpoint.
+- Policies or middleware for role-scoped fleet data.
+
+## Response shape
+
+```json
+{ "data": { "id": 1, "status": "active" } }
+```
+
+Paginate lists; never expose `password` or internal tokens.
+
+## Do not
+
+- Mix HTML redirects in API controllers.
+- Put SQL or business rules in controllers — use Services + Eloquent.

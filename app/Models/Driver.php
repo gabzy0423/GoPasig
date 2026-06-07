@@ -1,0 +1,61 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Driver extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'user_id',
+        'first_name',
+        'last_name',
+        'emp_id',
+        'license_number',
+        'license_expiry',
+        'status',
+        'assigned_bus',
+        'assigned_route',
+        'trips_today',
+        'pax_today',
+        'address',
+        'contact_number',
+        'emergency_contact',
+        'performance_score',
+        'incidents_30',
+        'trip_history',
+    ];
+
+    protected $casts = [
+        'trip_history' => 'array',
+        'license_expiry' => 'date',
+        'performance_score' => 'integer',
+        'incidents_30' => 'integer',
+        'trips_today' => 'integer',
+        'pax_today' => 'integer',
+    ];
+
+    protected $appends = ['initials'];
+
+    public function getInitialsAttribute()
+    {
+        return ($this->first_name ? strtoupper(substr($this->first_name, 0, 1)) : '') . 
+               ($this->last_name ? strtoupper(substr($this->last_name, 0, 1)) : '');
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the incidents logged against this driver.
+     */
+    public function incidents()
+    {
+        return $this->hasMany(Incident::class);
+    }
+}

@@ -1,0 +1,43 @@
+---
+description: Laravel controllers, requests, middleware, and services
+globs: app/**/*.php,routes/**/*.php
+alwaysApply: false
+---
+
+# Backend Rules
+
+## Thin controllers
+
+```php
+// Controller: HTTP only
+public function authenticate(LoginRequest $request) {
+    $request->authenticate();
+    $request->session()->regenerate();
+    return $this->redirectForRole(Auth::user());
+}
+```
+
+Move validation, rate limits, and external API calls to Form Requests or Services.
+
+## File organization
+
+| Concern | Path |
+|---------|------|
+| Controllers | `app/Http/Controllers/` |
+| Validation | `app/Http/Requests/` |
+| Middleware | `app/Http/Middleware/` |
+| Business logic | `app/Services/` or `app/Actions/` |
+| Models | `app/Models/` |
+| Routes | `routes/web.php`, `routes/api.php` |
+
+## Routes
+
+- Named routes with dot prefix: `fleet.dashboard`, `admin.dashboard`.
+- Group by `prefix`, `middleware`, and `name()`.
+- Replace fat closures in `web.php` with controller methods as features grow.
+
+## Do not
+
+- Skip Form Requests for validated endpoints.
+- Hardcode roles in many places — use middleware/policies.
+- Return sensitive fields in JSON without API Resources.
