@@ -7,6 +7,7 @@ use App\Models\Schedule;
 use App\Models\Route;
 use App\Models\Stop;
 use App\Models\Alert;
+use App\Models\SystemSetting;
 use Carbon\Carbon;
 
 class CommuterSchedule extends Component
@@ -68,7 +69,7 @@ class CommuterSchedule extends Component
             $routeStops = $schedule->route->stops->take(6);
             $totalStopsCount = $routeStops->count();
             
-            $routeTravelTime = $schedule->route->travel_time_minutes ?: 30;
+            $routeTravelTime = $duration;
             $averageInterval = $totalStopsCount > 1 ? ($routeTravelTime / ($totalStopsCount - 1)) : 8;
             
             foreach ($routeStops as $index => $stop) {
@@ -118,9 +119,10 @@ class CommuterSchedule extends Component
             $firstStop = $schedule->route->stops->first();
             if ($firstStop) {
                 // Create the alert in alerts table
+                $minutesBefore = (int) SystemSetting::get('default_alert_warning_minutes', 5);
                 Alert::create([
                     'stop_id' => $firstStop->id,
-                    'minutes_before' => 5, // 5 min warning by default
+                    'minutes_before' => $minutesBefore,
                     'status' => 'active',
                 ]);
             }
@@ -132,7 +134,7 @@ class CommuterSchedule extends Component
         // Dispatch browser alert feedback
         $this->dispatch('alert-created', [
             'stop_name' => ($schedule && $schedule->route && $schedule->route->stops->first()) ? $schedule->route->stops->first()->name : 'Terminal',
-            'minutes' => 5,
+            'minutes' => $minutesBefore,
         ]);
     }
 

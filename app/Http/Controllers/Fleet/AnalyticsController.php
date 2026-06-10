@@ -10,6 +10,7 @@ use App\Models\Schedule;
 use App\Models\Trip;
 use App\Models\SystemSetting;
 use App\Models\ColorPalette;
+use App\Models\TimeSlotConfiguration;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -176,9 +177,12 @@ class AnalyticsController extends Controller
 
         if ($peakHourRecord) {
             $hr = (int) $peakHourRecord->hr;
-            $peakHour = $hr < 12
-                ? "{$hr}:00 – " . ($hr + 1) . ":00 AM"
-                : ($hr === 12 ? "12:00 – 1:00 PM" : ($hr - 12) . ":00 – " . ($hr - 11) . ":00 PM");
+            $config = TimeSlotConfiguration::getTimeSlotByHour($hr);
+            $peakHour = $config
+                ? $config->time_slot_display
+                : ($hr < 12
+                    ? "{$hr}:00 – " . ($hr + 1) . ":00 AM"
+                    : ($hr === 12 ? "12:00 – 1:00 PM" : ($hr - 12) . ":00 – " . ($hr - 11) . ":00 PM"));
         } else {
             $peakHour = 'N/A';
         }
@@ -205,22 +209,43 @@ class AnalyticsController extends Controller
         }
         usort($routeSummary, fn($a, $b) => $b->total_passengers <=> $a->total_passengers);
 
-        // 3. Hourly Ridership (5AM – 10PM)
+        // 3. Hourly Ridership by configured time slots
         $hourlyRidership = [];
-        for ($hour = 5; $hour <= 22; $hour++) {
-            $label = $hour < 12 ? "{$hour}:00" : ($hour === 12 ? "12:00" : ($hour - 12) . ":00");
+        $timeSlotConfigs = TimeSlotConfiguration::where('is_active', true)->orderBy('order')->get();
+
+        if ($timeSlotConfigs->isEmpty()) {
+            $timeSlotConfigs = collect([
+                (object) ['time_slot_display' => '05:00-06:00', 'start_time' => '05:00', 'end_time' => '06:00'],
+                (object) ['time_slot_display' => '06:00-07:00', 'start_time' => '06:00', 'end_time' => '07:00'],
+                (object) ['time_slot_display' => '07:00-08:00', 'start_time' => '07:00', 'end_time' => '08:00'],
+                (object) ['time_slot_display' => '08:00-09:00', 'start_time' => '08:00', 'end_time' => '09:00'],
+                (object) ['time_slot_display' => '09:00-10:00', 'start_time' => '09:00', 'end_time' => '10:00'],
+                (object) ['time_slot_display' => '10:00-11:00', 'start_time' => '10:00', 'end_time' => '11:00'],
+                (object) ['time_slot_display' => '11:00-12:00', 'start_time' => '11:00', 'end_time' => '12:00'],
+                (object) ['time_slot_display' => '12:00-13:00', 'start_time' => '12:00', 'end_time' => '13:00'],
+                (object) ['time_slot_display' => '13:00-14:00', 'start_time' => '13:00', 'end_time' => '14:00'],
+                (object) ['time_slot_display' => '14:00-15:00', 'start_time' => '14:00', 'end_time' => '15:00'],
+                (object) ['time_slot_display' => '15:00-16:00', 'start_time' => '15:00', 'end_time' => '16:00'],
+                (object) ['time_slot_display' => '16:00-17:00', 'start_time' => '16:00', 'end_time' => '17:00'],
+                (object) ['time_slot_display' => '17:00-18:00', 'start_time' => '17:00', 'end_time' => '18:00'],
+                (object) ['time_slot_display' => '18:00-19:00', 'start_time' => '18:00', 'end_time' => '19:00'],
+                (object) ['time_slot_display' => '19:00-20:00', 'start_time' => '19:00', 'end_time' => '20:00'],
+                (object) ['time_slot_display' => '20:00-21:00', 'start_time' => '20:00', 'end_time' => '21:00'],
+                (object) ['time_slot_display' => '21:00-22:00', 'start_time' => '21:00', 'end_time' => '22:00'],
+            ]);
+        }
+
+        foreach ($timeSlotConfigs as $slotConfig) {
             foreach ($routes as $idx => $route) {
                 $count = (int) $effectiveQuery()
                     ->where('route_id', $route->id)
-                    ->when($isSqlite, function ($q) use ($hour) {
-                        $q->whereRaw("CAST(strftime('%H', departure_time) AS INTEGER) = ?", [$hour]);
-                    }, function ($q) use ($hour) {
-                        $q->whereRaw("HOUR(departure_time) = ?", [$hour]);
-                    })
+                    ->where('departure_time', '>=', $slotConfig->start_time)
+                    ->where('departure_time', '<', $slotConfig->end_time)
                     ->sum('passengers');
+
                 $hourlyRidership[] = [
                     'route' => $route->name,
-                    'hour' => $label,
+                    'hour' => $slotConfig->time_slot_display,
                     'count' => $count,
                     'color' => $colorPalette[$idx % count($colorPalette)],
                 ];
@@ -293,9 +318,12 @@ class AnalyticsController extends Controller
 
             $peakPassengers = $peakRec ? (int) $peakRec->total : 0;
             $peakHr = $peakRec ? (int) $peakRec->hr : 8;
-            $peakHrLabel = $peakHr < 12
-                ? "{$peakHr}:00 AM – " . ($peakHr + 1) . ":00 AM"
-                : ($peakHr === 12 ? "12:00 PM – 1:00 PM" : ($peakHr - 12) . ":00 PM – " . ($peakHr - 11) . ":00 PM");
+            $slotConfig = TimeSlotConfiguration::getTimeSlotByHour($peakHr);
+            $peakHrLabel = $slotConfig
+                ? $slotConfig->time_slot_display
+                : ($peakHr < 12
+                    ? "{$peakHr}:00 AM – " . ($peakHr + 1) . ":00 AM"
+                    : ($peakHr === 12 ? "12:00 PM – 1:00 PM" : ($peakHr - 12) . ":00 PM – " . ($peakHr - 11) . ":00 PM"));
 
             $routeBusIds = DB::table('schedules')->where('route_id', $route->id)->distinct()->pluck('bus_id');
             $activeBusesOnRoute = Bus::whereIn('id', $routeBusIds)->where('status', 'active')->count();

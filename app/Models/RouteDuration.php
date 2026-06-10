@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\SystemSetting;
 
 class RouteDuration extends Model
 {
@@ -71,7 +72,9 @@ class RouteDuration extends Model
             ->whereNull('time_slot')
             ->first();
 
-        return $duration?->duration_minutes ?? 45; // Default 45 minutes
+        // Fallback to application setting `default_travel_time_minutes` if no route-specific duration exists
+        $default = (int) SystemSetting::get('default_travel_time_minutes', 45);
+        return $duration?->duration_minutes ?? $default;
     }
 }
 

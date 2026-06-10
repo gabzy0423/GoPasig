@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Bus;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use App\Models\DefaultRouteSetting;
+use App\Models\SystemSetting;
 
 class BusController extends Controller
 {
@@ -23,6 +25,11 @@ class BusController extends Controller
         ]);
 
         // Default starting coordinates centered on SPED Terminal for map mapping
+        // Resolve default coordinates from DefaultRouteSetting or SystemSetting
+        $routeDefaults = DefaultRouteSetting::latest()->first();
+        $defaultLat = $routeDefaults?->default_latitude ?? (float) SystemSetting::get('default_route_start_lat', 14.5593);
+        $defaultLng = $routeDefaults?->default_longitude ?? (float) SystemSetting::get('default_route_start_lng', 121.0805);
+
         $bus = Bus::create([
             'plate_number' => $validated['plate_number'],
             'route_id' => $validated['route_id'] ?: null,
@@ -33,8 +40,8 @@ class BusController extends Controller
             'passengers' => 0,
             'next_stop' => 'None',
             'eta' => 0,
-            'lat' => 14.5593,
-            'lng' => 121.0805,
+            'lat' => $defaultLat,
+            'lng' => $defaultLng,
         ]);
 
         return response()->json([

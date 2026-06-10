@@ -29,8 +29,8 @@ class CommuterRoutes extends Component
             $stops = $route->stops;
 
             // Determine origin (first stop) and destination (last stop)
-            $origin = $stops->first() ? $stops->first()->name : 'SPED Terminal';
-            $destination = $stops->last() ? $stops->last()->name : 'Terminal';
+            $origin = $stops->first() ? $stops->first()->name : SystemSetting::get('default_terminal_name', 'SPED Terminal');
+            $destination = $stops->last() ? $stops->last()->name : SystemSetting::get('default_terminal_label', 'Terminal');
 
             // Clean up the origin/destination name if it has long text, or keep it as is
             // Filter active buses for this route
@@ -132,7 +132,7 @@ class CommuterRoutes extends Component
                 'driver_name' => $driverName,
                 'status' => $bus->eta >= Bus::getDelayThreshold() ? 'Delayed' : 'On Time', // On Time / Delayed
                 'passengers_onboard' => $bus->passengers,
-                'capacity' => $bus->capacity ?: (int) SystemSetting::get('default_bus_capacity', 45),
+                'capacity' => $bus->capacity ?: SystemSetting::get('default_bus_capacity'),
                 'next_stop_name' => $bus->next_stop ?: 'Terminal',
                 'next_stop_eta_minutes' => $bus->eta,
             ];

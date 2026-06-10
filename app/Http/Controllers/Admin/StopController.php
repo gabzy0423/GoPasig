@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Stop;
+use App\Models\DefaultRouteSetting;
 use App\Models\Route;
+use App\Models\Stop;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 
 class StopController extends Controller
@@ -16,11 +18,15 @@ class StopController extends Controller
     {
         $validated = $request->validate([
             'route_id' => 'required|exists:routes,id',
-            'name' => 'required|string|max:100',
+            'name' => 'sometimes|nullable|string|max:100',
         ]);
 
         $routeId = $validated['route_id'];
-        $name = $validated['name'];
+        $routeDefaults = DefaultRouteSetting::first();
+        $defaultOriginLabel = $routeDefaults?->default_origin_label ?? SystemSetting::get('default_route_origin_label', 'Pasig Terminal');
+        $defaultDestinationLabel = $routeDefaults?->default_destination_label ?? SystemSetting::get('default_route_destination_label', 'New Terminus');
+        $stopCount = Stop::where('route_id', $routeId)->count();
+        $name = $validated['name'] ?? ($stopCount > 0 ? $defaultDestinationLabel : $defaultOriginLabel);
 
         // Get terminus stop (highest sequence)
         $terminusStop = Stop::where('route_id', $routeId)->orderBy('sequence', 'desc')->first();
@@ -33,14 +39,25 @@ class StopController extends Controller
             $sequence = 1;
         }
 
-        // Auto-calculate coordinates based on previous stop
+        // Auto-calculate coordinates based on previous stop or route geometry
         $prevStop = Stop::where('route_id', $routeId)
             ->where('sequence', '<', $sequence)
             ->orderBy('sequence', 'desc')
             ->first();
 
-        $lat = $prevStop ? $prevStop->lat + 0.002 : 14.5593;
-        $lng = $prevStop ? $prevStop->lng + 0.002 : 121.0805;
+        $route = Route::find($routeId);
+        $fallbackLat = $routeDefaults?->default_latitude ?? SystemSetting::get('default_route_start_lat', 14.5593);
+        $fallbackLng = $routeDefaults?->default_longitude ?? SystemSetting::get('default_route_start_lng', 121.0805);
+
+        $routeStartLat = $route && is_array($route->polyline_coordinates) && count($route->polyline_coordinates)
+            ? $route->polyline_coordinates[0][0]
+            : $fallbackLat;
+        $routeStartLng = $route && is_array($route->polyline_coordinates) && count($route->polyline_coordinates)
+            ? $route->polyline_coordinates[0][1]
+            : $fallbackLng;
+
+        $lat = $prevStop ? $prevStop->lat + 0.002 : $routeStartLat;
+        $lng = $prevStop ? $prevStop->lng + 0.002 : $routeStartLng;
 
         $stop = Stop::create([
             'route_id' => $routeId,

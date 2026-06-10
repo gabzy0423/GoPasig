@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Route;
 use App\Models\Stop;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class RouteController extends Controller
 {
@@ -15,13 +17,14 @@ class RouteController extends Controller
     public function store(Request $request)
     {
         $count = Route::count() + 1;
+        $defaultPrefix = SystemSetting::get('default_route_name_prefix', 'Route ');
 
         $route = Route::create([
-            'name' => $request->name ?? ('Route ' . $count),
+            'name' => $request->name ?? ($defaultPrefix . $count),
             'description' => $request->description,
-            'color' => $request->color ?? '#003F87',
+            'color' => $request->color ?? SystemSetting::get('default_route_color', '#003F87'),
             'polyline_coordinates' => $request->polyline_coordinates ?? [],
-            'status' => 'Active'
+            'status' => $request->status ?? SystemSetting::get('default_route_status', 'Active'),
         ]);
 
 
@@ -37,10 +40,12 @@ class RouteController extends Controller
      */
     public function update(Request $request, Route $route)
     {
+        $allowedStatuses = explode(',', SystemSetting::get('allowed_route_statuses', 'Active,Suspended'));
+
         $validated = $request->validate([
             'name' => 'sometimes|required|string|max:100',
             'description' => 'sometimes|nullable|string',
-            'status' => 'sometimes|required|in:Active,Suspended',
+            'status' => ['sometimes', 'required', Rule::in($allowedStatuses)],
         ]);
 
         $route->update($validated);

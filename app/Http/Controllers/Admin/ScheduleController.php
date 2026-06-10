@@ -6,7 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Schedule;
 use App\Models\Bus;
 use App\Models\Driver;
-use App\Models\RouteDuration;
+use App\Models\Route;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 
 class ScheduleController extends Controller
@@ -62,13 +63,9 @@ class ScheduleController extends Controller
             return response()->json(['success' => false, 'message' => 'Driver not found.'], 404);
         }
 
-        // Compute estimated arrival time
+        // Compute estimated arrival time using route travel_time_minutes from the routes table
         $departure = $validated['departure_time'];
-        $duration = RouteDuration::getDuration(
-            $validated['route_id'],
-            now()->englishDayOfWeek,
-            null // walang specific time slot sa schedule creation
-        );
+        $duration = $this->resolveRouteTravelDuration($validated['route_id']);
 
         $timeParts = explode(':', $departure);
         $totalMinutes = intval($timeParts[0]) * 60 + intval($timeParts[1]) + $duration;
@@ -126,13 +123,9 @@ class ScheduleController extends Controller
             return response()->json(['success' => false, 'message' => 'Driver not found.'], 404);
         }
 
-        // Compute estimated arrival time
+        // Compute estimated arrival time using route travel_time_minutes from the routes table
         $departure = $validated['departure_time'];
-        $duration = RouteDuration::getDuration(
-            $validated['route_id'],
-            now()->englishDayOfWeek,
-            null // walang specific time slot sa schedule creation
-        );
+        $duration = $this->resolveRouteTravelDuration($validated['route_id']);
 
         $timeParts = explode(':', $departure);
         $totalMinutes = intval($timeParts[0]) * 60 + intval($timeParts[1]) + $duration;
@@ -177,5 +170,21 @@ class ScheduleController extends Controller
             'success' => true,
             'message' => 'Schedule successfully deleted!'
         ]);
+    }
+
+    /**
+     * Resolve duration for a route from the routes table or fallback system setting.
+     */
+    protected function resolveRouteTravelDuration(int $routeId): int
+    {
+        $route = Route::find($routeId);
+        $duration = $route?->travel_time_minutes;
+
+        if ($duration === null) {
+            // Use configurable fallback instead of hardcoded 30 minutes
+            return (int) SystemSetting::get('default_travel_time_minutes', 30);
+        }
+
+        return (int) $duration;
     }
 }

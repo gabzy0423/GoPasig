@@ -14,11 +14,11 @@ class ServiceAlertsPage extends Component
     public $alertCount = 0;
     public $showResolved = false;
     public $expandedAlerts = [];
-    public $readAlerts = []; // session-backed tracker for unread states
+    public $readAlerts = [];
 
     public function mount()
     {
-        // Kunin ang records sa database
+        // Load persisted read state from the database only
         $query = ServiceAlertRead::query();
 
         if (Auth::check()) {
@@ -27,10 +27,7 @@ class ServiceAlertsPage extends Component
             $query->where('session_id', session()->getId());
         }
 
-        $dbReads = $query->pluck('service_alert_id')->toArray();
-        $sessionReads = session()->get('read_alerts', []);
-
-        $this->readAlerts = array_unique(array_merge($dbReads, $sessionReads));
+        $this->readAlerts = $query->pluck('service_alert_id')->toArray();
     }
 
     public function filterAlerts($type)
@@ -43,7 +40,7 @@ class ServiceAlertsPage extends Component
         if (!in_array($id, $this->readAlerts)) {
             $this->readAlerts[] = $id;
 
-            // I-save sa database para mag-persist
+            // Persist read state in the database instead of relying on session storage
             ServiceAlertRead::firstOrCreate([
                 'service_alert_id' => $id,
                 'user_id' => Auth::id(),
@@ -51,9 +48,6 @@ class ServiceAlertsPage extends Component
             ], [
                 'read_at' => now()
             ]);
-
-            // Keep in session for immediate redundancy
-            session()->put('read_alerts', $this->readAlerts);
         }
     }
 

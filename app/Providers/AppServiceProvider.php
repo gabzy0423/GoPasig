@@ -214,23 +214,14 @@ class AppServiceProvider extends ServiceProvider
 
         \Illuminate\Support\Facades\View::composer('fleet.dispatch-intelligence.index', function ($view) {
             if (!$view->offsetExists('selectedPhase')) {
-                $selectedPhase = 1;
-                $simulatedDay = \Carbon\Carbon::now()->englishDayOfWeek;
+                $selectedPhase = (int) \App\Models\SystemSetting::get('dispatch_default_phase', 1);
+                $simulatedDay = \App\Models\SystemSetting::get('default_simulated_day', \Carbon\Carbon::now()->englishDayOfWeek);
+                $selectedRouteId = (int) \App\Models\SystemSetting::get('default_route_id', \App\Models\Route::orderBy('id')->first()?->id ?? 1);
 
-                $hour = (int) \Carbon\Carbon::now()->format('G');
-                if ($hour >= 6 && $hour < 8) {
-                    $simulatedTimeSlot = '06:00-08:00';
-                } elseif ($hour >= 8 && $hour < 12) {
-                    $simulatedTimeSlot = '08:00-10:00';
-                } elseif ($hour >= 12 && $hour < 16) {
-                    $simulatedTimeSlot = '12:00-14:00';
-                } elseif ($hour >= 16 && $hour < 18) {
-                    $simulatedTimeSlot = '16:00-18:00';
-                } else {
-                    $simulatedTimeSlot = '18:00-20:00';
-                }
-                
-                $selectedRouteId = 1;
+                $timeSlotConfig = \App\Models\TimeSlotConfiguration::getTimeSlotByHour();
+                $simulatedTimeSlot = $timeSlotConfig
+                    ? $timeSlotConfig->time_slot_display
+                    : \App\Models\SystemSetting::get('default_time_slot', '18:00-20:00');
 
                 $controller = app(\App\Http\Controllers\Fleet\DispatchIntelligenceController::class);
                 $routesData = $controller->fetchRoutesData($simulatedDay, $simulatedTimeSlot, $selectedPhase);
@@ -239,7 +230,7 @@ class AppServiceProvider extends ServiceProvider
                     ->where('day_of_week', $simulatedDay)
                     ->where('time_slot', $simulatedTimeSlot)
                     ->first();
-                $customThreshold = $threshold ? $threshold->threshold_count : 20;
+                $customThreshold = $threshold ? $threshold->threshold_count : \App\Models\SystemSetting::get('default_demand_threshold', 20);
 
                 $historicalPatterns = \App\Models\DemandHistory::with('route')
                     ->orderBy('total_commuters', 'desc')

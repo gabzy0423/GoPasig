@@ -98,25 +98,50 @@ class AnalyticsController extends Controller
             'delayed_trips' => $delayedCount,
         ];
 
-        // 2. Hourly Ridership by Route (5 AM to 10 PM)
+        // 2. Hourly Ridership by configured time slots
         $hourlyRidership = [];
         $routes = Route::all();
+        $timeSlotConfigs = TimeSlotConfiguration::where('is_active', true)->orderBy('order')->get();
 
-        for ($hour = 5; $hour <= 22; $hour++) {
-            $hourLabel = $hour < 12 ? "{$hour} AM" : ($hour === 12 ? '12 PM' : ($hour - 12) . ' PM');
+        if ($timeSlotConfigs->isEmpty()) {
+            $timeSlotConfigs = collect([
+                (object) ['time_slot_display' => '05:00-06:00', 'start_time' => '05:00', 'end_time' => '06:00'],
+                (object) ['time_slot_display' => '06:00-07:00', 'start_time' => '06:00', 'end_time' => '07:00'],
+                (object) ['time_slot_display' => '07:00-08:00', 'start_time' => '07:00', 'end_time' => '08:00'],
+                (object) ['time_slot_display' => '08:00-09:00', 'start_time' => '08:00', 'end_time' => '09:00'],
+                (object) ['time_slot_display' => '09:00-10:00', 'start_time' => '09:00', 'end_time' => '10:00'],
+                (object) ['time_slot_display' => '10:00-11:00', 'start_time' => '10:00', 'end_time' => '11:00'],
+                (object) ['time_slot_display' => '11:00-12:00', 'start_time' => '11:00', 'end_time' => '12:00'],
+                (object) ['time_slot_display' => '12:00-13:00', 'start_time' => '12:00', 'end_time' => '13:00'],
+                (object) ['time_slot_display' => '13:00-14:00', 'start_time' => '13:00', 'end_time' => '14:00'],
+                (object) ['time_slot_display' => '14:00-15:00', 'start_time' => '14:00', 'end_time' => '15:00'],
+                (object) ['time_slot_display' => '15:00-16:00', 'start_time' => '15:00', 'end_time' => '16:00'],
+                (object) ['time_slot_display' => '16:00-17:00', 'start_time' => '16:00', 'end_time' => '17:00'],
+                (object) ['time_slot_display' => '17:00-18:00', 'start_time' => '17:00', 'end_time' => '18:00'],
+                (object) ['time_slot_display' => '18:00-19:00', 'start_time' => '18:00', 'end_time' => '19:00'],
+                (object) ['time_slot_display' => '19:00-20:00', 'start_time' => '19:00', 'end_time' => '20:00'],
+                (object) ['time_slot_display' => '20:00-21:00', 'start_time' => '20:00', 'end_time' => '21:00'],
+                (object) ['time_slot_display' => '21:00-22:00', 'start_time' => '21:00', 'end_time' => '22:00'],
+            ]);
+        }
+
+        foreach ($timeSlotConfigs as $slotConfig) {
             $hourlyData = [
-                'hour' => $hourLabel,
+                'hour' => $slotConfig->time_slot_display,
             ];
 
             foreach ($routes as $route) {
                 $sum = Schedule::where('route_id', $route->id)
-                    ->whereRaw("HOUR(departure_time) = ?", [$hour])
+                    ->where('departure_time', '>=', $slotConfig->start_time)
+                    ->where('departure_time', '<', $slotConfig->end_time)
                     ->sum('passengers');
 
                 $hourlyData[$route->name] = (int) $sum;
             }
             $hourlyRidership[] = $hourlyData;
         }
+
+        $defaultTerminalName = SystemSetting::get('default_terminal_name', 'SPED Terminal');
 
         // 3. Passengers by Route Today (Doughnut Chart & Comparison Table)
         $routeComparison = [];
@@ -134,8 +159,11 @@ class AnalyticsController extends Controller
                 ->first();
             $peakHourStr = '7–8 AM';
             if ($peakHourRecord) {
-                $hr = $peakHourRecord->hr;
-                $peakHourStr = $hr < 12 ? "{$hr}–" . ($hr + 1) . " AM" : ($hr === 12 ? "12–1 PM" : ($hr - 12) . "–" . ($hr - 11) . " PM");
+                $hr = (int) $peakHourRecord->hr;
+                $slotConfig = TimeSlotConfiguration::getTimeSlotByHour($hr);
+                $peakHourStr = $slotConfig
+                    ? $slotConfig->time_slot_display
+                    : ($hr < 12 ? "{$hr}–" . ($hr + 1) . " AM" : ($hr === 12 ? "12–1 PM" : ($hr - 12) . "–" . ($hr - 11) . " PM"));
             }
 
             // Find busiest stop from commuter_trips table origin counts
@@ -146,7 +174,7 @@ class AnalyticsController extends Controller
                 ->orderByDesc('count')
                 ->first();
 
-            $busiestStopName = 'SPED Terminal';
+            $busiestStopName = $defaultTerminalName;
             if ($busiestStopRecord) {
                 $stop = Stop::find($busiestStopRecord->origin_stop_id);
                 if ($stop) {
@@ -173,15 +201,35 @@ class AnalyticsController extends Controller
         // 4. Heatmap Patterns (last 7 days average matrix)
         $heatmap = [];
         $daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-        $hoursRange = ["5 AM", "6 AM", "7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
+        $timeSlotConfigs = TimeSlotConfiguration::where('is_active', true)->orderBy('order')->get();
+        if ($timeSlotConfigs->isEmpty()) {
+            $timeSlotConfigs = collect([
+                (object) ['time_slot_display' => '05:00-06:00', 'start_time' => '05:00', 'end_time' => '06:00'],
+                (object) ['time_slot_display' => '06:00-07:00', 'start_time' => '06:00', 'end_time' => '07:00'],
+                (object) ['time_slot_display' => '07:00-08:00', 'start_time' => '07:00', 'end_time' => '08:00'],
+                (object) ['time_slot_display' => '08:00-09:00', 'start_time' => '08:00', 'end_time' => '09:00'],
+                (object) ['time_slot_display' => '09:00-10:00', 'start_time' => '09:00', 'end_time' => '10:00'],
+                (object) ['time_slot_display' => '10:00-11:00', 'start_time' => '10:00', 'end_time' => '11:00'],
+                (object) ['time_slot_display' => '11:00-12:00', 'start_time' => '11:00', 'end_time' => '12:00'],
+                (object) ['time_slot_display' => '12:00-13:00', 'start_time' => '12:00', 'end_time' => '13:00'],
+                (object) ['time_slot_display' => '13:00-14:00', 'start_time' => '13:00', 'end_time' => '14:00'],
+                (object) ['time_slot_display' => '14:00-15:00', 'start_time' => '14:00', 'end_time' => '15:00'],
+                (object) ['time_slot_display' => '15:00-16:00', 'start_time' => '15:00', 'end_time' => '16:00'],
+                (object) ['time_slot_display' => '16:00-17:00', 'start_time' => '16:00', 'end_time' => '17:00'],
+                (object) ['time_slot_display' => '17:00-18:00', 'start_time' => '17:00', 'end_time' => '18:00'],
+                (object) ['time_slot_display' => '18:00-19:00', 'start_time' => '18:00', 'end_time' => '19:00'],
+                (object) ['time_slot_display' => '19:00-20:00', 'start_time' => '19:00', 'end_time' => '20:00'],
+                (object) ['time_slot_display' => '20:00-21:00', 'start_time' => '20:00', 'end_time' => '21:00'],
+                (object) ['time_slot_display' => '21:00-22:00', 'start_time' => '21:00', 'end_time' => '22:00'],
+            ]);
+        }
+        $defaultTimeSlot = SystemSetting::get('default_time_slot', $timeSlotConfigs->first()?->time_slot_display ?? '06:00-08:00');
+        $defaultTerminalName = SystemSetting::get('default_terminal_name', 'SPED Terminal');
 
-        foreach ($daysOfWeek as $dayIdx => $dayName) {
+        foreach ($daysOfWeek as $dayName) {
             $dayRow = [];
-            foreach ($hoursRange as $hourIdx => $hourStr) {
-                $hourInt = 5 + $hourIdx;
-
-                $config = TimeSlotConfiguration::getTimeSlotByHour($hourInt);
-                $dbTimeSlot = $config ? $config->time_slot_display : '06:00-08:00';
+            foreach ($timeSlotConfigs as $slotConfig) {
+                $dbTimeSlot = $slotConfig->time_slot_display;
 
                 $avg = DemandHistory::where('day_of_week', $dayName)
                     ->where('time_slot', $dbTimeSlot)
@@ -190,6 +238,7 @@ class AnalyticsController extends Controller
                 if ($avg !== null) {
                     $paxValue = round($avg);
                 } else {
+                    $hourInt = (int) substr($slotConfig->start_time, 0, 2);
                     // Deterministic fallback profile (Gaussian peaks at 8 AM and 6 PM)
                     $amPeak = exp(-pow($hourInt - 8, 2) / 3) * 60;
                     $pmPeak = exp(-pow($hourInt - 18, 2) / 4) * 80;
@@ -276,34 +325,15 @@ class AnalyticsController extends Controller
 
         // 8. Tomorrow's Dispatch Prediction Forecast
         $forecastTable = [];
-        $timeSlots = [
-            '5–6 AM',
-            '6–7 AM',
-            '7–8 AM',
-            '8–9 AM',
-            '9–10 AM',
-            '10–11 AM',
-            '11 AM–12 PM',
-            '12–1 PM',
-            '1–2 PM',
-            '2–3 PM',
-            '3–4 PM',
-            '4–5 PM',
-            '5–6 PM',
-            '6–7 PM',
-            '7–8 PM',
-            '8–9 PM',
-            '9–10 PM',
-            '10–11 PM'
-        ];
-
         $dayTomorrow = Carbon::tomorrow()->format('l');
 
-        foreach ($timeSlots as $index => $slot) {
-            $hourInt = 5 + $index;
+        foreach ($timeSlotConfigs as $slotConfig) {
+            $dbTimeSlot = $slotConfig->time_slot_display;
+            $hourInt = (int) substr($slotConfig->start_time, 0, 2);
 
-            $config = TimeSlotConfiguration::getTimeSlotByHour($hourInt);
-            $dbTimeSlot = $config ? $config->time_slot_display : '06:00-08:00';
+            $histAvg = DemandHistory::where('day_of_week', $dayTomorrow)
+                ->where('time_slot', $dbTimeSlot)
+                ->avg('total_commuters');
 
             $histAvg = DemandHistory::where('day_of_week', $dayTomorrow)
                 ->where('time_slot', $dbTimeSlot)
@@ -331,10 +361,10 @@ class AnalyticsController extends Controller
             // Recommended buses based on predicted passenger load (assuming bus capacity 45)
             $recBuses = (int) ceil($predPax / 45);
 
-            // Count actual scheduled trips in this hour slot template
-            $startHourStr = str_pad($hourInt, 2, '0', STR_PAD_LEFT) . ':00:00';
-            $endHourStr = str_pad($hourInt + 1, 2, '0', STR_PAD_LEFT) . ':00:00';
-            $schedBuses = Schedule::whereRaw("departure_time >= ? AND departure_time < ?", [$startHourStr, $endHourStr])->count();
+            // Count actual scheduled trips in this time slot template
+            $schedBuses = Schedule::where('departure_time', '>=', $slotConfig->start_time)
+                ->where('departure_time', '<', $slotConfig->end_time)
+                ->count();
 
             $gap = max(0, $recBuses - $schedBuses);
 
@@ -346,7 +376,7 @@ class AnalyticsController extends Controller
             }
 
             $forecastTable[] = [
-                'slot' => $slot,
+                'slot' => $slotConfig->time_slot_display,
                 'predPax' => $predPax,
                 'recBuses' => $recBuses,
                 'schedBuses' => $schedBuses,

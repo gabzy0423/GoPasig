@@ -109,17 +109,15 @@ class DriverController extends Controller
         }
 
         if (empty($gpsCoords)) {
-            // Hard fallback if database routes and stops are completely empty
-            $gpsCoords = [
-                ['lat' => 14.5768, 'lng' => 121.0858],
-                ['lat' => 14.5804, 'lng' => 121.0805],
-                ['lat' => 14.5841, 'lng' => 121.0722],
-                ['lat' => 14.5888, 'lng' => 121.0635],
-                ['lat' => 14.5872, 'lng' => 121.0560],
-                ['lat' => 14.5801, 'lng' => 121.0588],
-                ['lat' => 14.5732, 'lng' => 121.0691],
-                ['lat' => 14.5688, 'lng' => 121.0754],
-            ];
+            // Final fallback: attempt to use default route settings or system settings
+            $routeDefaults = \App\Models\DefaultRouteSetting::latest()->first();
+            if ($routeDefaults && $routeDefaults->default_latitude && $routeDefaults->default_longitude) {
+                $gpsCoords[] = ['lat' => (float)$routeDefaults->default_latitude, 'lng' => (float)$routeDefaults->default_longitude];
+            } else {
+                $nearLat = (float) \App\Models\SystemSetting::get('sim_near_lat', 14.5768);
+                $nearLng = (float) \App\Models\SystemSetting::get('sim_near_lng', 121.0858);
+                $gpsCoords[] = ['lat' => $nearLat, 'lng' => $nearLng];
+            }
         }
 
         $dispatcherName = $this->getDispatcherName();

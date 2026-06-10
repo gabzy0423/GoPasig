@@ -1,12 +1,14 @@
 <?php
 
+use App\Models\Route;
 use Livewire\Component;
 
 new class extends Component
 {
     public $reportType = 'ridership';
     public $dateRange = 'Today';
-    public $selectedRoutes = ['Route A', 'Route B', 'Route C'];
+    public $routeNames = [];
+    public $selectedRoutes = [];
     public $includeSections = [
         'Total passengers by route',
         'Passengers per trip breakdown',
@@ -22,6 +24,9 @@ new class extends Component
 
     public function mount()
     {
+        $this->routeNames = Route::orderBy('name')->pluck('name')->toArray();
+        $this->selectedRoutes = $this->routeNames;
+
         // Version guard: flush any old session that still holds the Dec hardcoded entries.
         // Bump this version string whenever the history schema changes.
         if (session('generated_reports_version') !== 'v2') {
@@ -163,15 +168,15 @@ new class extends Component
             <div class="space-y-1.5">
                 <label class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">3. Select Route Lines</label>
                 <div class="flex flex-wrap gap-2 text-[11px] font-bold">
-                    <button type="button" wire:click="toggleRoute('Route A')" class="rounded-full px-3.5 py-1 border transition select-none cursor-pointer {{ in_array('Route A', $selectedRoutes) ? 'bg-[#003F87] text-white border-[#003F87]' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50' }}">
-                        Route A
-                    </button>
-                    <button type="button" wire:click="toggleRoute('Route B')" class="rounded-full px-3.5 py-1 border transition select-none cursor-pointer {{ in_array('Route B', $selectedRoutes) ? 'bg-[#003F87] text-white border-[#003F87]' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50' }}">
-                        Route B
-                    </button>
-                    <button type="button" wire:click="toggleRoute('Route C')" class="rounded-full px-3.5 py-1 border transition select-none cursor-pointer {{ in_array('Route C', $selectedRoutes) ? 'bg-[#003F87] text-white border-[#003F87]' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50' }}">
-                        Route C
-                    </button>
+                    @if(count($routeNames) > 0)
+                        @foreach($routeNames as $routeName)
+                            <button type="button" wire:click="toggleRoute('{{ $routeName }}')" class="rounded-full px-3.5 py-1 border transition select-none cursor-pointer {{ in_array($routeName, $selectedRoutes) ? 'bg-[#003F87] text-white border-[#003F87]' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50' }}">
+                                {{ $routeName }}
+                            </button>
+                        @endforeach
+                    @else
+                        <div class="text-xs text-slate-500">No routes available. Add routes first to build route reports.</div>
+                    @endif
                 </div>
             </div>
 

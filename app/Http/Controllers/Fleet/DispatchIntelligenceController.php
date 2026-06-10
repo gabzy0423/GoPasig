@@ -16,9 +16,12 @@ use App\Models\DispatchLog;
 use App\Models\DispatchSimulatorCount;
 use App\Models\TimeSlotConfiguration;
 use App\Models\SystemSetting;
+use App\Models\DispatchAlertSetting;
+use App\Models\DispatchSimulationDefault;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 
 class DispatchIntelligenceController extends Controller
 {
@@ -27,10 +30,10 @@ class DispatchIntelligenceController extends Controller
      */
     public function index(Request $request)
     {
-        $defaultPhase = SystemSetting::where('key', 'dispatch_default_phase')->value('value') ?? 1;
-        $defaultDay = SystemSetting::where('key', 'default_simulated_day')->value('value') ?? Carbon::now()->englishDayOfWeek;
-        $defaultRouteId = SystemSetting::where('key', 'default_route_id')->value('value') ?? (Route::first()?->id ?? 1);
-        $defaultThreshold = SystemSetting::where('key', 'default_demand_threshold')->value('value') ?? 20;
+        $defaultPhase = $this->getSimulationDefault('phase_default', 1);
+        $defaultDay = $this->getSimulationDefault('default_simulated_day', Carbon::now()->englishDayOfWeek);
+        $defaultRouteId = $this->getSimulationDefault('route_default', Route::first()?->id);
+        $defaultThreshold = $this->getSimulationDefault('default_demand_threshold', 20);
 
         $selectedPhase = $request->input('phase', $defaultPhase);
         $simulatedDay = $request->input('day', $defaultDay);
@@ -76,10 +79,10 @@ class DispatchIntelligenceController extends Controller
      */
     public function getDispatchData(Request $request)
     {
-        $defaultPhase = SystemSetting::where('key', 'dispatch_default_phase')->value('value') ?? 1;
-        $defaultDay = SystemSetting::where('key', 'default_simulated_day')->value('value') ?? Carbon::now()->englishDayOfWeek;
-        $defaultRouteId = SystemSetting::where('key', 'default_route_id')->value('value') ?? (Route::first()?->id ?? 1);
-        $defaultThreshold = SystemSetting::where('key', 'default_demand_threshold')->value('value') ?? 20;
+        $defaultPhase = $this->getSimulationDefault('phase_default', 1);
+        $defaultDay = $this->getSimulationDefault('default_simulated_day', Carbon::now()->englishDayOfWeek);
+        $defaultRouteId = $this->getSimulationDefault('route_default', Route::first()?->id);
+        $defaultThreshold = $this->getSimulationDefault('default_demand_threshold', 20);
 
         $selectedPhase = $request->input('phase', $defaultPhase);
         $simulatedDay = $request->input('day', $defaultDay);
@@ -190,7 +193,7 @@ class DispatchIntelligenceController extends Controller
     public function addManualTicker(Request $request)
     {
         $routeId = (int) $request->input('route_id');
-        $defaultDay = SystemSetting::where('key', 'default_simulated_day')->value('value') ?? Carbon::now()->englishDayOfWeek;
+        $defaultDay = $this->getSimulationDefault('default_simulated_day', Carbon::now()->englishDayOfWeek);
         $day = $request->input('day', $defaultDay);
         $timeSlot = $request->input('time_slot', $this->getDefaultTimeSlot());
 
@@ -215,11 +218,11 @@ class DispatchIntelligenceController extends Controller
     public function simulateRushSpurt(Request $request)
     {
         $routeId = $request->input('route_id');
-        $defaultDay = SystemSetting::where('key', 'default_simulated_day')->value('value') ?? Carbon::now()->englishDayOfWeek;
+        $defaultDay = $this->getSimulationDefault('default_simulated_day', Carbon::now()->englishDayOfWeek);
         $day = $request->input('day', $defaultDay);
         $timeSlot = $request->input('time_slot', $this->getDefaultTimeSlot());
 
-        $defaultThreshold = SystemSetting::where('key', 'default_demand_threshold')->value('value') ?? 20;
+        $defaultThreshold = $this->getSimulationDefault('default_demand_threshold', 20);
 
         $thresholdRec = DemandThreshold::where('route_id', $routeId)
             ->where('day_of_week', $day)
@@ -266,7 +269,7 @@ class DispatchIntelligenceController extends Controller
     public function dispatchNow(Request $request)
     {
         $routeId = $request->input('route_id');
-        $defaultPhase = SystemSetting::where('key', 'dispatch_default_phase')->value('value') ?? 1;
+        $defaultPhase = $this->getSimulationDefault('phase_default', 1);
         $phase = $request->input('phase', $defaultPhase);
         $route = Route::find($routeId);
 
@@ -284,7 +287,7 @@ class DispatchIntelligenceController extends Controller
             ], 422);
         }
 
-        $fallbackTerminal = SystemSetting::where('key', 'default_terminal_name')->value('value') ?? 'SPED Terminal';
+        $fallbackTerminal = $this->getSimulationDefault('default_terminal', SystemSetting::get('default_terminal_name', 'SPED Terminal'));
 
         DB::beginTransaction();
         try {
@@ -361,10 +364,26 @@ class DispatchIntelligenceController extends Controller
             return $timeSlotConfig->time_slot_display;
         }
 
-        $defaultTimeSlot = SystemSetting::where('key', 'default_time_slot')->value('value') ?? '18:00-20:00';
+        // Use SystemSetting getter with fallback
+        $defaultTimeSlot = DispatchSimulationDefault::getValue('default_time_slot', SystemSetting::get('default_time_slot'));
 
-        // Fallback to database configuration or hardcoded default
+        // Fallback to first configured time slot or database configuration
         return TimeSlotConfiguration::orderBy('order')->first()?->time_slot_display ?? $defaultTimeSlot;
+    }
+
+    /**
+     * Get simulator default values from the database.
+     */
+    protected function getSimulationDefault(string $key, $default = null)
+    {
+        if (Schema::hasTable('dispatch_simulation_defaults')) {
+            $value = DispatchSimulationDefault::getValue($key, null);
+            if ($value !== null) {
+                return $value;
+            }
+        }
+
+        return SystemSetting::get($key, $default);
     }
 
     /**
@@ -372,9 +391,22 @@ class DispatchIntelligenceController extends Controller
      */
     public function fetchRoutesData($day, $timeSlot, $phase)
     {
-        $defaultThreshold = SystemSetting::where('key', 'default_demand_threshold')->value('value') ?? 20;
-        $yellowPercentage = SystemSetting::where('key', 'alert_yellow_percentage')->value('value') ?? 50;
-        $redPercentage = SystemSetting::where('key', 'alert_red_percentage')->value('value') ?? 100;
+        $defaultThreshold = (int) $this->getSimulationDefault('default_demand_threshold', 20);
+
+        // Prefer dedicated dispatch alert settings table; fall back to system settings
+        if (Schema::hasTable('dispatch_alert_settings')) {
+            $alertSettings = DispatchAlertSetting::latest()->first();
+        } else {
+            $alertSettings = null;
+        }
+
+        if ($alertSettings) {
+            $yellowPercentage = (int) $alertSettings->yellow_percentage;
+            $redPercentage = (int) $alertSettings->red_percentage;
+        } else {
+            $yellowPercentage = (int) SystemSetting::get('alert_yellow_percentage', 50);
+            $redPercentage = (int) SystemSetting::get('alert_red_percentage', 100);
+        }
 
         return Route::all()->map(function ($route) use ($day, $timeSlot, $defaultThreshold, $yellowPercentage, $redPercentage) {
             $autoCount = CommuterTrip::where('route_id', $route->id)->where('status', 'pending')->count();
