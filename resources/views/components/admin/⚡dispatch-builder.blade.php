@@ -27,7 +27,7 @@ new class extends Component
     public function loadData()
     {
         // 1. Fetch routes
-        $this->routes = Route::all()->map(function($r) {
+        $this->routes = Route::getAllCached()->map(function($r) {
             return [
                 'id' => $r->id,
                 'name' => $r->name . ' — ' . $r->description
@@ -88,12 +88,16 @@ new class extends Component
             $route = Route::findOrFail($this->selectedRoute);
  
             // 1. Update Bus status to active, assign route and driver
+            $firstStop = \App\Models\Stop::where('route_id', $route->id)
+                ->orderBy('sequence')
+                ->first();
+
             $bus->update([
-                'status' => 'active',
-                'route_id' => $route->id,
+                'status'      => 'active',
+                'route_id'    => $route->id,
                 'driver_name' => $this->selectedDriver,
-                'next_stop' => 'SPED Terminal (Caruncho Ave.)', // initial default stop
-                'eta' => 5
+                'next_stop'   => $firstStop?->name ?? \App\Models\Terminal::getDefaultName('SPED Terminal (Caruncho Ave.)'),
+                'eta'         => 5,
             ]);
  
             // 2. Update Driver status to active and assign bus and route

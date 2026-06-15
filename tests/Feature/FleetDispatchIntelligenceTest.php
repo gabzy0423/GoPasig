@@ -59,8 +59,10 @@ class FleetDispatchIntelligenceTest extends TestCase
     public function test_dispatcher_can_access_dispatch_intelligence(): void
     {
         $response = $this->actingAs($this->dispatcher)->get('/fleet/dispatch-intelligence');
-        $response->assertStatus(200);
-        $response->assertSeeLivewire('fleet.dispatch-intelligence');
+        $response->assertRedirect('/fleet/dashboard?tab=dispatch-intelligence');
+        
+        $dashboardResponse = $this->actingAs($this->dispatcher)->get('/fleet/dashboard?tab=dispatch-intelligence');
+        $dashboardResponse->assertStatus(200);
     }
 
     public function test_unauthorized_users_cannot_access_dispatch_intelligence(): void
@@ -80,43 +82,30 @@ class FleetDispatchIntelligenceTest extends TestCase
         $response->assertRedirect('/login');
     }
 
-    public function test_livewire_component_loads_successfully(): void
+    public function test_api_data_loads_successfully(): void
     {
-        $this->actingAs($this->dispatcher);
-
-        $expectedDay = Carbon::now()->englishDayOfWeek;
-        $hour = (int) Carbon::now()->format('G');
-        if ($hour >= 6 && $hour < 8) {
-            $expectedSlot = '06:00-08:00';
-        } elseif ($hour >= 8 && $hour < 12) {
-            $expectedSlot = '08:00-10:00';
-        } elseif ($hour >= 12 && $hour < 16) {
-            $expectedSlot = '12:00-14:00';
-        } elseif ($hour >= 16 && $hour < 18) {
-            $expectedSlot = '16:00-18:00';
-        } else {
-            $expectedSlot = '18:00-20:00';
-        }
-
-        Livewire::test('fleet.dispatch-intelligence')
-            ->assertSet('selectedPhase', 1)
-            ->assertSet('simulatedDay', $expectedDay)
-            ->assertSet('simulatedTimeSlot', $expectedSlot)
-            ->assertSee('Active Commuter Demand Board')
-            ->assertSee('Real-time Activity Simulator');
+        $response = $this->actingAs($this->dispatcher)->get('/fleet/api/dispatch-data');
+        $response->assertStatus(200);
+        $response->assertJsonStructure([
+            'routesData',
+            'activeAlerts',
+            'customThreshold',
+            'recentDispatches',
+            'historicalPatterns'
+        ]);
     }
 
-    public function test_livewire_can_update_threshold(): void
+    public function test_can_update_threshold(): void
     {
-        $this->actingAs($this->dispatcher);
+        $response = $this->actingAs($this->dispatcher)->post('/fleet/api/dispatch-save-threshold', [
+            'route_id' => $this->route->id,
+            'day' => Carbon::now()->englishDayOfWeek,
+            'time_slot' => '08:00-10:00',
+            'threshold' => 25,
+        ]);
 
-        // First set of thresholds is created in seeder, but let's test overriding it
-        Livewire::test('fleet.dispatch-intelligence')
-            ->set('selectedRouteId', $this->route->id)
-            ->set('customThreshold', 25)
-            ->call('saveThreshold')
-            ->assertHasNoErrors()
-            ->assertSee('Threshold successfully updated in database!');
+        $response->assertStatus(200);
+        $response->assertJson(['success' => true]);
 
         $this->assertDatabaseHas('demand_thresholds', [
             'route_id' => $this->route->id,
@@ -124,25 +113,23 @@ class FleetDispatchIntelligenceTest extends TestCase
         ]);
     }
 
-    public function test_livewire_can_simulate_commuter_activity(): void
+    public function test_can_simulate_commuter_activity(): void
     {
-        $this->actingAs($this->dispatcher);
+        $response = $this->actingAs($this->dispatcher)->post('/fleet/api/dispatch-add-commuter', [
+            'route_id' => $this->route->id,
+        ]);
 
-        Livewire::test('fleet.dispatch-intelligence')
-            ->call('addCommuter', $this->route->id)
-            ->call('addManualTicker', $this->route->id)
-            ->assertSet('simulatedManualCounts.' . $this->route->id, 1);
+        $response->assertStatus(200);
+        $response->assertJson(['success' => true]);
 
         $this->assertDatabaseHas('commuter_trips', [
             'route_id' => $this->route->id,
-            'status' => 'pending',
+            'status' => 'WAITING',
         ]);
     }
 
-    public function test_livewire_can_dispatch_bus_and_reset_queue(): void
+    public function test_can_dispatch_bus_and_reset_queue(): void
     {
-        $this->actingAs($this->dispatcher);
-
         // Seed an inactive bus and driver
         $bus = Bus::create([
             'plate_number' => 'PAS-555',
@@ -164,19 +151,27 @@ class FleetDispatchIntelligenceTest extends TestCase
         ]);
 
         // Seed commuter checking in
+        $token = 'test-token-123';
+        \App\Models\CommuterSession::create([
+            'session_token' => $token,
+            'expires_at' => now()->addHours(24),
+        ]);
+
         CommuterTrip::create([
+            'session_token' => $token,
             'route_id' => $this->route->id,
             'origin_stop_id' => $this->stop1->id,
             'destination_stop_id' => $this->stop2->id,
-            'status' => 'pending',
-            'timestamp' => now(),
+            'status' => 'WAITING',
+            'created_at' => now(),
         ]);
 
-        Livewire::test('fleet.dispatch-intelligence')
-            ->set('simulatedManualCounts.' . $this->route->id, 5)
-            ->call('dispatchNow', $this->route->id)
-            ->assertSee('Bus successfully dispatched')
-            ->assertSet('simulatedManualCounts.' . $this->route->id, 0);
+        $response = $this->actingAs($this->dispatcher)->post('/fleet/api/dispatch-now', [
+            'route_id' => $this->route->id,
+        ]);
+
+        $response->assertStatus(200);
+        $response->assertJson(['success' => true]);
 
         // Assert bus and driver are now active
         $bus->refresh();
@@ -185,10 +180,10 @@ class FleetDispatchIntelligenceTest extends TestCase
         $driver->refresh();
         $this->assertEquals('active', $driver->status);
 
-        // Assert pending commuter check-in is now boarded
+        // Assert pending commuter check-in is now boarded (ON_BUS)
         $this->assertDatabaseHas('commuter_trips', [
             'route_id' => $this->route->id,
-            'status' => 'boarded',
+            'status' => 'ON_BUS',
         ]);
 
         // Assert Dispatch Log exists
@@ -197,10 +192,11 @@ class FleetDispatchIntelligenceTest extends TestCase
 
     public function test_dispatch_fails_when_no_inactive_bus_or_driver_available(): void
     {
-        $this->actingAs($this->dispatcher);
+        $response = $this->actingAs($this->dispatcher)->post('/fleet/api/dispatch-now', [
+            'route_id' => $this->route->id,
+        ]);
 
-        Livewire::test('fleet.dispatch-intelligence')
-            ->call('dispatchNow', $this->route->id)
-            ->assertSee('No available buses or drivers');
+        $response->assertStatus(422);
+        $response->assertJsonFragment(['success' => false]);
     }
 }

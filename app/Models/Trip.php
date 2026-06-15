@@ -16,6 +16,7 @@ class Trip extends Model
         'driver_id',
         'route_id',
         'status',
+        'peak_passengers',
         'started_at',
         'ended_at',
     ];

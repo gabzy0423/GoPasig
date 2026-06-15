@@ -94,7 +94,7 @@ class ServiceAlertsPage extends Component
                 foreach ($names as $name) {
                     $routesList[] = [
                         'name' => $name,
-                        'color' => $routeColors[$name] ?? '#003F87',
+                        'color' => $routeColors[$name] ?? config('brand.route_color_default', '#003F87'),
                     ];
                 }
             }
@@ -142,7 +142,7 @@ class ServiceAlertsPage extends Component
                 foreach ($names as $name) {
                     $routesList[] = [
                         'name' => $name,
-                        'color' => $routeColors[$name] ?? '#003F87',
+                        'color' => $routeColors[$name] ?? config('brand.route_color_default', '#003F87'),
                     ];
                 }
             }

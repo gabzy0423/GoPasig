@@ -18,10 +18,8 @@
             <main class="flex-grow overflow-y-auto bg-white p-6 relative">
                 <div class="mx-auto w-full max-w-[1366px]">
 
-                    <!-- ==================== OVERVIEW SCREEN ==================== -->
                     @include('fleet.overview-content')
 
-                    <!-- ==================== MODULE SCREENS ==================== -->
                     @include('fleet.monitor.index')
 
                     @include('fleet.utilization.index')
@@ -41,6 +39,10 @@
                     @include('fleet.analytics.index')
 
                     @include('fleet.dispatch-intelligence.index')
+
+                    @include('fleet.commuter-trips.index')
+
+                    @include('fleet.commuter-sessions.index')
 
 
                     <!-- ==================== GENERIC PLACEHOLDER SCREEN ==================== -->
@@ -75,4 +77,5 @@
             scheduleCompliance: @json($scheduleCompliance)
         };
     </script>
+
 @endsection

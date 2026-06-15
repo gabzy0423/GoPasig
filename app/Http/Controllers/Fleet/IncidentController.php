@@ -113,7 +113,9 @@ class IncidentController extends Controller
             'reported_at' => now(),
         ]);
 
-        if ($validated['type'] === 'Breakdown') {
+        // If the incident type matches the configured breakdown type, flag bus for maintenance
+        $breakdownType = \App\Models\SystemSetting::get('incident_breakdown_type', 'Breakdown');
+        if ($validated['type'] === $breakdownType) {
             if ($trip && $trip->bus) {
                 $trip->bus->update(['status' => 'maintenance']);
             }
@@ -146,14 +148,17 @@ class IncidentController extends Controller
 
         $incident->update(['status' => $newStatus]);
 
-        // If it is resolved now, restore bus status
-        if ($newStatus === 'resolved' && $oldStatus !== 'resolved' && $oldType === 'Breakdown') {
+        // Resolve the breakdown sentinel from settings once
+        $breakdownType = \App\Models\SystemSetting::get('incident_breakdown_type', 'Breakdown');
+
+        // If resolved: restore bus status
+        if ($newStatus === 'resolved' && $oldStatus !== 'resolved' && $oldType === $breakdownType) {
             if ($incident->trip && $incident->trip->bus) {
                 $incident->trip->bus->update(['status' => 'active']);
             }
         }
-        // If it was resolved and is now reopened, set bus back to maintenance if it was a Breakdown
-        elseif ($newStatus !== 'resolved' && $oldStatus === 'resolved' && $oldType === 'Breakdown') {
+        // If reopened: re-apply maintenance status
+        elseif ($newStatus !== 'resolved' && $oldStatus === 'resolved' && $oldType === $breakdownType) {
             if ($incident->trip && $incident->trip->bus) {
                 $incident->trip->bus->update(['status' => 'maintenance']);
             }

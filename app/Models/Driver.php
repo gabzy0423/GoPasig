@@ -38,12 +38,17 @@ class Driver extends Model
         'pax_today' => 'integer',
     ];
 
-    protected $appends = ['initials'];
+    protected $appends = ['initials', 'name'];
 
     public function getInitialsAttribute()
     {
         return ($this->first_name ? strtoupper(substr($this->first_name, 0, 1)) : '') . 
                ($this->last_name ? strtoupper(substr($this->last_name, 0, 1)) : '');
+    }
+
+    public function getNameAttribute()
+    {
+        return trim(($this->first_name ?? '') . ' ' . ($this->last_name ?? ''));
     }
 
     public function user()

@@ -1,5 +1,18 @@
-<section id="screen-map-view" class="hidden space-y-5">
-                    <!-- Top Map Filters & Controls Bar -->
+<section id="screen-map-view" class="hidden space-y-5 animate-fade-in">
+
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Live Fleet Tracker</h1>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+            <span>Dashboard</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span>Fleet</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span class="text-slate-600 font-bold">Live Fleet Map</span>
+        </div>
+    </div>
+
+    <!-- Top Map Filters & Controls Bar -->
                     <div class="rounded-xl border border-[#E0E0E0] bg-white p-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)] flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
                         <!-- Left: Route Filters -->
                         <div class="flex flex-wrap items-center gap-2">

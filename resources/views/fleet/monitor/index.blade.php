@@ -1,4 +1,4 @@
-<section id="screen-monitor" class="hidden" style="display: none;">
+<section id="screen-monitor" class="hidden animate-fade-in" style="display: none;">
 <style>
     /* Custom Leaflet Map styling */
     #map {
@@ -116,17 +116,26 @@
 </style>
 
 <div class="h-full flex flex-col space-y-4">
-    <!-- PAGE TITLE ROW -->
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-2 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Live Fleet Tracker</h1>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+            <span>Dashboard</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span>Fleet</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span class="text-slate-600 font-bold">Live Monitor</span>
+        </div>
+    </div>
+
+    <!-- PAGE TITLE ROW / META FILTER CONTROLS -->
     <div class="flex items-center justify-between shrink-0">
-        <div>
-            <h1 class="text-[20px] font-medium text-[#001F44]">Fleet monitor</h1>
-            <div class="flex items-center gap-1.5 text-[13px] text-slate-500 mt-0.5">
-                <span class="font-mono-custom" id="bus-tracked-count">12 buses tracked</span>
-                <span class="text-slate-300">·</span>
-                <div class="flex items-center gap-1">
-                    <span class="pulse-dot"></span>
-                    <span>Live</span>
-                </div>
+        <div class="flex items-center gap-1.5 text-[13px] text-slate-500">
+            <span class="font-mono-custom" id="bus-tracked-count">12 buses tracked</span>
+            <span class="text-slate-300">·</span>
+            <div class="flex items-center gap-1">
+                <span class="pulse-dot"></span>
+                <span>Live</span>
             </div>
         </div>
 
@@ -154,7 +163,7 @@
     <!-- MAIN MONITOR GRID -->
     <div class="flex-grow flex gap-4 min-h-0">
         <!-- LEFT: MAP PANEL (68%) -->
-        <div class="w-[68%] bg-white border border-black/10 rounded-xl relative overflow-hidden flex flex-col h-[calc(100vh-160px)]">
+        <div class="w-[68%] bg-white border border-black/10 rounded-xl relative overflow-hidden flex flex-col h-[calc(100vh-220px)]">
             <!-- Map Canvas -->
             <div id="map" class="flex-grow"></div>
 
@@ -177,7 +186,7 @@
         </div>
 
         <!-- RIGHT: VEHICLE LIST PANEL (32%) -->
-        <div class="w-[32%] bg-white border border-black/10 rounded-xl flex flex-col h-[calc(100vh-160px)]">
+        <div class="w-[32%] bg-white border border-black/10 rounded-xl flex flex-col h-[calc(100vh-220px)]">
             <!-- Panel Header -->
             <div class="px-4 py-3 border-b border-black/10 flex items-center justify-between shrink-0">
                 <span class="text-[13px] font-semibold text-[#001F44]" id="list-header-count">12 vehicles</span>

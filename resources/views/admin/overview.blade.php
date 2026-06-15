@@ -1,4 +1,26 @@
-<section id="screen-overview" class="space-y-6">
+<section id="screen-overview" class="space-y-6 animate-fade-in">
+
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Fleet Operations Overview</h1>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+            <span>Dashboard</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span class="text-slate-600 font-bold">Overview</span>
+        </div>
+    </div>
+
+    @if(isset($missingThresholdKey) && $missingThresholdKey)
+    <x-ui.alerts variant="error" icon="exclamation-triangle" class="animate-fade-in-up">
+        <x-ui.alerts.heading>Warning</x-ui.alerts.heading>
+        <x-ui.alerts.description>The critical simulation setting <code>default_demand_threshold</code> is missing from the <code>dispatch_simulation_defaults</code> table. Please seed or configure this setting immediately.</x-ui.alerts.description>
+        <x-slot:controls>
+            <x-ui.button size="xs" color="red" onclick="switchScreen('settings')" class="cursor-pointer font-bold uppercase tracking-wider">
+                Configure Now
+            </x-ui.button>
+        </x-slot:controls>
+    </x-ui.alerts>
+    @endif
 
     <!-- ==================== SECTION 1: WELCOME HEADER + DATE/TIME STRIP ==================== -->
     <div class="flex flex-col md:flex-row md:items-center md:justify-between bg-[#003F87] p-5 sm:px-6 py-4 rounded-xl shadow-md gap-4 text-white">
@@ -31,10 +53,10 @@
             
             <!-- System Status Chip -->
             <div id="system-status-container">
-                <span class="inline-flex items-center gap-1 bg-[#E8F4E0] text-[#639922] font-bold px-3 py-1.5 rounded-lg uppercase text-[11px] tracking-wider shadow-sm">
-                    <span class="h-1.5 w-1.5 rounded-full bg-[#639922] animate-pulse"></span>
+                <x-ui.badge color="green" variant="outline" pill class="uppercase text-[11px] tracking-wider py-1.5 font-bold shadow-sm">
+                    <span class="h-1.5 w-1.5 rounded-full bg-[#639922] animate-pulse mr-1.5"></span>
                     Systems Nominal
-                </span>
+                </x-ui.badge>
             </div>
         </div>
     </div>
@@ -134,7 +156,7 @@
         <div class="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm flex flex-col h-[420px] hover:shadow-md transition-shadow">
             <div class="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
                 <span class="text-[12px] font-extrabold uppercase tracking-wider text-slate-800">Dispatch Queue</span>
-                <button onclick="switchScreen('dispatch')" class="text-[11px] font-extrabold uppercase tracking-wider text-[#003F87] hover:text-[#002D62] transition cursor-pointer">Manage Queue</button>
+                <x-ui.button variant="soft" size="xs" color="blue" onclick="switchScreen('dispatch')" class="text-[11px] font-extrabold uppercase tracking-wider cursor-pointer">Manage Queue</x-ui.button>
             </div>
             
             <!-- Dispatch List (Scrollable) -->
@@ -213,7 +235,7 @@
         <div class="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm flex flex-col h-[320px] hover:shadow-md transition-shadow">
             <div class="border-b border-slate-100 pb-3 shrink-0 flex items-center justify-between">
                 <span class="text-[12px] font-extrabold uppercase tracking-wider text-slate-800">Maintenance Schedule</span>
-                <button onclick="switchScreen('maintenance')" class="text-[11px] font-extrabold uppercase tracking-wider text-[#003F87] hover:text-[#002D62] transition cursor-pointer">View Records</button>
+                <x-ui.button variant="soft" size="xs" color="blue" onclick="switchScreen('maintenance')" class="text-[11px] font-extrabold uppercase tracking-wider cursor-pointer">View Records</x-ui.button>
             </div>
             
             <!-- Upcoming Alerts List -->

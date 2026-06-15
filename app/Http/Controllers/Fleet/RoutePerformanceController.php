@@ -9,6 +9,7 @@ use App\Models\Stop;
 use App\Models\Schedule;
 use App\Models\Incident;
 use App\Models\ColorPalette;
+use App\Models\SystemSetting;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -197,7 +198,14 @@ class RoutePerformanceController extends Controller
             for ($i = 1; $i < count($departures); $i++) {
                 $prev = strtotime($departures[$i - 1]);
                 $curr = strtotime($departures[$i]);
-                $diffMin = ($curr - $prev) / 60;
+                // Guard against midnight-crossing: if the stored value is a time-only
+                // string, strtotime() anchors both to today. A negative diff means the
+                // sequence wrapped past 00:00, so add one full day to the later value.
+                $diffSec = $curr - $prev;
+                if ($diffSec < 0) {
+                    $diffSec += 86400;
+                }
+                $diffMin = $diffSec / 60;
                 if ($diffMin > 0 && $diffMin < 200) {
                     $allHeadways[] = $diffMin;
                 }
@@ -221,12 +229,25 @@ class RoutePerformanceController extends Controller
         $incidentsAll = $incidentQuery->orderByDesc('created_at')->get();
         $deviationsCount = $incidentsAll->count();
 
+        // Resolve KPI targets dynamically from the routes table or system settings
+        $defaultOnTimeTarget = (int) SystemSetting::get('default_on_time_target', 85);
+        $defaultHeadwayTarget = (int) SystemSetting::get('default_headway_target', 15);
+
+        if ($selectedRoute !== 'all') {
+            $kpiRoute = Route::find($selectedRoute);
+            $onTimeTarget = $kpiRoute?->target_on_time_rate ?? $defaultOnTimeTarget;
+            $headwayTarget = $kpiRoute?->target_headway_minutes ?? $defaultHeadwayTarget;
+        } else {
+            $onTimeTarget = (int) round(Route::avg('target_on_time_rate') ?? $defaultOnTimeTarget);
+            $headwayTarget = (int) round(Route::avg('target_headway_minutes') ?? $defaultHeadwayTarget);
+        }
+
         $summary = (object) [
             'trips_completed' => $totalTrips,
             'on_time_rate' => $onTimeRate,
-            'on_time_target' => 85,
+            'on_time_target' => $onTimeTarget,
             'avg_headway' => $avgHeadway,
-            'headway_target' => 15,
+            'headway_target' => $headwayTarget,
             'deviations_count' => $deviationsCount,
             'stop_adherence_rate' => $stopAdherenceRate,
         ];
@@ -240,15 +261,20 @@ class RoutePerformanceController extends Controller
                 ->pluck('departure_time')
                 ->toArray();
 
-            $targetHeadway = 15;
+            $routeForHeadway = Route::find($routeId);
+            $targetHeadway = $routeForHeadway?->target_headway_minutes ?? 15;
             for ($i = 1; $i < count($departures); $i++) {
                 $prev = strtotime($departures[$i - 1]);
                 $curr = strtotime($departures[$i]);
-                $gap = round(($curr - $prev) / 60);
+                // Guard against midnight-crossing wrap-around on time-only strings.
+                $diffSec = $curr - $prev;
+                if ($diffSec < 0) {
+                    $diffSec += 86400;
+                }
+                $gap = round($diffSec / 60);
                 if ($gap > 0 && $gap < 200) {
-                    $route = Route::find($routeId);
                     $headwayData[] = [
-                        'trip_sequence' => 'Trip ' . $i . ($selectedRoute === 'all' ? ' (' . ($route ? $route->name : 'R' . $routeId) . ')' : ''),
+                        'trip_sequence' => 'Trip ' . $i . ($selectedRoute === 'all' ? ' (' . ($routeForHeadway ? $routeForHeadway->name : 'R' . $routeId) . ')' : ''),
                         'actual_headway' => $gap,
                         'target_headway' => $targetHeadway,
                     ];
@@ -259,7 +285,7 @@ class RoutePerformanceController extends Controller
         // 3. Schedule compliance
         $scheduleData = $baseQuery()
             ->orderBy('departure_time')
-            ->get(['id', 'route_id', 'departure_time', 'arrival_time', 'status', 'passengers']);
+            ->get(['id', 'route_id', 'departure_time', 'arrival_time', 'status', 'passengers', 'delay_minutes']);
 
         $scheduleCompliance = [];
         foreach ($scheduleData as $idx => $s) {
@@ -269,7 +295,7 @@ class RoutePerformanceController extends Controller
 
             $variance = match (strtolower((string) $s->status)) {
                 'on time' => 0,
-                'delayed' => rand(3, 12),
+                'delayed' => $s->delay_minutes ?: rand(3, 12),
                 'cancelled' => 20,
                 default => 0,
             };
@@ -363,11 +389,11 @@ class RoutePerformanceController extends Controller
             ];
         }
 
-        // 6. Route health score
+        // 6. Route health score — use dynamic headway target resolved above
         $onTimeScore = min(25, round($onTimeRate / 100 * 25));
-        $headwayScore = $avgHeadway > 0 && $avgHeadway <= 15
+        $headwayScore = $avgHeadway > 0 && $avgHeadway <= $headwayTarget
             ? 25
-            : ($avgHeadway > 0 ? max(0, round(25 - (($avgHeadway - 15) / 15) * 25)) : 20);
+            : ($avgHeadway > 0 ? max(0, round(25 - (($avgHeadway - $headwayTarget) / $headwayTarget) * 25)) : 20);
         $stopAdhScore = min(25, round($stopAdherenceRate / 100 * 25));
         $devScore = max(0, 25 - ($deviationsCount * 5));
         $overallScore = $onTimeScore + $headwayScore + $stopAdhScore + $devScore;

@@ -1,5 +1,6 @@
 @props([
     'breadcrumb' => 'Overview',
+    'icon'       => 'ti-bus',
 ])
 
 <header class="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-6 shrink-0 z-40">
@@ -7,9 +8,14 @@
         <button class="text-slate-500 hover:text-slate-800 md:hidden cursor-pointer" aria-label="Toggle navigation drawer" type="button">
             <i class="ti ti-menu-2 text-xl"></i>
         </button>
-        <h1 id="page-title" class="text-base font-extrabold tracking-tight text-slate-900 uppercase">
-            Fleet Ops / {{ $breadcrumb }}
-        </h1>
+
+        {{-- Branded static title --}}
+        <div class="flex items-center gap-2 select-none">
+            <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[#003F87] text-white shadow-sm">
+                <i class="ti ti-truck text-base"></i>
+            </div>
+            <span class="text-xs font-black uppercase tracking-wider text-slate-900">Fleet Dashboard</span>
+        </div>
     </div>
 
    

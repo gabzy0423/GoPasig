@@ -17,12 +17,16 @@ class DatabaseSeeder extends Seeder
         $this->call([
             UserSeeder::class,
             RouteSeeder::class,
+            TerminalSeeder::class,
             DriverSeeder::class,
             ScheduleSeeder::class,
             ServiceAlertSeeder::class,
             TripSeeder::class,
             DemandIntelligenceSeeder::class,
             SystemSettingSeeder::class,
+            ColorPaletteSeeder::class,
+            TimeSlotConfigurationSeeder::class,
+            DispatchSimulationDefaultsSeeder::class,
         ]);
     }
 }

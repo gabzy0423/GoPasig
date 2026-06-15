@@ -12,8 +12,20 @@
     ];
 @endphp
 
-<section id="screen-incidents" class="hidden" style="display: none;">
+<section id="screen-incidents" class="hidden animate-fade-in" style="display: none;">
 <div class="space-y-5 lg:space-y-6">
+
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Incident Reports</h1>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+            <span>Dashboard</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span>Operations</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span class="text-slate-600 font-bold">Incident Reports</span>
+        </div>
+    </div>
     
     <!-- Success/Error Alert Box -->
     <div id="incidents-alert" class="hidden p-3 bg-[#EAF3DE] border border-[#3B6D11] text-[#3B6D11] rounded-lg text-xs font-semibold flex items-center justify-between animate-fade-in-up">
@@ -24,12 +36,8 @@
         <button onclick="document.getElementById('incidents-alert').classList.add('hidden')" class="text-[#3B6D11] hover:opacity-80"><i class="ti ti-x"></i></button>
     </div>
 
-    <!-- Page Header and Filters -->
-    <section class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div class="space-y-1">
-            <h1 class="text-[22px] font-medium text-[#001F44]">Incidents</h1>
-            <p class="text-[14px] text-slate-500">Libreng Sakay Program - Pasig City</p>
-        </div>
+    <!-- Page Filters -->
+    <section class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-end">
         <div class="flex flex-wrap items-center gap-2 lg:justify-end">
             <div class="flex items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-2 text-[13px] text-slate-600">
                 <i class="ti ti-calendar text-slate-500"></i>

@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\ServiceAlert;
 use App\Models\Route;
+use App\Models\User;
+use App\Models\Driver;
+use App\Models\Schedule;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 
@@ -15,10 +18,46 @@ class ServiceAlertController extends Controller
      */
     public function index()
     {
-        $alerts = ServiceAlert::orderBy('created_at', 'desc')->get();
+        $alerts = ServiceAlert::withCount('reads')->orderBy('created_at', 'desc')->get();
+        
+        $totalCommuters = User::where('role', 'passenger')->count();
+        $totalDrivers = Driver::count();
+        
+        $routeACommuters = Schedule::where('route_id', 1)->sum('passengers') ?: (int) round($totalCommuters * 0.35);
+        $routeBCommuters = Schedule::where('route_id', 2)->sum('passengers') ?: (int) round($totalCommuters * 0.25);
+        $routeCCommuters = Schedule::where('route_id', 3)->sum('passengers') ?: (int) round($totalCommuters * 0.25);
+        
+        $routeADrivers = Driver::where('assigned_route', 1)->count() ?: (int) round($totalDrivers * 0.25);
+        $routeBDrivers = Driver::where('assigned_route', 2)->count() ?: (int) round($totalDrivers * 0.25);
+        $routeCDrivers = Driver::where('assigned_route', 3)->count() ?: (int) round($totalDrivers * 0.25);
+        
+        $stats = [
+            'total_commuters' => $totalCommuters,
+            'total_drivers' => $totalDrivers,
+            'route_stats' => [
+                'Route A' => [
+                    'commuters' => $routeACommuters,
+                    'drivers' => $routeADrivers
+                ],
+                'Route B' => [
+                    'commuters' => $routeBCommuters,
+                    'drivers' => $routeBDrivers
+                ],
+                'Route C' => [
+                    'commuters' => $routeCCommuters,
+                    'drivers' => $routeCDrivers
+                ],
+                'All routes' => [
+                    'commuters' => $totalCommuters,
+                    'drivers' => $totalDrivers
+                ]
+            ]
+        ];
+
         return response()->json([
             'success' => true,
-            'alerts' => $alerts
+            'alerts' => $alerts,
+            'stats' => $stats
         ]);
     }
 
@@ -229,5 +268,13 @@ class ServiceAlertController extends Controller
             'success' => true,
             'message' => 'Alert successfully deleted!'
         ]);
+    }
+
+    /**
+     * Show the service alerts history page.
+     */
+    public function history()
+    {
+        return redirect(route('admin.dashboard') . '#alerts-history');
     }
 }

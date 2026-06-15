@@ -42,7 +42,9 @@ class RouteStatusService
             ->whereIn('type', ['delay', 'maintenance'])
             ->exists();
 
-        $hasDelayedBuses = $activeBusesOnRoute->where('eta', '>=', Bus::DELAY_THRESHOLD)->isNotEmpty();
+        $hasDelayedBuses = $activeBusesOnRoute->filter(function ($bus) {
+            return $bus->eta >= $bus->getRouteDelayThreshold();
+        })->isNotEmpty();
 
         if ($hasActiveDelay || $hasDelayedBuses) {
             return 'Minor Delay';
@@ -70,7 +72,7 @@ class RouteStatusService
             return 'No Active Buses';
         } elseif ($routeIncidentCount > 0) {
             return 'Disrupted';
-        } elseif ($busesOnRoute < 2) {
+        } elseif ($busesOnRoute < ($route->min_buses_required ?? 2)) {
             return 'Low Coverage';
         } else {
             return 'On Track';

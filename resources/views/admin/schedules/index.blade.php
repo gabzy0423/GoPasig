@@ -3,18 +3,27 @@
     style="--color-background-primary:#ffffff;--color-background-secondary:#F8F7F4;--color-background-tertiary:#F4F3EF;--color-text-primary:#1A1917;--color-text-secondary:#5F5E5A;--color-border-secondary:#D6D3C9;--color-border-tertiary:#E8E6DF;">
 
     {{-- PAGE HEADER ROW --}}
-    <div class="rm-page-header">
-        <div class="rm-page-header-left">
-            <h1 class="rm-h1">Schedule & routes</h1>
-            <p class="rm-subtitle">Manage trip timetables, route configurations, and stop sequences</p>
-        </div>
-        <div class="rm-page-header-right">
-            <button id="btn-conflict-check-header" class="rm-btn-conflict" onclick="toggleConflictPanel()">
-                <i class="ti ti-alert-triangle"></i> Conflict check
-            </button>
-            <button class="rm-btn-primary" onclick="openScheduleModal('create')">
-                <i class="ti ti-plus"></i> Create schedule
-            </button>
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+                <h1 class="text-xl font-bold text-slate-900">Schedule & Routes</h1>
+                <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+                    <span>Dashboard</span>
+                    <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+                    <span>Operations</span>
+                    <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+                    <span class="text-slate-600 font-bold">Schedule & Routes</span>
+                </div>
+                <p class="text-[11px] text-slate-505 font-semibold mt-1">Manage trip timetables, route configurations, and stop sequences</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="switchScreen('schedules-conflict'); return false;" id="btn-conflict-check-header" class="rm-btn-conflict flex items-center justify-center gap-1.5 hover:scale-[1.02] active:scale-[0.98] transition-all border-none">
+                    <i class="ti ti-alert-triangle"></i> Conflict check
+                </button>
+                <button onclick="openCreateScheduleForm(null, null); return false;" class="rm-btn-primary flex items-center justify-center gap-1.5 hover:scale-[1.02] active:scale-[0.98] transition-all border-none">
+                    <i class="ti ti-plus"></i> Create schedule
+                </button>
+            </div>
         </div>
     </div>
 
@@ -47,7 +56,7 @@
                 <button class="rm-btn-outline rm-btn-sm" onclick="exportScheduleCSV()">
                     <i class="ti ti-download"></i> Export schedule
                 </button>
-                <button class="rm-btn-primary rm-btn-sm" onclick="openScheduleModal('create')">
+                <button onclick="openCreateScheduleForm(null, null); return false;" class="rm-btn-primary rm-btn-sm flex items-center justify-center gap-1 hover:scale-[1.02] active:scale-[0.98] transition-all border-none">
                     <i class="ti ti-plus"></i> Create schedule
                 </button>
             </div>
@@ -62,34 +71,7 @@
             </div>
         </div>
 
-        {{-- 4A. CONFLICT DETECTION PANEL (INLINE VERSION) --}}
-        <div id="conflict-inline-panel" class="rm-card rm-conflict-panel-card mt-4">
-            <div class="rm-conflict-panel-header">
-                <div class="rm-conflict-header-left">
-                    <i class="ti ti-alert-triangle icon-amber"></i>
-                    <span class="rm-panel-title">Conflict check</span>
-                    <span class="rm-badge-amber" id="inline-conflict-count">0 conflicts found</span>
-                </div>
-                <div class="rm-conflict-header-right">
-                    <button class="rm-btn-outline-amber rm-btn-xs" onclick="resolveAllConflicts()">Resolve all</button>
-                    <button class="rm-btn-outline rm-btn-xs" onclick="reScanConflicts()">
-                        <i class="ti ti-refresh"></i> Re-scan
-                    </button>
-                    <button class="rm-icon-btn-close" onclick="closeInlineConflictPanel()"><i
-                            class="ti ti-x"></i></button>
-                </div>
-            </div>
-
-            <div class="rm-conflict-summary-row">
-                <span class="rm-badge-red" id="inline-stat-driver-conflict">0 driver conflicts</span>
-                <span class="rm-badge-amber" id="inline-stat-bus-conflict">0 bus conflicts</span>
-                <span class="rm-badge-green" id="inline-stat-maint-conflict">0 gap conflicts</span>
-            </div>
-
-            <div class="rm-conflict-list" id="inline-conflict-list">
-                {{-- Loaded by JS --}}
-            </div>
-        </div>
+        {{-- 4A. CONFLICT DETECTION PANEL (INLINE VERSION REMOVED) --}}
 
         {{-- 2B. UPCOMING TRIPS TODAY LIST --}}
         <div class="rm-section-label">Upcoming trips today</div>
@@ -179,179 +161,10 @@
     </div>
 
 
-    {{-- ==================== SECTION 4: CONFLICT DETECTION PANEL (SLIDE-IN SIDE VERSION) ==================== --}}
-    <div id="conflict-sliding-overlay" class="rm-drawer-overlay hidden" onclick="toggleConflictPanel()"></div>
-    <aside id="conflict-sliding-drawer" class="rm-drawer">
-        <div class="rm-drawer-inner">
-            <div class="rm-drawer-top-bar">
-                <div class="flex items-center gap-2">
-                    <i class="ti ti-alert-triangle icon-amber" style="font-size:18px;"></i>
-                    <span class="rm-drawer-title">Conflict check</span>
-                    <span class="rm-badge-amber" id="slide-conflict-count">0 conflicts found</span>
-                </div>
-                <button class="rm-icon-btn-close-large" onclick="toggleConflictPanel()" title="Close">
-                    <i class="ti ti-x"></i>
-                </button>
-            </div>
-
-            <div class="rm-drawer-content">
-                <div class="rm-conflict-summary-row px-4 py-3 bg-slate-50 border-b border-slate-100 flex gap-2">
-                    <span class="rm-badge-red" id="slide-stat-driver-conflict">0 Driver</span>
-                    <span class="rm-badge-amber" id="slide-stat-bus-conflict">0 Bus</span>
-                </div>
-
-                <div
-                    class="rm-drawer-resolve-row px-4 py-2 border-b border-slate-100 flex justify-between items-center bg-white">
-                    <button class="rm-btn-outline-amber rm-btn-xs" onclick="resolveAllConflicts()">Resolve all</button>
-                    <button class="rm-btn-outline rm-btn-xs" onclick="reScanConflicts()">
-                        <i class="ti ti-refresh"></i> Re-scan
-                    </button>
-                </div>
-
-                <div class="rm-conflict-list" id="slide-conflict-list">
-                    {{-- Populated by JS --}}
-                </div>
-            </div>
-        </div>
-    </aside>
+    {{-- ==================== SECTION 4: CONFLICT DETECTION PANEL (SLIDE-IN SIDE VERSION REMOVED) ==================== --}}
 
 
-    {{-- ==================== MODAL 2C: CREATE / EDIT SCHEDULE MODAL ==================== --}}
-    <div id="rm-schedule-modal" class="rm-modal-overlay hidden">
-        <div class="rm-modal-card">
-            {{-- Modal Header --}}
-            <div class="rm-modal-header">
-                <span id="rm-modal-title" class="rm-modal-title-text">Create new schedule</span>
-                <button class="rm-modal-close-btn" onclick="closeScheduleModal()"><i class="ti ti-x"></i></button>
-            </div>
 
-            {{-- Modal Body --}}
-            <div class="rm-modal-body">
-                <form id="rm-schedule-form" onsubmit="handleScheduleSubmit(event)" novalidate class="rm-form-layout">
-
-                    {{-- 1. Route --}}
-                    <div class="rm-form-field">
-                        <label class="rm-form-label" for="sf-route">Route</label>
-                        <div class="rm-select-wrapper">
-                            <select class="rm-form-select" id="sf-route" onchange="onModalRouteSelectChange()">
-                                {{-- Populated dynamically --}}
-                            </select>
-                        </div>
-                    </div>
-
-                    {{-- 2. Bus --}}
-                    <div class="rm-form-field">
-                        <label class="rm-form-label" for="sf-bus">Bus</label>
-                        <div class="rm-select-wrapper">
-                            <select class="rm-form-select" id="sf-bus" onchange="checkFormConflicts()">
-                                {{-- Populated by JS --}}
-                            </select>
-                        </div>
-                    </div>
-
-                    {{-- 3. Driver --}}
-                    <div class="rm-form-field">
-                        <label class="rm-form-label" for="sf-driver">Driver</label>
-                        <div class="rm-select-wrapper">
-                            <select class="rm-form-select" id="sf-driver" onchange="checkFormConflicts()">
-                                {{-- Populated by JS --}}
-                            </select>
-                        </div>
-                        <div id="sf-driver-expiry-warning" class="rm-license-expiry-warning-text hidden">
-                            ⚠ License expiring Dec 12
-                        </div>
-                    </div>
-
-                    {{-- CONFLICT WARNING --}}
-                    <div id="modal-conflict-warning-card" class="rm-conflict-warning-card hidden">
-                        <div class="flex gap-2.5">
-                            <i class="ti ti-alert-triangle icon-amber" style="font-size:16px;margin-top:2px;"></i>
-                            <span id="modal-conflict-warning-text">
-                                No conflicts detected.
-                            </span>
-                        </div>
-                    </div>
-
-                    {{-- 4. Departure time --}}
-                    <div class="rm-form-field">
-                        <label class="rm-form-label" for="sf-departure">Departure time</label>
-                        <input class="rm-form-input" id="sf-departure" type="time" oninput="onDepartureTimeChange()"
-                            required>
-                    </div>
-
-                    {{-- 5. Estimated arrival time --}}
-                    <div class="rm-form-field">
-                        <label class="rm-form-label" for="sf-arrival">Estimated arrival time</label>
-                        <input class="rm-form-input" id="sf-arrival" type="time" oninput="onArrivalTimeManualEdit()">
-                        <div id="sf-arrival-helper" class="rm-helper-text">
-                            Based on average route duration
-                        </div>
-                    </div>
-
-                    {{-- 6. Days (Checkbox Row) --}}
-                    <div class="rm-form-field">
-                        <label class="rm-form-label">Days</label>
-                        <div class="rm-day-pill-row">
-                            <label class="rm-day-pill-toggle">
-                                <input type="checkbox" id="day-M" checked>
-                                <span>M</span>
-                            </label>
-                            <label class="rm-day-pill-toggle">
-                                <input type="checkbox" id="day-T" checked>
-                                <span>T</span>
-                            </label>
-                            <label class="rm-day-pill-toggle">
-                                <input type="checkbox" id="day-W" checked>
-                                <span>W</span>
-                            </label>
-                            <label class="rm-day-pill-toggle">
-                                <input type="checkbox" id="day-Th" checked>
-                                <span>Th</span>
-                            </label>
-                            <label class="rm-day-pill-toggle">
-                                <input type="checkbox" id="day-F" checked>
-                                <span>F</span>
-                            </label>
-                            <label class="rm-day-pill-toggle">
-                                <input type="checkbox" id="day-Sa">
-                                <span>Sa</span>
-                            </label>
-                            <label class="rm-day-pill-toggle">
-                                <input type="checkbox" id="day-Su">
-                                <span>Su</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    {{-- 7. Repeat --}}
-                    <div class="rm-form-field">
-                        <label class="rm-form-label" for="sf-repeat">Repeat</label>
-                        <div class="rm-select-wrapper">
-                            <select class="rm-form-select" id="sf-repeat">
-                                <option value="One-time">One-time</option>
-                                <option value="Daily">Daily</option>
-                                <option value="Weekly" selected>Weekly</option>
-                                <option value="Custom">Custom</option>
-                            </select>
-                        </div>
-                    </div>
-
-                </form>
-            </div>
-
-            {{-- Modal Footer --}}
-            <div class="rm-modal-footer">
-                <button id="sf-delete-btn" class="rm-btn-link-danger hidden" onclick="handleDeleteSchedule()">Delete
-                    entry</button>
-                <div class="flex gap-2 ml-auto">
-                    <button class="rm-btn-outline rm-btn-sm" onclick="closeScheduleModal()">Cancel</button>
-                    <button class="rm-btn-primary rm-btn-sm" onclick="handleScheduleSubmit(event)">
-                        <i class="ti ti-check"></i> Save schedule
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
 
 
     {{-- ==================== MODAL 4B: RESOLVE CONFLICT MODAL ==================== --}}
@@ -776,16 +589,20 @@
         background: var(--color-background-secondary);
     }
 
-    .rm-grid-label-a {
+    .rm-grid-label-1 {
         color: #003F87;
     }
 
-    .rm-grid-label-b {
+    .rm-grid-label-2 {
         color: #3B6D11;
     }
 
-    .rm-grid-label-c {
+    .rm-grid-label-3 {
         color: #854F0B;
+    }
+
+    .rm-grid-label-4 {
+        color: #A32D2D;
     }
 
     /* Empty Grid Intersection Cells */
@@ -835,31 +652,40 @@
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
     }
 
-    .rm-trip-a {
+    .rm-trip-1 {
         background: #E6F1FB;
         border-left: 3px solid #003F87;
     }
 
-    .rm-trip-a .rm-trip-line1 {
+    .rm-trip-1 .rm-trip-line1 {
         color: #0C447C;
     }
 
-    .rm-trip-b {
+    .rm-trip-2 {
         background: #EAF3DE;
         border-left: 3px solid #3B6D11;
     }
 
-    .rm-trip-b .rm-trip-line1 {
+    .rm-trip-2 .rm-trip-line1 {
         color: #3B6D11;
     }
 
-    .rm-trip-c {
+    .rm-trip-3 {
         background: #FAEEDA;
         border-left: 3px solid #854F0B;
     }
 
-    .rm-trip-c .rm-trip-line1 {
+    .rm-trip-3 .rm-trip-line1 {
         color: #854F0B;
+    }
+
+    .rm-trip-4 {
+        background: #FCEBEB;
+        border-left: 3px solid #E24B4A;
+    }
+
+    .rm-trip-4 .rm-trip-line1 {
+        color: #A32D2D;
     }
 
     /* Conflict Block overrides */
@@ -1013,19 +839,24 @@
         min-width: 54px;
     }
 
-    .rm-badge-pill.a {
+    .rm-badge-pill.route-1 {
         background: #E6F1FB;
         color: #0C447C;
     }
 
-    .rm-badge-pill.b {
+    .rm-badge-pill.route-2 {
         background: #EAF3DE;
         color: #3B6D11;
     }
 
-    .rm-badge-pill.c {
+    .rm-badge-pill.route-3 {
         background: #FAEEDA;
         color: #854F0B;
+    }
+
+    .rm-badge-pill.route-4 {
+        background: #FCEBEB;
+        color: #A32D2D;
     }
 
     .rm-time-txt {

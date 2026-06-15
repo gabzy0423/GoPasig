@@ -9,6 +9,7 @@ use App\Models\Schedule;
 use App\Models\Incident;
 use App\Models\Route;
 use App\Models\ColorPalette;
+use App\Services\DriverPerformanceService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -256,7 +257,7 @@ class DriverPerformanceController extends Controller
             $assignedRouteName = $assignedRouteId && $routes->has($assignedRouteId)
                 ? $routes->get($assignedRouteId)->name
                 : 'Unassigned';
-            $routeColor = $assignedRouteId
+            $routeColor = ($assignedRouteId && count($colorPalette) > 0)
                 ? ($colorPalette[($assignedRouteId - 1) % count($colorPalette)])
                 : '#94a3b8';
 
@@ -286,7 +287,12 @@ class DriverPerformanceController extends Controller
                 'total_passengers_moved' => $totalPax,
                 'incidents' => $totalIncidents,
                 'avg_trip_time_minutes' => $avgDuration,
-                'performance_score' => (float) $drv->performance_score,
+                'performance_score' => DriverPerformanceService::calculateScore(
+                    $drv->id,
+                    $start,
+                    $end,
+                    (float) $drv->performance_score
+                ),
             ];
         }
 

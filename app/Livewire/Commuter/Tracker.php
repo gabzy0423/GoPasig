@@ -7,6 +7,7 @@ use App\Models\Route;
 use App\Models\Bus;
 use App\Models\ServiceAlert;
 use App\Models\Schedule;
+use App\Services\GPSKalmanFilter;
 
 class Tracker extends Component
 {
@@ -41,11 +42,11 @@ class Tracker extends Component
             ->get();
 
         // 2. Fetch routes
-        $routes = Route::all();
+        $routes = Route::getAllCached();
 
         // 3. Fetch active buses
         $busesQuery = Bus::with(['route', 'route.stops'])
-            ->where('status', 'active');
+            ->whereIn('status', ['active', 'breakdown', 'maintenance']);
 
         if ($this->selectedRouteId) {
             $busesQuery->where('route_id', $this->selectedRouteId);
@@ -53,23 +54,23 @@ class Tracker extends Component
 
         $activeBuses = $busesQuery->get()->map(function ($bus) {
             // Route color: read from the database column
-            $color = $bus->route?->color ?: '#888780';
+            $color = $bus->route?->color ?: config('brand.route_color_unassigned', '#888780');
 
             // Determine status
-            $status = 'active';
-            if ($bus->eta >= Bus::getDelayThreshold() && $bus->speed > 0) {
-                $status = 'delayed';
-            } elseif ($bus->speed == 0 && $bus->passengers == 0) {
-                $status = 'idle';
-            } elseif ($bus->status === 'maintenance') {
-                $status = 'breakdown';
+            $status = $bus->status;
+            if ($status === 'active') {
+                if ($bus->eta >= $bus->getRouteDelayThreshold() && $bus->speed > 0) {
+                    $status = 'delayed';
+                } elseif ($bus->speed == 0 && $bus->passengers == 0) {
+                    $status = 'idle';
+                }
             }
 
             // Driver name: prefer bus->driver_name, then look up Driver model by plate
             $driverName = $bus->driver_name;
             if (!$driverName) {
                 $driver = \App\Models\Driver::where('assigned_bus', $bus->plate_number)->first();
-                $driverName = $driver?->name ?? 'No Driver Assigned';
+                $driverName = $driver ? (trim(($driver->first_name ?? '') . ' ' . ($driver->last_name ?? '')) ?: 'No Driver Assigned') : 'No Driver Assigned';
             }
 
             return (object) [
@@ -86,6 +87,8 @@ class Tracker extends Component
                 'lng'            => (float) $bus->lng,
                 'driver_name'    => $driverName,
                 'speed'          => $bus->speed ?: 0,
+                'is_simulated'   => (bool) $bus->is_simulated,
+                'updated_at'     => $bus->updated_at ? $bus->updated_at->toIso8601String() : now()->toIso8601String(),
             ];
         });
 
@@ -115,7 +118,46 @@ class Tracker extends Component
                     'distance_km' => $minDistance,
                     'passenger_count' => $closest->passenger_count,
                     'capacity' => $closest->capacity,
+                    'is_simulated' => $closest->is_simulated,
+                    'updated_at' => $closest->updated_at,
                 ];
+            }
+        }
+
+        // 5. Calculate breakdown and maintenance alerts for active commuter session
+        $sessionToken = request()->cookie('commuter_session_token');
+        $breakdownAlert = null;
+        $maintenanceAlert = null;
+        if ($sessionToken) {
+            $tripObj = \App\Models\CommuterTrip::where('session_token', $sessionToken)
+                ->whereIn('status', ['WAITING', 'ON_BUS'])
+                ->first();
+            if ($tripObj) {
+                if ($tripObj->status === 'ON_BUS') {
+                    if ($tripObj->bus_id) {
+                        $busObj = \App\Models\Bus::find($tripObj->bus_id);
+                        if ($busObj) {
+                            if ($busObj->status === 'breakdown') {
+                                $breakdownAlert = "Breakdown detected — please alight safely. Rescue bus incoming.";
+                            } elseif ($busObj->status === 'maintenance') {
+                                $maintenanceAlert = "Pasensya na — ang inyong bus ay may maintenance issue. Mangyaring bumaba sa susunod na hintuan.";
+                            }
+                        }
+                    } else {
+                        $anyBroken = \App\Models\Bus::where('route_id', $tripObj->route_id)->where('status', 'breakdown')->exists();
+                        $anyMaint = \App\Models\Bus::where('route_id', $tripObj->route_id)->where('status', 'maintenance')->exists();
+                        if ($anyBroken) {
+                            $breakdownAlert = "Breakdown detected — please alight safely. Rescue bus incoming.";
+                        } elseif ($anyMaint) {
+                            $maintenanceAlert = "Pasensya na — ang inyong bus ay may maintenance issue. Mangyaring bumaba sa susunod na hintuan.";
+                        }
+                    }
+                } elseif ($tripObj->status === 'WAITING') {
+                    $isAnyBusBroken = \App\Models\Bus::where('route_id', $tripObj->route_id)->where('status', 'breakdown')->exists();
+                    if ($isAnyBusBroken) {
+                        $breakdownAlert = "Bus breakdown — please wait for next available bus";
+                    }
+                }
             }
         }
 
@@ -128,16 +170,14 @@ class Tracker extends Component
             'activeBuses' => $activeBuses,
             'nearestBus' => $nearestBus,
             'selectedRoute' => $this->selectedRouteId ? Route::find($this->selectedRouteId) : null,
+            'breakdownAlert' => $breakdownAlert,
+            'maintenanceAlert' => $maintenanceAlert,
         ]);
     }
 
-    private function calculateDistance($lat1, $lng1, $lat2, $lng2)
+    // Delegate to GPSKalmanFilter; convert meters to km to match the distance_km usage in nearestBus.
+    private function calculateDistance($lat1, $lng1, $lat2, $lng2): float
     {
-        $earthRadius = 6371; // km
-        $dLat = deg2rad($lat2 - $lat1);
-        $dLng = deg2rad($lng2 - $lng1);
-        $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng/2) * sin($dLng/2);
-        $c = 2 * atan2(sqrt($a), sqrt(1-$a));
-        return round($earthRadius * $c, 1);
+        return round(GPSKalmanFilter::calculateDistance($lat1, $lng1, $lat2, $lng2) / 1000, 1);
     }
 }

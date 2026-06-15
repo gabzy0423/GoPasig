@@ -1,11 +1,18 @@
-<section id="screen-utilization" class="hidden" style="display: none;">
+<section id="screen-utilization" class="hidden animate-fade-in" style="display: none;">
 <div class="space-y-5">
 
-    <!-- PAGE TITLE ROW -->
-    <div class="flex items-center justify-between">
-        <div>
-            <h1 class="text-[20px] font-medium text-[#001F44]">Fleet utilization</h1>
-            <p class="text-[13px] text-slate-500 mt-0.5">Last 30 days · {{ \Carbon\Carbon::now('Asia/Manila')->format('M d, Y') }}</p>
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Fleet Utilization</h1>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+                <span>Dashboard</span>
+                <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+                <span>Fleet</span>
+                <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+                <span class="text-slate-600 font-bold">Fleet Utilization</span>
+            </div>
+            <p class="text-[11px] font-semibold text-slate-400">Last 30 days · {{ \Carbon\Carbon::now('Asia/Manila')->format('M d, Y') }}</p>
         </div>
     </div>
 

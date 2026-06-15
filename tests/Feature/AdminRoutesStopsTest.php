@@ -57,6 +57,29 @@ class AdminRoutesStopsTest extends TestCase
         $this->assertSame('Updated endpoints', $route->description);
     }
 
+    public function test_admin_can_update_route_kpi_targets(): void
+    {
+        $this->actingAsAdmin();
+
+        $route = Route::create([
+            'name' => 'Route 99',
+            'description' => 'Original endpoints',
+            'polyline_coordinates' => [[14.5593, 121.0805], [14.5620, 121.0820]],
+            'status' => 'Active',
+            'target_on_time_rate' => 85,
+            'target_headway_minutes' => 15,
+        ]);
+
+        $this->putJson("/admin/api/routes/{$route->id}", [
+            'target_on_time_rate' => 92,
+            'target_headway_minutes' => 12,
+        ])->assertOk()->assertJsonPath('success', true);
+
+        $route->refresh();
+        $this->assertEquals(92, $route->target_on_time_rate);
+        $this->assertEquals(12, $route->target_headway_minutes);
+    }
+
     public function test_admin_can_add_reorder_and_delete_stops(): void
     {
         $this->actingAsAdmin();

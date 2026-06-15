@@ -20,15 +20,35 @@ function initAnalyticsDashboard() {
 
     // 2. Initialize Chart 1: Hourly grouped bar chart (2A)
     let hourlyLabels = ["5 AM", "6 AM", "7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
-    let routeAData = [28, 67, 142, 118, 78, 52, 44, 61, 55, 48, 64, 89, 134, 128, 87, 52, 31, 14];
-    let routeBData = [18, 45, 108, 95, 62, 38, 35, 48, 42, 37, 51, 71, 102, 97, 65, 39, 22, 9];
-    let routeCData = [14, 31, 72, 64, 41, 27, 22, 33, 29, 25, 36, 48, 68, 64, 44, 26, 16, 7];
+    let datasets = [];
+
+    // Extract dynamic route names
+    let routeNames = [];
+    if (typeof routeComparisonData !== 'undefined' && routeComparisonData && routeComparisonData.length > 0) {
+        routeNames = routeComparisonData.map(r => r.route);
+    } else if (typeof hourlyRidershipData !== 'undefined' && hourlyRidershipData && hourlyRidershipData.length > 0) {
+        routeNames = Object.keys(hourlyRidershipData[0]).filter(k => k !== 'hour');
+    }
 
     if (typeof hourlyRidershipData !== 'undefined' && hourlyRidershipData && hourlyRidershipData.length > 0) {
         hourlyLabels = hourlyRidershipData.map(d => d.hour);
-        routeAData = hourlyRidershipData.map(d => d['Route A'] || 0);
-        routeBData = hourlyRidershipData.map(d => d['Route B'] || 0);
-        routeCData = hourlyRidershipData.map(d => d['Route C'] || 0);
+        datasets = routeNames.map((name, idx) => {
+            const rObj = routeComparisonData.find(r => r.route === name);
+            const color = rObj?.color || ['#003F87', '#639922', '#BA7517', '#E24B4A'][idx % 4];
+            return {
+                label: name,
+                data: hourlyRidershipData.map(d => d[name] || 0),
+                backgroundColor: color,
+                borderRadius: 2
+            };
+        });
+    } else {
+        // Fallback mock static datasets
+        datasets = [
+            { label: 'Route A', data: [28, 67, 142, 118, 78, 52, 44, 61, 55, 48, 64, 89, 134, 128, 87, 52, 31, 14], backgroundColor: '#003F87', borderRadius: 2 },
+            { label: 'Route B', data: [18, 45, 108, 95, 62, 38, 35, 48, 42, 37, 51, 71, 102, 97, 65, 39, 22, 9], backgroundColor: '#639922', borderRadius: 2 },
+            { label: 'Route C', data: [14, 31, 72, 64, 41, 27, 22, 33, 29, 25, 36, 48, 68, 64, 44, 26, 16, 7], backgroundColor: '#BA7517', borderRadius: 2 }
+        ];
     }
 
     const ctxHourly = document.getElementById('hourly-ridership-chart').getContext('2d');
@@ -37,26 +57,7 @@ function initAnalyticsDashboard() {
         type: 'bar',
         data: {
             labels: hourlyLabels,
-            datasets: [
-                {
-                    label: 'Route A',
-                    data: routeAData,
-                    backgroundColor: '#003F87',
-                    borderRadius: 2
-                },
-                {
-                    label: 'Route B',
-                    data: routeBData,
-                    backgroundColor: '#639922',
-                    borderRadius: 2
-                },
-                {
-                    label: 'Route C',
-                    data: routeCData,
-                    backgroundColor: '#BA7517',
-                    borderRadius: 2
-                }
-            ]
+            datasets: datasets
         },
         options: {
             responsive: true,
@@ -119,14 +120,14 @@ function initAnalyticsDashboard() {
     });
 
     // 3. Initialize Chart 2: Route Doughnut (2B)
+    let doughnutLabels = ['Route A', 'Route B', 'Route C'];
+    let doughnutColors = ['#003F87', '#639922', '#BA7517'];
     let doughnutData = [532, 421, 331];
+
     if (typeof routeComparisonData !== 'undefined' && routeComparisonData && routeComparisonData.length > 0) {
-        doughnutData = [0, 0, 0];
-        routeComparisonData.forEach(r => {
-            if (r.route === 'Route A') doughnutData[0] = r.pax;
-            if (r.route === 'Route B') doughnutData[1] = r.pax;
-            if (r.route === 'Route C') doughnutData[2] = r.pax;
-        });
+        doughnutLabels = routeComparisonData.map(r => r.route);
+        doughnutColors = routeComparisonData.map((r, idx) => r.color || ['#003F87', '#639922', '#BA7517', '#E24B4A'][idx % 4]);
+        doughnutData = routeComparisonData.map(r => r.pax);
     }
 
     const ctxDoughnut = document.getElementById('route-doughnut-chart').getContext('2d');
@@ -134,10 +135,10 @@ function initAnalyticsDashboard() {
     charts['doughnut'] = new Chart(ctxDoughnut, {
         type: 'doughnut',
         data: {
-            labels: ['Route A', 'Route B', 'Route C'],
+            labels: doughnutLabels,
             datasets: [{
                 data: doughnutData,
-                backgroundColor: ['#003F87', '#639922', '#BA7517'],
+                backgroundColor: doughnutColors,
                 borderWidth: 2,
                 borderColor: '#FFFFFF'
             }]
@@ -231,6 +232,26 @@ function initAnalyticsDashboard() {
         { color: '#E24B4A', style: 'rectRot', dash: [10, 5], radius: 5 }
     ];
 
+    // Helper function to extract and format 12-hour display hour (e.g. "5 AM", "12 PM", "1 PM") from depTime (e.g. "5:00 AM", "13:15" or "1:30 PM")
+    function getHourLabelFromDepTime(depTimeStr) {
+        if (!depTimeStr) return null;
+        const match = depTimeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+        if (!match) return null;
+        let hour = parseInt(match[1]);
+        const ampm = match[3] ? match[3].toUpperCase() : null;
+
+        if (ampm) {
+            // It's 12-hour format with AM/PM
+            return `${hour} ${ampm}`;
+        } else {
+            // It's 24-hour format
+            const ampm24 = hour >= 12 ? 'PM' : 'AM';
+            let hr12 = hour % 12;
+            if (hr12 === 0) hr12 = 12;
+            return `${hr12} ${ampm24}`;
+        }
+    }
+
     // Group by bus plate
     const activePlates = [...new Set(tripData.map(t => t.plate))].slice(0, 4);
 
@@ -238,11 +259,12 @@ function initAnalyticsDashboard() {
         activePlates.forEach((plate, i) => {
             const config = timelineConfig[i] || timelineConfig[0];
             const dataPoints = timelineLabels.map(hourStr => {
-                const trip = tripData.find(t => t.plate === plate && t.depTime.includes(hourStr));
+                const trip = tripData.find(t => {
+                    if (t.plate !== plate) return false;
+                    const parsedHr = getHourLabelFromDepTime(t.depTime);
+                    return parsedHr === hourStr;
+                });
                 if (trip) return trip.peakLoad;
-                
-                // Return null for hours with no trip data — Chart.js draws a gap
-                // instead of filling with random noise that jitters on every render.
                 return null;
             });
 
@@ -364,32 +386,57 @@ function initAnalyticsDashboard() {
     });
 
     // 6. Initialize Chart 5: 30-Day Historical Trend (4C)
-    let trendA = [];
-    let trendB = [];
-    let trendC = [];
-    let totalTrend = [];
     let trendLabels = [];
+    let trendDatasets = [];
     let todayPax = 1284;
+
+    if (typeof kpisData !== 'undefined' && kpisData && kpisData.total_pax_today) {
+        todayPax = parseInt(kpisData.total_pax_today.replace(/,/g, '')) || 1284;
+    }
 
     if (typeof historicalTrendData !== 'undefined' && historicalTrendData && historicalTrendData.length > 0) {
         trendLabels = historicalTrendData.map(d => d.label);
-        totalTrend = historicalTrendData.map(d => d.total);
-        trendA = historicalTrendData.map(d => d['Route A'] || 0);
-        trendB = historicalTrendData.map(d => d['Route B'] || 0);
-        trendC = historicalTrendData.map(d => d['Route C'] || 0);
-        if (typeof kpisData !== 'undefined' && kpisData && kpisData.total_pax_today) {
-            todayPax = parseInt(kpisData.total_pax_today.replace(/,/g, '')) || 1284;
-        }
+        
+        // Dynamic datasets builder
+        trendDatasets.push({
+            label: 'Total',
+            data: historicalTrendData.map(d => d.total || 0),
+            borderColor: '#003F87',
+            backgroundColor: '#003F87',
+            borderWidth: 2,
+            pointRadius: function(context) {
+                return context.dataIndex === (trendLabels.length - 1) ? 5 : 2;
+            },
+            fill: false,
+            tension: 0.15
+        });
+
+        routeNames.forEach((name, idx) => {
+            const rObj = routeComparisonData.find(r => r.route === name);
+            const color = rObj?.color || ['#185FA5', '#639922', '#BA7517', '#E24B4A'][idx % 4];
+            trendDatasets.push({
+                label: name,
+                data: historicalTrendData.map(d => d[name] || 0),
+                borderColor: color,
+                borderWidth: 1.5,
+                borderDash: idx % 2 === 0 ? [6, 3] : [2, 4],
+                pointRadius: 0,
+                fill: false,
+                tension: 0.15
+            });
+        });
     } else {
-        // Deterministic fallback — mirrors the Gaussian peak formula in AnalyticsController.
-        // Produces consistent values on every render with no Math.random() jitter.
+        // Fallback mock static trend data
+        let trendA = [];
+        let trendB = [];
+        let trendC = [];
+        let totalTrend = [];
         for (let i = 1; i <= 30; i++) {
             const date = new Date();
             date.setDate(date.getDate() - (30 - i));
             const dayOfWeek = date.getDay(); // 0 = Sunday
             const label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-            // Sine-wave variation seeded by day index (no random)
             const wave = Math.round(Math.sin(dayOfWeek * 0.8) * 50);
             let base = dayOfWeek === 0 ? 350 : (dayOfWeek === 6 ? 420 : 550);
             const total = base + wave;
@@ -404,6 +451,51 @@ function initAnalyticsDashboard() {
             trendC.push(c);
             totalTrend.push(total);
         }
+
+        trendDatasets = [
+            {
+                label: 'Total',
+                data: totalTrend,
+                borderColor: '#003F87',
+                backgroundColor: '#003F87',
+                borderWidth: 2,
+                pointRadius: function(context) {
+                    return context.dataIndex === (trendLabels.length - 1) ? 5 : 2;
+                },
+                fill: false,
+                tension: 0.15
+            },
+            {
+                label: 'Route A',
+                data: trendA,
+                borderColor: '#185FA5',
+                borderWidth: 1.5,
+                borderDash: [6, 3],
+                pointRadius: 0,
+                fill: false,
+                tension: 0.15
+            },
+            {
+                label: 'Route B',
+                data: trendB,
+                borderColor: '#639922',
+                borderWidth: 1.5,
+                borderDash: [6, 3],
+                pointRadius: 0,
+                fill: false,
+                tension: 0.15
+            },
+            {
+                label: 'Route C',
+                data: trendC,
+                borderColor: '#BA7517',
+                borderWidth: 1.5,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                fill: false,
+                tension: 0.15
+            }
+        ];
     }
 
     const ctxTrend = document.getElementById('historical-trend-chart').getContext('2d');
@@ -412,50 +504,7 @@ function initAnalyticsDashboard() {
         type: 'line',
         data: {
             labels: trendLabels,
-            datasets: [
-                {
-                    label: 'Total',
-                    data: totalTrend,
-                    borderColor: '#003F87',
-                    backgroundColor: '#003F87',
-                    borderWidth: 2,
-                    pointRadius: function(context) {
-                        return context.dataIndex === (trendLabels.length - 1) ? 5 : 2;
-                    },
-                    fill: false,
-                    tension: 0.15
-                },
-                {
-                    label: 'Route A',
-                    data: trendA,
-                    borderColor: '#185FA5',
-                    borderWidth: 1.5,
-                    borderDash: [6, 3],
-                    pointRadius: 0,
-                    fill: false,
-                    tension: 0.15
-                },
-                {
-                    label: 'Route B',
-                    data: trendB,
-                    borderColor: '#639922',
-                    borderWidth: 1.5,
-                    borderDash: [6, 3],
-                    pointRadius: 0,
-                    fill: false,
-                    tension: 0.15
-                },
-                {
-                    label: 'Route C',
-                    data: trendC,
-                    borderColor: '#BA7517',
-                    borderWidth: 1.5,
-                    borderDash: [2, 4],
-                    pointRadius: 0,
-                    fill: false,
-                    tension: 0.15
-                }
-            ]
+            datasets: trendDatasets
         },
         options: {
             responsive: true,

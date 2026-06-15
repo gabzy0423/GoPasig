@@ -208,13 +208,20 @@ function updateDashboardDOM(data) {
                 const btn = document.createElement('button');
                 btn.className = `text-left rounded-xl border px-3 py-3 hover:shadow-xs transition cursor-pointer ${statusClasses[bus.status] || 'border-slate-200 bg-slate-50'}`;
                 btn.onclick = () => openBusDrawer(bus.bus_id);
+                
+                let completionHtml = '';
+                if (bus.status === 'maintenance' && bus.completion_time) {
+                    completionHtml = `<p class="mt-1 text-[9.5px] font-bold text-[#BA7517]">Est. Done: ${bus.completion_time}</p>`;
+                }
+
                 btn.innerHTML = `
                     <div class="flex items-center justify-between">
                         <span class="font-mono text-[13px] font-bold">${bus.bus_id}</span>
                         <span class="h-2 w-2 rounded-full" style="background-color: ${bus.route_color}"></span>
                     </div>
-                    <p class="mt-2 text-[10px] opacity-80 font-medium">${bus.assigned_route ?: 'No Route Assigned'}</p>
+                    <p class="mt-2 text-[10px] opacity-80 font-medium">${bus.assigned_route || 'No Route Assigned'}</p>
                     <p class="mt-2 text-[11px] font-extrabold uppercase tracking-wider">${statusLabels[bus.status] || bus.status}</p>
+                    ${completionHtml}
                 `;
                 healthGrid.appendChild(btn);
             });
@@ -369,18 +376,37 @@ function openScheduleModal(busId = '') {
     document.getElementById('form-technician-name').value = '';
     document.getElementById('form-cost').value = '';
     document.getElementById('form-status').value = 'scheduled';
+    document.getElementById('form-expected-duration').value = '120';
 
     document.getElementById('modal-title-text').innerText = 'Schedule Maintenance';
     const formSubmitBtn = document.querySelector('#maintenance-schedule-form button[type="submit"]');
     if (formSubmitBtn) formSubmitBtn.innerText = 'Schedule Service';
 
-    const modal = document.getElementById('maintenance-schedule-modal');
-    if (modal) modal.classList.remove('hidden');
+    // Hide list container, show form container inline
+    const listContainer = document.getElementById('maintenance-list-container');
+    const formContainer = document.getElementById('maintenance-form-container');
+    if (listContainer) listContainer.classList.add('hidden');
+    if (formContainer) formContainer.classList.remove('hidden');
+
+    // Update breadcrumb
+    const breadcrumbCurrent = document.getElementById('maintenance-breadcrumb-current');
+    if (breadcrumbCurrent) {
+        breadcrumbCurrent.textContent = 'Schedule Service';
+    }
 }
 
 function closeScheduleModal() {
-    const modal = document.getElementById('maintenance-schedule-modal');
-    if (modal) modal.classList.add('hidden');
+    // Show list container, hide form container inline
+    const listContainer = document.getElementById('maintenance-list-container');
+    const formContainer = document.getElementById('maintenance-form-container');
+    if (listContainer) listContainer.classList.remove('hidden');
+    if (formContainer) formContainer.classList.add('hidden');
+
+    // Reset breadcrumb
+    const breadcrumbCurrent = document.getElementById('maintenance-breadcrumb-current');
+    if (breadcrumbCurrent) {
+        breadcrumbCurrent.textContent = 'Maintenance Management';
+    }
 }
 
 // Save Maintenance Schedule Form Action
@@ -525,6 +551,18 @@ async function openBusDrawer(plateNumber) {
             document.getElementById('drawer-bus-capacity').innerText = `${bus.capacity} passengers`;
             document.getElementById('drawer-bus-passengers').innerText = `${bus.passengers} aboard`;
 
+            // Expected Completion Time
+            const completionContainer = document.getElementById('drawer-bus-completion-container');
+            const completionTime = document.getElementById('drawer-bus-completion-time');
+            if (completionContainer && completionTime) {
+                if (bus.completion_time) {
+                    completionTime.innerText = bus.completion_time;
+                    completionContainer.classList.remove('hidden');
+                } else {
+                    completionContainer.classList.add('hidden');
+                }
+            }
+
             // Status Badge
             const statusClasses = {
                 active: 'border-[#EAF3DE] bg-[#EAF3DE] text-[#3B6D11]',
@@ -632,6 +670,7 @@ async function editRecord(id) {
             document.getElementById('form-cost').value = rec.cost_php;
             document.getElementById('form-status').value = rec.status;
             document.getElementById('form-description').value = rec.description;
+            document.getElementById('form-expected-duration').value = rec.expected_duration_minutes || '120';
 
             document.getElementById('modal-title-text').innerText = 'Edit Maintenance Session';
             const formSubmitBtn = document.querySelector('#maintenance-schedule-form button[type="submit"]');
@@ -639,8 +678,17 @@ async function editRecord(id) {
 
             closeDetailDrawer();
             
-            const modal = document.getElementById('maintenance-schedule-modal');
-            if (modal) modal.classList.remove('hidden');
+            // Hide list container, show form container inline
+            const listContainer = document.getElementById('maintenance-list-container');
+            const formContainer = document.getElementById('maintenance-form-container');
+            if (listContainer) listContainer.classList.add('hidden');
+            if (formContainer) formContainer.classList.remove('hidden');
+
+            // Update breadcrumb
+            const breadcrumbCurrent = document.getElementById('maintenance-breadcrumb-current');
+            if (breadcrumbCurrent) {
+                breadcrumbCurrent.textContent = 'Edit Session';
+            }
         }
 
     } catch (error) {

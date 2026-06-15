@@ -28,7 +28,11 @@ class ColorPalette extends Model
             $query->where('usage', $usage);
         }
 
-        return $query->pluck('hex_color')->toArray();
+        $colors = $query->pluck('hex_color')->toArray();
+        if (empty($colors)) {
+            return ['#003F87', '#3B6D11', '#854F0B', '#6B21A8', '#0F6E56', '#DC2626', '#0891B2', '#D97706'];
+        }
+        return $colors;
     }
 
     /**

@@ -3,27 +3,43 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Models\Route;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Livewire\Livewire;
 use Tests\TestCase;
 
 class FleetRoutePerformanceTest extends TestCase
 {
     use RefreshDatabase;
 
+    private $route;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->route = Route::create([
+            'id' => 1,
+            'name' => 'Route 1',
+            'description' => 'SPED to Pasig City Hall',
+            'polyline_coordinates' => [[14.5593, 121.0805], [14.5838, 121.0620]],
+            'status' => 'Active',
+        ]);
+    }
+
     public function test_dispatcher_can_access_route_performance(): void
     {
         $dispatcher = User::factory()->create(['role' => 'dispatcher']);
 
         $response = $this->actingAs($dispatcher)->get('/fleet/routes');
+        $response->assertRedirect('/fleet/dashboard?tab=routes');
 
-        $response->assertStatus(200);
-        $response->assertSeeLivewire('fleet.route-performance');
+        $dashboardResponse = $this->actingAs($dispatcher)->get('/fleet/dashboard?tab=routes');
+        $dashboardResponse->assertStatus(200);
     }
 
     public function test_unauthorized_users_cannot_access_route_performance(): void
     {
-        // Admin user is unauthorized for dispatcher routes (since middleware requires role:dispatcher)
+        // Admin user is unauthorized for dispatcher routes
         $admin = User::factory()->create(['role' => 'admin']);
         $response = $this->actingAs($admin)->get('/fleet/routes');
         $response->assertStatus(403);
@@ -41,49 +57,43 @@ class FleetRoutePerformanceTest extends TestCase
         $response->assertRedirect('/login');
     }
 
-    public function test_livewire_export_route_report_works(): void
+    public function test_export_route_report_works(): void
     {
         $dispatcher = User::factory()->create(['role' => 'dispatcher']);
 
-        $this->actingAs($dispatcher);
+        $response = $this->actingAs($dispatcher)->get('/fleet/api/routes-export?route_id=all');
 
-        Livewire::test('fleet.route-performance')
-            ->call('exportRouteReport')
-            ->assertFileDownloaded();
+        $response->assertStatus(200);
+        $response->assertHeader('Content-Disposition');
+        $this->assertStringContainsString('GoPasig Route Performance Report', $response->streamedContent());
     }
 
-    public function test_livewire_select_route_works(): void
+    public function test_api_routes_data_filtering_works(): void
     {
         $dispatcher = User::factory()->create(['role' => 'dispatcher']);
 
-        $this->actingAs($dispatcher);
-
-        // Test route selection filters summary details
-        Livewire::test('fleet.route-performance')
-            ->assertSet('selectedRoute', 'all')
-            ->call('selectRoute', '1')
-            ->assertSet('selectedRoute', '1')
-            ->assertSee('Route 1')
-            ->call('selectRoute', '3')
-            ->assertSet('selectedRoute', '3')
-            ->assertSee('Route 3');
+        $response = $this->actingAs($dispatcher)->get('/fleet/api/routes-data?route_id=1');
+        $response->assertStatus(200);
+        $response->assertJsonStructure([
+            'routePerformanceSummary',
+            'headwayData',
+            'scheduleCompliance',
+            'stops',
+            'deviationLog',
+            'routeHealthScore'
+        ]);
     }
 
-    public function test_livewire_deviation_filter_works(): void
+    public function test_api_deviation_filtering_works(): void
     {
         $dispatcher = User::factory()->create(['role' => 'dispatcher']);
 
-        $this->actingAs($dispatcher);
+        $response = $this->actingAs($dispatcher)->json('GET', '/fleet/api/routes-data', [
+            'route_id' => '1',
+            'deviation_types' => ['Off-Route']
+        ]);
 
-        Livewire::test('fleet.route-performance')
-            ->assertSet('selectedDeviationTypes', [])
-            ->call('toggleDeviationFilter', 'Off-Route')
-            ->assertSet('selectedDeviationTypes', ['Off-Route'])
-            ->call('toggleDeviationFilter', 'Off-Route')
-            ->assertSet('selectedDeviationTypes', [])
-            ->call('toggleDeviationFilter', 'Route Skip')
-            ->assertSet('selectedDeviationTypes', ['Route Skip'])
-            ->call('clearDeviationFilters')
-            ->assertSet('selectedDeviationTypes', []);
+        $response->assertStatus(200);
     }
 }
+

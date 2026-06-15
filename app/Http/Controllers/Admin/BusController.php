@@ -12,6 +12,22 @@ use App\Models\SystemSetting;
 class BusController extends Controller
 {
     /**
+     * Show the form for registering a new bus.
+     */
+    public function create()
+    {
+        return redirect('/admin/dashboard#buses');
+    }
+
+    /**
+     * Show the form for editing the specified bus.
+     */
+    public function edit(Bus $bus)
+    {
+        return redirect('/admin/dashboard#buses');
+    }
+
+    /**
      * Store a newly created bus in the database.
      */
     public function store(Request $request)
@@ -24,7 +40,7 @@ class BusController extends Controller
             'status' => 'required|in:active,inactive,maintenance',
         ]);
 
-        // Default starting coordinates centered on SPED Terminal for map mapping
+        // Default starting coordinates centered on the default terminal for map mapping
         // Resolve default coordinates from DefaultRouteSetting or SystemSetting
         $routeDefaults = DefaultRouteSetting::latest()->first();
         $defaultLat = $routeDefaults?->default_latitude ?? (float) SystemSetting::get('default_route_start_lat', 14.5593);

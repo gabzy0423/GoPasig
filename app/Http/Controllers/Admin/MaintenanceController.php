@@ -11,6 +11,14 @@ use Illuminate\Support\Facades\DB;
 class MaintenanceController extends Controller
 {
     /**
+     * Show the form for creating a new maintenance record.
+     */
+    public function create()
+    {
+        return redirect('/admin/dashboard#maintenance');
+    }
+
+    /**
      * Display a listing of the maintenance records.
      */
     public function index()
@@ -33,24 +41,27 @@ class MaintenanceController extends Controller
             'description' => 'nullable|string',
             'scheduled_at' => 'required|date',
             'status' => 'nullable|in:scheduled,in_progress,completed,cancelled',
+            'expected_duration_minutes' => 'nullable|integer|min:1',
         ]);
 
         $status = $validated['status'] ?? 'scheduled';
+        $duration = $request->input('expected_duration_minutes', 120);
 
-        $record = DB::transaction(function () use ($validated, $status) {
+        $record = DB::transaction(function () use ($validated, $status, $duration) {
             $rec = MaintenanceRecord::create([
                 'bus_id' => $validated['bus_id'],
                 'type' => $validated['type'],
                 'description' => $validated['description'] ?? '',
                 'scheduled_at' => $validated['scheduled_at'],
                 'status' => $status,
+                'expected_duration_minutes' => $duration,
             ]);
 
-            // Status Lock: Automatically locks the bus operational status (sets to inactive)
+            // Status Lock: Automatically locks the bus operational status (sets to maintenance)
             if (in_array($status, ['scheduled', 'in_progress'])) {
                 $bus = Bus::find($validated['bus_id']);
                 if ($bus) {
-                    $bus->update(['status' => 'inactive']);
+                    $bus->update(['status' => 'maintenance']);
                 }
             }
 
@@ -59,7 +70,7 @@ class MaintenanceController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Maintenance scheduled successfully. Bus status locked to inactive!',
+            'message' => 'Maintenance scheduled successfully. Bus status locked to maintenance!',
             'record' => $record->load('bus')
         ], 201);
     }

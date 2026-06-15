@@ -10,19 +10,19 @@ class CommuterTrip extends Model
     use HasFactory;
 
     protected $fillable = [
+        'session_token',
         'origin_stop_id',
         'destination_stop_id',
         'route_id',
+        'bus_id',
         'status',
         'boarded_at',
         'arrived_at',
-        'timestamp',
     ];
 
     protected $casts = [
         'boarded_at' => 'datetime',
         'arrived_at' => 'datetime',
-        'timestamp' => 'datetime',
     ];
 
     public function route()
@@ -38,5 +38,10 @@ class CommuterTrip extends Model
     public function destinationStop()
     {
         return $this->belongsTo(Stop::class, 'destination_stop_id');
+    }
+
+    public function session()
+    {
+        return $this->belongsTo(CommuterSession::class, 'session_token', 'session_token');
     }
 }

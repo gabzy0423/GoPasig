@@ -11,8 +11,11 @@ class QuickStats extends Component
 {
     public function render()
     {
-        $activeBuses = Bus::where('status', 'active')->count();
-        $delayedBuses = Bus::where('status', 'active')->where('eta', '>=', Bus::getDelayThreshold())->count();
+        $activeBusesCollection = Bus::with('route')->where('status', 'active')->get();
+        $activeBuses = $activeBusesCollection->count();
+        $delayedBuses = $activeBusesCollection->filter(function ($bus) {
+            return $bus->eta >= $bus->getRouteDelayThreshold();
+        })->count();
         $passengersToday = Schedule::sum('passengers');
         $openAlerts = ServiceAlert::where('status', 'active')->count();
 

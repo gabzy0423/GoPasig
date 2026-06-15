@@ -8,7 +8,9 @@
     "internalDependencies": {
         "icon": [
             "button",
-            "badge"
+            "badge",
+            "breadcrumbs",
+            "alerts"
         ],
         "button": [
             "badge"

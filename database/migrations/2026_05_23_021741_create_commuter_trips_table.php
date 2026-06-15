@@ -12,6 +12,7 @@ return new class extends Migration {
     {
         Schema::create('commuter_trips', function (Blueprint $table) {
             $table->id();
+            $table->string('session_token');
             $table->foreignId('origin_stop_id')
                 ->constrained('stops')
                 ->onDelete('cascade');
@@ -25,18 +26,15 @@ return new class extends Migration {
                 ->onDelete('cascade');
 
             $table->enum('status', [
-                'pending',
-                'boarded',
-                'in_transit',
-                'arrived',
-                'cancelled'
-            ])->default('pending');
+                'WAITING',
+                'ON_BUS',
+                'ARRIVED',
+                'CANCELLED'
+            ])->default('WAITING');
 
             $table->timestamp('boarded_at')->nullable();
 
             $table->timestamp('arrived_at')->nullable();
-
-            $table->timestamp('timestamp')->useCurrent();
 
             $table->timestamps();
         });

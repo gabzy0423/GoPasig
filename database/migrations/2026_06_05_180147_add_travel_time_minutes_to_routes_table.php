@@ -12,7 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('routes', function (Blueprint $table) {
-            $table->unsignedInteger('travel_time_minutes')->default(30)->after('polyline_coordinates');
+            if (!Schema::hasColumn('routes', 'travel_time_minutes')) {
+                $table->unsignedInteger('travel_time_minutes')->default(30)->after('polyline_coordinates');
+            }
         });
     }
 

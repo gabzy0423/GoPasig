@@ -54,13 +54,15 @@ function renderBusesTable() {
             <td class="bm-td font-bold text-center text-slate-600">${bus.status === 'Active' ? `${bus.speed} km/h` : '—'}</td>
             <td class="bm-td font-semibold text-slate-500">${bus.status === 'Active' ? bus.nextStop : '—'}</td>
             <td class="bm-td"><span class="inline-flex rounded-full ${badgeClass} px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">${bus.status}</span></td>
-            <td class="bm-td text-right font-extrabold text-[#003F87] space-x-2 shrink-0">
-                <button onclick="openAddBusModal('edit', ${bus.id})" class="bm-btn-outline hover:text-[#002d62]">
-                    <i class="ti ti-edit"></i> Edit
-                </button>
-                <button onclick="deleteBus(${bus.id})" class="bm-btn-outline bm-btn-danger-text">
-                    <i class="ti ti-trash"></i> Delete
-                </button>
+            <td class="bm-td text-right shrink-0">
+                <div class="flex justify-end gap-2">
+                    <button onclick="openAddBusModal('edit', ${bus.id})" class="bm-icon-btn border-none" title="Edit bus">
+                        <i class="ti ti-edit"></i>
+                    </button>
+                    <button onclick="deleteBus(${bus.id})" class="bm-icon-btn bm-icon-btn--danger border-none" title="Delete bus">
+                        <i class="ti ti-trash"></i>
+                    </button>
+                </div>
             </td>
         `;
         tbody.appendChild(row);
@@ -126,43 +128,78 @@ function searchBusesTable() {
     renderBusesTable();
 }
 
-// Open modal for either Add or Edit mode
+// Open inline form for either Add or Edit mode
 function openAddBusModal(mode, busId) {
-    const modal = document.getElementById('add-bus-modal');
     const title = document.getElementById('add-bus-modal-title');
+    const desc = document.getElementById('add-bus-modal-desc');
     const submitBtn = document.getElementById('bus-submit-btn');
     const form = document.getElementById('add-bus-form');
     
     if (form) form.reset();
 
     if (mode === 'add') {
-        title.textContent = "Register Municipal Bus";
-        submitBtn.textContent = "Register Bus";
-        document.getElementById('edit-bus-id').value = "";
-        document.getElementById('new-bus-plate').disabled = false;
+        if (title) title.textContent = "Register Municipal Bus";
+        if (desc) desc.textContent = "Provide the plate number, driver, route, capacity, and current operational status to register a new bus.";
+        if (submitBtn) submitBtn.textContent = "Register Bus";
+        const plateInput = document.getElementById('new-bus-plate');
+        if (plateInput) {
+            plateInput.value = "";
+            plateInput.disabled = false;
+        }
+        const editIdInput = document.getElementById('edit-bus-id');
+        if (editIdInput) editIdInput.value = "";
     } else {
-        title.textContent = "Edit Bus Details";
-        submitBtn.textContent = "Update Bus Details";
+        if (title) title.textContent = "Edit Bus Details";
+        if (desc) desc.textContent = "Update the plate number, driver, route, capacity, or current operational status for this bus.";
+        if (submitBtn) submitBtn.textContent = "Update Bus Details";
         
         const bus = fleetData.find(b => b.id === busId);
         if (bus) {
-            document.getElementById('edit-bus-id').value = bus.id;
-            document.getElementById('new-bus-plate').value = bus.plate;
-            document.getElementById('new-bus-driver').value = bus.driver === 'Unassigned' ? '' : bus.driver;
-            document.getElementById('new-bus-capacity').value = bus.capacity;
-            document.getElementById('new-bus-status').value = bus.status;
+            const editIdInput = document.getElementById('edit-bus-id');
+            if (editIdInput) editIdInput.value = bus.id;
+            const plateInput = document.getElementById('new-bus-plate');
+            if (plateInput) {
+                plateInput.value = bus.plate;
+                plateInput.disabled = true; // Plate number is unique and fixed on edit
+            }
+            const driverInput = document.getElementById('new-bus-driver');
+            if (driverInput) driverInput.value = bus.driver === 'Unassigned' || bus.driver === 'None' ? '' : bus.driver;
+            const capacityInput = document.getElementById('new-bus-capacity');
+            if (capacityInput) capacityInput.value = bus.capacity;
+            const statusInput = document.getElementById('new-bus-status');
+            if (statusInput) statusInput.value = bus.status;
             
             // Map route string ID
-            document.getElementById('new-bus-route').value = bus.route === 'None' ? 'None' : bus.route;
+            const routeInput = document.getElementById('new-bus-route');
+            if (routeInput) routeInput.value = bus.route === 'None' ? 'None' : bus.route;
         }
     }
 
-    modal.classList.remove('hidden');
+    // Hide list container, show form container
+    const listContainer = document.getElementById('buses-list-container');
+    const formContainer = document.getElementById('buses-form-container');
+    if (listContainer) listContainer.classList.add('hidden');
+    if (formContainer) formContainer.classList.remove('hidden');
+
+    // Update breadcrumb
+    const breadcrumbCurrent = document.getElementById('buses-breadcrumb-current');
+    if (breadcrumbCurrent) {
+        breadcrumbCurrent.textContent = mode === 'add' ? 'Register Bus' : 'Edit Bus';
+    }
 }
 
-// Close Add Bus modal
+// Close Add Bus Form / Go Back to List
 function closeAddBusModal() {
-    document.getElementById('add-bus-modal').classList.add('hidden');
+    const listContainer = document.getElementById('buses-list-container');
+    const formContainer = document.getElementById('buses-form-container');
+    if (listContainer) listContainer.classList.remove('hidden');
+    if (formContainer) formContainer.classList.add('hidden');
+
+    // Reset breadcrumb
+    const breadcrumbCurrent = document.getElementById('buses-breadcrumb-current');
+    if (breadcrumbCurrent) {
+        breadcrumbCurrent.textContent = 'Bus Management';
+    }
 }
 
 // Form Submit (AJAX Create or Update)

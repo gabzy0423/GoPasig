@@ -254,13 +254,38 @@ function openBusPopover(bus, pos) {
     const isFull = fillRatio > 0.8;
     const progressPercent = Math.round(fillRatio * 100);
 
+    // Dynamic GPS staleness calculations
+    const updatedAt = new Date(bus.updated_at);
+    const now = new Date();
+    const diffSeconds = Math.max(0, Math.floor((now - updatedAt) / 1000));
+
+    let gpsBadge = '';
+    if (diffSeconds < 30) {
+        gpsBadge = `<span class="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-50 text-[#0F6E56] border border-emerald-100 rounded-full flex items-center gap-0.5"><span class="w-1 h-1 rounded-full bg-emerald-500"></span>LIVE</span>`;
+    } else if (diffSeconds <= 120) {
+        gpsBadge = `<span class="px-1.5 py-0.5 text-[9px] font-bold bg-amber-50 text-[#854F0B] border border-amber-100 rounded-full flex items-center gap-0.5"><span class="w-1 h-1 rounded-full bg-amber-500"></span>STALE (${diffSeconds}s)</span>`;
+    } else {
+        gpsBadge = `<span class="px-1.5 py-0.5 text-[9px] font-bold bg-rose-50 text-[#A32D2D] border border-rose-100 rounded-full flex items-center gap-0.5"><span class="w-1 h-1 rounded-full bg-rose-500"></span>OFFLINE</span>`;
+    }
+
+    let simBadge = '';
+    if (bus.is_simulated) {
+        simBadge = `<span class="px-1.5 py-0.5 text-[9px] font-bold bg-blue-50 text-[#1D4ED8] border border-blue-100 rounded-full flex items-center gap-0.5"><span class="w-1 h-1 rounded-full bg-blue-500 animate-pulse"></span>Estimated</span>`;
+    }
+
     const content = `
         <div class="w-[230px] p-3 text-slate-800 flex flex-col gap-2 font-sans select-none relative">
             <div class="flex justify-between items-center pr-4">
-                <span class="text-[13.5px] font-mono font-bold text-slate-800">${bus.plate_number}</span>
-                <span class="px-2 py-0.5 text-[9.5px] font-extrabold uppercase rounded-full bg-slate-100 text-slate-600 shadow-sm">
-                    ${bus.status.toUpperCase()}
-                </span>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-[13.5px] font-mono font-bold text-slate-800">${bus.plate_number}</span>
+                    ${simBadge}
+                </div>
+                <div class="flex items-center gap-1 flex-wrap">
+                    <span class="px-1.5 py-0.5 text-[9.5px] font-extrabold uppercase rounded-full bg-slate-100 text-slate-600 shadow-sm">
+                        ${bus.status.toUpperCase()}
+                    </span>
+                    ${gpsBadge}
+                </div>
             </div>
 
             <div class="flex items-center gap-1.5 text-xs text-slate-500 font-semibold">

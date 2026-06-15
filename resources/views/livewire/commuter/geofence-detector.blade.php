@@ -2,6 +2,9 @@
      x-init="initComponent()"
      @geofence-entered.window="handleGeofenceEntered($event.detail)"
      @geofence-exited.window="handleGeofenceExited($event.detail)"
+     @commuter-boarded.window="handleCommuterBoarded($event.detail)"
+     @commuter-arrived.window="handleCommuterArrived($event.detail)"
+     @prompt-cancel-trip.window="handlePromptCancelTrip()"
      class="px-4 py-3 select-none">
      
     <!-- Custom CSS styles for high-fidelity animations -->
@@ -73,6 +76,108 @@
             </div>
         </div>
 
+        @if($breakdownAlert)
+            <div class="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3 z-10 animate-pulse">
+                <i class="ti ti-alert-triangle text-rose-500 text-lg flex-shrink-0 mt-0.5"></i>
+                <div class="flex flex-col gap-0.5">
+                    <span class="text-xs font-bold text-rose-700 leading-snug">{{ $breakdownAlert }}</span>
+                </div>
+            </div>
+        @endif
+
+        @if($maintenanceAlert)
+            <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 z-10 animate-pulse">
+                <i class="ti ti-tool text-amber-500 text-lg flex-shrink-0 mt-0.5"></i>
+                <div class="flex flex-col gap-0.5">
+                    <span class="text-xs font-bold text-amber-700 leading-snug">{{ $maintenanceAlert }}</span>
+                </div>
+            </div>
+        @endif
+
+        @if($activeTrip)
+            <div class="flex flex-col gap-4.5 z-10 animate-fade-in p-2">
+                <!-- Trip Banner -->
+                <div class="bg-gradient-to-r from-indigo-600 to-blue-700 rounded-2xl p-4 text-white flex justify-between items-center shadow-lg shadow-indigo-600/10">
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-[10px] font-extrabold text-indigo-100 uppercase tracking-widest leading-none">Aktibong Byahe 🗺️</span>
+                        <h2 class="text-[15px] font-extrabold tracking-tight mt-1 leading-snug">
+                            {{ $activeTrip['origin_stop_name'] }} &rarr; {{ $activeTrip['destination_stop_name'] }}
+                        </h2>
+                        <div class="flex items-center gap-1.5 mt-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background-color: {{ $activeTrip['route_color'] }}; box-shadow: 0 0 6px {{ $activeTrip['route_color'] }};"></span>
+                            <span class="text-[11px] font-bold text-indigo-100">{{ $activeTrip['route_name'] }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Progress & Micro-animation -->
+                <div class="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex flex-col gap-4">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Status ng Byahe</span>
+                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide
+                                     {{ $activeTrip['status'] === 'WAITING' ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-emerald-50 text-emerald-700 border border-emerald-100' }}">
+                            {{ $activeTrip['status'] === 'WAITING' ? 'Waiting' : 'On Bus' }}
+                        </span>
+                    </div>
+
+                    <!-- Progress Stepper -->
+                    <div class="flex items-center justify-between px-2.5 relative">
+                        <!-- Connecting Progress Line -->
+                        <div class="absolute top-[13px] left-8 right-8 h-0.5 bg-slate-200 -z-10"></div>
+                        <div class="absolute top-[13px] left-8 h-0.5 bg-indigo-500 transition-all duration-500 -z-10"
+                             style="width: {{ $activeTrip['status'] === 'ON_BUS' ? '50' : '0' }}%"></div>
+
+                        <!-- Step 1: Waiting -->
+                        <div class="flex flex-col items-center gap-1.5">
+                            <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors duration-300
+                                        {{ $activeTrip['status'] === 'WAITING' ? 'bg-amber-500 border-amber-500 text-white shadow-md shadow-amber-500/20' : 'bg-indigo-600 border-indigo-600 text-white' }}">
+                                <i class="ti ti-clock-play text-sm"></i>
+                            </div>
+                            <span class="text-[10px] font-bold text-slate-500">Hintuan</span>
+                        </div>
+
+                        <!-- Step 2: On Bus -->
+                        <div class="flex flex-col items-center gap-1.5">
+                            <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors duration-300
+                                        {{ $activeTrip['status'] === 'ON_BUS' ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/20' : 'bg-slate-100 border-slate-300 text-slate-400' }}">
+                                <i class="ti ti-bus text-sm"></i>
+                            </div>
+                            <span class="text-[10px] font-bold text-slate-500">Nakasakay</span>
+                        </div>
+
+                        <!-- Step 3: Destination -->
+                        <div class="flex flex-col items-center gap-1.5">
+                            <div class="w-7 h-7 rounded-full bg-slate-100 border-2 border-slate-300 text-slate-400 flex items-center justify-center text-xs font-bold transition-colors">
+                                <i class="ti ti-flag text-sm"></i>
+                            </div>
+                            <span class="text-[10px] font-bold text-slate-500">Destinasyon</span>
+                        </div>
+                    </div>
+
+                    <!-- Informational Description -->
+                    <div class="text-[12px] font-semibold text-slate-600 leading-normal text-center mt-1 border-t border-slate-100 pt-3">
+                        @if($activeTrip['status'] === 'WAITING')
+                            <p class="animate-pulse text-amber-600 flex items-center justify-center gap-1">
+                                <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                Naghihintay sa bus... Awtomatikong makikita kapag nakasakay na (15m threshold).
+                            </p>
+                        @else
+                            <p class="text-indigo-600 flex items-center justify-center gap-1">
+                                <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                                Nasa bus ka na! Awtomatikong makakarating kapag nasa destinasyon.
+                            </p>
+                        @endif
+                    </div>
+                </div>
+
+                <!-- Cancel Button -->
+                <button wire:click="cancelCommuterTrip"
+                        class="w-full h-11 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[13px] font-extrabold rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-150">
+                    <i class="ti ti-x text-[15px]"></i>
+                    Kanselahin ang Byahe
+                </button>
+            </div>
+        @else
         <!-- STATE 1: WAITING FOR ACTIVATION (No location fetched yet) -->
         <template x-if="!hasLocation">
             <div class="flex flex-col items-center justify-center py-6 px-2 text-center gap-4 z-10">
@@ -154,11 +259,12 @@
                 </div>
 
                 <!-- Info Hint -->
-                <div class="bg-indigo-50/50 border border-indigo-100/50 rounded-2xl p-3 flex gap-2.5 items-start">
-                    <i class="ti ti-info-circle-filled text-[15px] text-indigo-500 mt-0.5 flex-shrink-0"></i>
-                    <p class="text-[11.5px] text-indigo-950 font-medium leading-normal">
-                        Maglakad papalapit sa <strong class="font-bold text-indigo-900" x-text="nearestStop?.name || 'hintuan'"></strong> upang awtomatikong pumasok sa geofence at makuha ang mga Libreng Sakay timetables.
-                    </p>
+                <div class="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex gap-2.5 items-start">
+                    <i class="ti ti-alert-triangle-filled text-[15px] text-amber-500 mt-0.5 flex-shrink-0"></i>
+                    <div class="text-[11.5px] text-amber-950 font-medium leading-normal flex flex-col gap-1">
+                        <span>Lumayo ka na sa hintuan. Bumalik sa <strong class="font-bold text-amber-900" x-text="nearestStop?.name || 'hintuan'"></strong> para ma-track ang byahe.</span>
+                        <span class="text-[10px] text-amber-800 font-semibold" x-text="(distanceToNearest || 0) + 'm pa papalapit sa ' + (nearestStop?.name || 'hintuan')"></span>
+                    </div>
                 </div>
             </div>
         </template>
@@ -211,8 +317,37 @@
                         </template>
                     </div>
                 </div>
+
+                <!-- DESTINATION INPUT & CHECK-IN FORM -->
+                @if($activeStop)
+                    @php
+                        $destStops = \App\Models\Stop::where('route_id', $activeStop['route_id'])
+                            ->where('sequence', '>', $activeStop['sequence'])
+                            ->orderBy('sequence')
+                            ->get();
+                    @endphp
+                    @if($destStops->isNotEmpty())
+                        <div class="flex flex-col gap-2.5 mt-4 pt-4 border-t border-slate-100">
+                            <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider pl-0.5">Saan ang iyong destinasyon?</span>
+                            <select wire:model.live="selectedDestinationId" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-[#003F87] cursor-pointer">
+                                <option value="">Pumili ng destinasyon...</option>
+                                @foreach($destStops as $ds)
+                                    <option value="{{ $ds->id }}">{{ $ds->name }}</option>
+                                @endforeach
+                            </select>
+
+                            <button wire:click="startCommuterTrip"
+                                    @if(!$selectedDestinationId) disabled @endif
+                                    class="w-full h-11 mt-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[13px] font-extrabold rounded-2xl flex items-center justify-center gap-2 shadow-md shadow-emerald-600/10 active:scale-[0.98] transition-all duration-150">
+                                <i class="ti ti-navigation text-[15px]"></i>
+                                I-track ang Byahe (Check-in)
+                            </button>
+                        </div>
+                    @endif
+                @endif
             </div>
         </template>
+        @endif
 
         <!-- DEVELOPER SIMULATION EXPANDABLE TRAY (Always compiled, premium tool) -->
         <div class="border-t border-slate-50 pt-3 mt-1.5">
@@ -356,6 +491,114 @@
                 }
             },
 
+            // Ascending bright chime for confirmed boarding
+            triggerBoardingChime() {
+                try {
+                    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    const now = audioCtx.currentTime;
+
+                    // E5 (659.25 Hz)
+                    const osc1 = audioCtx.createOscillator();
+                    const gain1 = audioCtx.createGain();
+                    osc1.type = 'sine';
+                    osc1.frequency.setValueAtTime(659.25, now);
+                    gain1.gain.setValueAtTime(0.12, now);
+                    gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+                    osc1.connect(gain1);
+                    gain1.connect(audioCtx.destination);
+
+                    // A5 (880.00 Hz) at 0.1s delay
+                    const osc2 = audioCtx.createOscillator();
+                    const gain2 = audioCtx.createGain();
+                    osc2.type = 'sine';
+                    osc2.frequency.setValueAtTime(880.00, now + 0.1);
+                    gain2.gain.setValueAtTime(0.12, now + 0.1);
+                    gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+                    osc2.connect(gain2);
+                    gain2.connect(audioCtx.destination);
+
+                    osc1.start(now);
+                    osc1.stop(now + 0.5);
+                    
+                    osc2.start(now + 0.1);
+                    osc2.stop(now + 0.6);
+
+                    console.log('Boarding chime played!');
+                } catch (err) {
+                    console.log('Hindi pinayagan ng browser ang audio chime playback: ', err);
+                }
+            },
+
+            // Ascending premium arpeggio for confirmed destination arrival
+            triggerArrivalChime() {
+                try {
+                    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    const now = audioCtx.currentTime;
+
+                    // C5 (523.25 Hz)
+                    const osc1 = audioCtx.createOscillator();
+                    const gain1 = audioCtx.createGain();
+                    osc1.type = 'sine';
+                    osc1.frequency.setValueAtTime(523.25, now);
+                    gain1.gain.setValueAtTime(0.12, now);
+                    gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+                    osc1.connect(gain1);
+                    gain1.connect(audioCtx.destination);
+
+                    // E5 (659.25 Hz) at 0.12s
+                    const osc2 = audioCtx.createOscillator();
+                    const gain2 = audioCtx.createGain();
+                    osc2.type = 'sine';
+                    osc2.frequency.setValueAtTime(659.25, now + 0.12);
+                    gain2.gain.setValueAtTime(0.12, now + 0.12);
+                    gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.57);
+                    osc2.connect(gain2);
+                    gain2.connect(audioCtx.destination);
+
+                    // G5 (783.99 Hz) at 0.24s
+                    const osc3 = audioCtx.createOscillator();
+                    const gain3 = audioCtx.createGain();
+                    osc3.type = 'sine';
+                    osc3.frequency.setValueAtTime(783.99, now + 0.24);
+                    gain3.gain.setValueAtTime(0.12, now + 0.24);
+                    gain3.gain.exponentialRampToValueAtTime(0.0001, now + 0.69);
+                    osc3.connect(gain3);
+                    gain3.connect(audioCtx.destination);
+
+                    // C6 (1046.50 Hz) at 0.36s
+                    const osc4 = audioCtx.createOscillator();
+                    const gain4 = audioCtx.createGain();
+                    osc4.type = 'sine';
+                    osc4.frequency.setValueAtTime(1046.50, now + 0.36);
+                    gain4.gain.setValueAtTime(0.12, now + 0.36);
+                    gain4.gain.exponentialRampToValueAtTime(0.0001, now + 0.96);
+                    osc4.connect(gain4);
+                    gain4.connect(audioCtx.destination);
+
+                    osc1.start(now);
+                    osc1.stop(now + 0.45);
+                    
+                    osc2.start(now + 0.12);
+                    osc2.stop(now + 0.57);
+                    
+                    osc3.start(now + 0.24);
+                    osc3.stop(now + 0.69);
+                    
+                    osc4.start(now + 0.36);
+                    osc4.stop(now + 0.96);
+
+                    console.log('Arrival chime played!');
+                } catch (err) {
+                    console.log('Hindi pinayagan ng browser ang audio chime playback: ', err);
+                }
+            },
+
+            handlePromptCancelTrip() {
+                if (confirm("Kansela ba ang iyong biyahe?")) {
+                    this.$wire.call('cancelCommuterTrip');
+                }
+            },
+
             // Handles event geofenceEntered dispatched by Livewire backend
             handleGeofenceEntered(detail) {
                 console.log('Nakapasok sa Geofence: ', detail);
@@ -372,6 +615,26 @@
                 
                 if ('vibrate' in navigator) {
                     navigator.vibrate(200);
+                }
+            },
+
+            // Handles event commuterBoarded dispatched by Livewire backend
+            handleCommuterBoarded(detail) {
+                console.log('Nakasakay na sa Bus: ', detail);
+                this.triggerBoardingChime();
+                
+                if ('vibrate' in navigator) {
+                    navigator.vibrate([100, 50, 100]); // Short tactile double vibration pulse
+                }
+            },
+
+            // Handles event commuterArrived dispatched by Livewire backend
+            handleCommuterArrived(detail) {
+                console.log('Nakarating na sa Destinasyon: ', detail);
+                this.triggerArrivalChime();
+                
+                if ('vibrate' in navigator) {
+                    navigator.vibrate([100, 50, 100, 50, 300]); // Distinct triple vibration ending with a long pulse
                 }
             },
 

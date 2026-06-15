@@ -6,6 +6,7 @@ use App\Models\Bus;
 use App\Models\Schedule;
 use App\Models\ServiceAlert;
 use App\Models\Trip;
+use App\Services\DriverPerformanceService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -20,7 +21,9 @@ class DashboardService
     {
         return [
             'active_buses' => Bus::where('status', 'active')->count(),
-            'delayed_buses' => Bus::where('status', 'active')->where('eta', '>=', Bus::DELAY_THRESHOLD)->count(),
+            'delayed_buses' => Bus::with('route')->where('status', 'active')->get()->filter(function ($bus) {
+                return $bus->eta >= $bus->getRouteDelayThreshold();
+            })->count(),
             'passengers_today' => Schedule::sum('passengers'),
             'open_alerts' => ServiceAlert::where('status', 'active')->count(),
         ];
@@ -39,8 +42,10 @@ class DashboardService
         $activeBusIds = Trip::where('status', 'ongoing')->pluck('bus_id')->toArray();
         $activeBuses  = count($activeBusIds);
 
-        // Delayed buses: active buses with eta >= 10
-        $delayedBuses = Bus::whereIn('id', $activeBusIds)->where('eta', '>=', 10)->count();
+        // Delayed buses: active buses whose ETA meets the configurable delay threshold.
+        // Threshold is read from system_settings (key: delay_threshold, default: 10 min).
+        $delayThreshold = Bus::getDelayThreshold();
+        $delayedBuses = Bus::whereIn('id', $activeBusIds)->where('eta', '>=', $delayThreshold)->count();
 
         // Offline buses: in maintenance status
         $offlineBuses = Bus::where('status', 'maintenance')->count();
@@ -131,22 +136,15 @@ class DashboardService
                 ->count();
             $incidents30 = max((int)($driver->incidents_30 ?? 0), $dbIncidents30);
 
-            // Calculate dynamic performance score: starting from 100%
-            // Deduct 10 points for each incident in the last 30 days
-            // Deduct 5 points for each delayed schedule in the last 30 days
-            $delayedSchedules = DB::table('schedules')
-                ->where('driver_id', $driver->id)
-                ->where('status', 'delayed')
-                ->where('created_at', '>=', now()->subDays(30))
-                ->count();
-
-            $calculatedScore = 100 - ($dbIncidents30 * 10) - ($delayedSchedules * 5);
-            $performanceScore = max(0, min(100, $calculatedScore));
-
-            // If no incidents and no delays, use the base profile score if it exists
-            if ($dbIncidents30 === 0 && $delayedSchedules === 0) {
-                $performanceScore = $driver->performance_score ?? 100;
-            }
+            // Delegate to the shared scoring service (last 30 days)
+            $start30 = Carbon::now()->subDays(30)->startOfDay();
+            $end30   = Carbon::now()->endOfDay();
+            $performanceScore = DriverPerformanceService::calculateScore(
+                $driver->id,
+                $start30,
+                $end30,
+                $driver->performance_score
+            );
         }
 
         return (object)[

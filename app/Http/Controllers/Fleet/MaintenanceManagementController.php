@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use App\Models\MaintenanceRecord;
 use App\Models\Bus;
 use App\Models\Route;
+use App\Models\ColorPalette;
+use App\Models\SystemSetting;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -109,6 +111,7 @@ class MaintenanceManagementController extends Controller
                 'cost_php' => $record->cost_php,
                 'cost_formatted' => number_format((float)$record->cost_php, 2),
                 'status' => $record->status,
+                'expected_duration_minutes' => $record->expected_duration_minutes,
             ]
         ]);
     }
@@ -135,6 +138,17 @@ class MaintenanceManagementController extends Controller
             ];
         });
 
+        $completionTime = null;
+        if ($bus->status === 'maintenance') {
+            $maintRecord = MaintenanceRecord::where('bus_id', $bus->id)
+                ->whereIn('status', ['scheduled', 'in_progress'])
+                ->orderBy('scheduled_at', 'desc')
+                ->first();
+            if ($maintRecord) {
+                $completionTime = $maintRecord->scheduled_at->addMinutes($maintRecord->expected_duration_minutes)->timezone('Asia/Manila')->format('h:i A');
+            }
+        }
+
         return response()->json([
             'success' => true,
             'bus' => [
@@ -145,6 +159,7 @@ class MaintenanceManagementController extends Controller
                 'capacity' => $bus->capacity,
                 'passengers' => $bus->passengers,
                 'recent_services' => $recentRecords,
+                'completion_time' => $completionTime,
             ]
         ]);
     }
@@ -165,6 +180,7 @@ class MaintenanceManagementController extends Controller
             'technician_name' => 'nullable|string|max:100',
             'cost_php' => 'nullable|numeric|min:0',
             'status' => 'required|in:scheduled,in_progress,completed,cancelled',
+            'expected_duration_minutes' => 'nullable|integer|min:1',
         ];
 
         $validated = $request->validate($rules);
@@ -177,6 +193,7 @@ class MaintenanceManagementController extends Controller
             'technician_name' => $validated['technician_name'] ?: null,
             'cost_php' => $validated['cost_php'] !== null ? floatval($validated['cost_php']) : 0.00,
             'status' => $validated['status'],
+            'expected_duration_minutes' => $validated['expected_duration_minutes'] !== null ? intval($validated['expected_duration_minutes']) : 120,
         ];
 
         if ($isEditing) {
@@ -290,11 +307,12 @@ class MaintenanceManagementController extends Controller
         $totalFleet = Bus::count();
         $activeUnits = Bus::where('status', 'active')->count();
         $underMaintenance = Bus::where('status', 'maintenance')->count();
-        $breakdownCount = Bus::where('status', 'inactive')->count();
+        $breakdownCount = Bus::whereIn('status', ['maintenance', 'breakdown'])->count();
 
-        // Due for service within 7 days
+        // Due for service within configurable warning days
+        $dueWindowDays = (int) SystemSetting::get('maintenance_due_warning_days', 7);
         $dueForService = MaintenanceRecord::where('status', 'scheduled')
-            ->whereBetween('scheduled_at', [now(), now()->addDays(7)])
+            ->whereBetween('scheduled_at', [now(), now()->addDays($dueWindowDays)])
             ->count();
 
         return (object) [
@@ -311,21 +329,23 @@ class MaintenanceManagementController extends Controller
      */
     public function getBusHealth()
     {
-        $palette = [
-            '#378ADD', // Route 1 → blue
-            '#639922', // Route 2 → green
-            '#BA7517', // Route 3 → amber
-            '#E24B4A', // Route 4 → red
-            '#6B21A8', // Route 5 → purple
-            '#0F6E56', // Route 6 → teal
-            '#D97706', // Route 7 → orange
-            '#0891B2', // Route 8 → cyan
-        ];
+        $palette = ColorPalette::getColors('routes');
 
         return Bus::with('route')->get()->map(function ($bus) use ($palette) {
             $routeColor = '#888780'; // default: unassigned
             if ($bus->route) {
-                $routeColor = $palette[($bus->route->id - 1) % count($palette)];
+                $routeColor = $bus->route->color ?? ($palette[($bus->route->id - 1) % count($palette)] ?? '#003F87');
+            }
+
+            $completionTime = null;
+            if ($bus->status === 'maintenance') {
+                $maintRecord = MaintenanceRecord::where('bus_id', $bus->id)
+                    ->whereIn('status', ['scheduled', 'in_progress'])
+                    ->orderBy('scheduled_at', 'desc')
+                    ->first();
+                if ($maintRecord) {
+                    $completionTime = $maintRecord->scheduled_at->addMinutes($maintRecord->expected_duration_minutes)->timezone('Asia/Manila')->format('h:i A');
+                }
             }
 
             return (object) [
@@ -334,6 +354,7 @@ class MaintenanceManagementController extends Controller
                 'assigned_route' => $bus->route ? $bus->route->name : null,
                 'route_color'    => $routeColor,
                 'status'         => $bus->status,
+                'completion_time'=> $completionTime,
             ];
         });
     }
@@ -343,9 +364,10 @@ class MaintenanceManagementController extends Controller
      */
     public function getUpcomingSchedule()
     {
+        $scheduleWindowDays = (int) SystemSetting::get('maintenance_schedule_window_days', 30);
         return MaintenanceRecord::with('bus')
             ->where('status', 'scheduled')
-            ->whereBetween('scheduled_at', [now(), now()->addDays(30)])
+            ->whereBetween('scheduled_at', [now(), now()->addDays($scheduleWindowDays)])
             ->orderBy('scheduled_at')
             ->get()
             ->map(function ($row) {
@@ -395,13 +417,13 @@ class MaintenanceManagementController extends Controller
         $bus = Bus::find($busId);
         if (!$bus) return;
 
-        if ($newStatus === 'in_progress') {
+        if (in_array($newStatus, ['scheduled', 'in_progress'])) {
             $bus->update(['status' => 'maintenance']);
         } elseif ($newStatus === 'completed') {
             $bus->update(['status' => 'active']);
-        } elseif ($newStatus === 'cancelled' || $newStatus === 'scheduled') {
+        } elseif ($newStatus === 'cancelled') {
             $query = MaintenanceRecord::where('bus_id', $busId)
-                ->whereIn('status', ['in_progress']);
+                ->whereIn('status', ['scheduled', 'in_progress']);
             if ($editingId) {
                 $query->where('id', '!=', $editingId);
             }

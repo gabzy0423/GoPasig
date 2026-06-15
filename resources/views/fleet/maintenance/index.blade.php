@@ -27,8 +27,22 @@
 @endphp
 
 
-<section id="screen-maintenance" class="hidden" style="display: none;">
-<div class="space-y-5 lg:space-y-6">
+<section id="screen-maintenance" class="hidden animate-fade-in" style="display: none;">
+
+    <!-- LIST CONTAINER -->
+    <div id="maintenance-list-container" class="space-y-5 lg:space-y-6">
+
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Maintenance Management</h1>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+            <span>Dashboard</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span>Operations</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span id="maintenance-breadcrumb-current" class="text-slate-600 font-bold">Maintenance Management</span>
+        </div>
+    </div>
     <!-- Success Message Alert Container -->
     <div id="maintenance-alert" class="hidden p-3 bg-[#EAF3DE] border border-[#3B6D11] text-[#3B6D11] rounded-lg text-xs font-semibold flex items-center justify-between animate-fade-in-up">
         <div class="flex items-center gap-1.5">
@@ -39,11 +53,7 @@
     </div>
 
     <!-- Header Section -->
-    <section class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div class="space-y-1">
-            <h1 class="text-[22px] font-medium text-[#001F44]">Maintenance</h1>
-            <p class="text-[14px] text-slate-500">Fleet health monitoring - Libreng Sakay Program</p>
-        </div>
+    <section class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-end">
         <div class="flex flex-wrap items-center gap-2 lg:justify-end">
             <button id="btn-export-maintenance" class="inline-flex items-center gap-1.5 rounded-lg border border-black/15 bg-white px-3.5 py-2 text-[14px] font-medium text-[#001F44] hover:bg-slate-50 disabled:opacity-60 cursor-pointer transition">
                 <i class="ti ti-table-export text-[16px] text-slate-500"></i>
@@ -113,6 +123,9 @@
                         </div>
                         <p class="mt-2 text-[10px] opacity-80 font-medium">{{ $bus->assigned_route ?: 'No Route Assigned' }}</p>
                         <p class="mt-2 text-[11px] font-extrabold uppercase tracking-wider">{{ $busStatusLabels[$bus->status] ?? $bus->status }}</p>
+                        @if($bus->status === 'maintenance' && !empty($bus->completion_time))
+                            <p class="mt-1 text-[9.5px] font-bold text-[#BA7517]">Est. Done: {{ $bus->completion_time }}</p>
+                        @endif
                     </button>
                 @empty
                     <p class="col-span-full text-center text-slate-400 py-8">No bus health data.</p>
@@ -220,90 +233,98 @@
         </div>
     </section>
 
-    <!-- Schedule / Edit Maintenance Modal -->
-    <div id="maintenance-schedule-modal" class="hidden fixed inset-0 z-[60] grid place-items-center bg-black/40 px-4 backdrop-blur-xs transition-opacity animate-fade-in">
-        <div class="absolute inset-0" onclick="closeScheduleModal()"></div>
-        <div class="relative z-[61] w-full max-w-[520px] rounded-2xl bg-white p-6 shadow-2xl border border-black/10 animate-fade-in-up">
-            <!-- Header -->
-            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 class="text-base font-bold text-[#001F44] flex items-center gap-2">
-                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[#E6F1FB] text-[#003F87]">
-                        <i class="ti ti-tool text-lg"></i>
-                    </div>
-                    <span id="modal-title-text">Schedule Maintenance</span>
-                </h3>
-                <button onclick="closeScheduleModal()" class="text-slate-400 hover:text-slate-600 transition"><i class="ti ti-x text-[20px]"></i></button>
+    <!-- FORM CONTAINER (HIDDEN BY DEFAULT) -->
+    <div id="maintenance-form-container" class="hidden animate-fade-in">
+        <!-- Form Header -->
+        <div class="flex items-center gap-4 mb-6">
+            <button type="button" onclick="closeScheduleModal()" class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition shadow-sm cursor-pointer">
+                <i class="ti ti-arrow-left text-lg"></i>
+            </button>
+            <div>
+                <h1 id="modal-title-text" class="text-xl font-bold text-slate-900">Schedule Maintenance</h1>
+                <p id="modal-subtitle-text" class="text-xs text-slate-500 mt-0.5">Fill in the details to schedule or update a bus unit's maintenance record.</p>
             </div>
+        </div>
 
-            <!-- Form -->
-            <form id="maintenance-schedule-form" class="mt-4 space-y-4" onsubmit="saveMaintenanceSchedule(event)">
+        <!-- Form Card -->
+        <div class="rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">
+            <form id="maintenance-schedule-form" class="space-y-6 max-w-4xl" onsubmit="saveMaintenanceSchedule(event)">
                 <input type="hidden" id="form-record-id" name="id" value="">
                 
-                <!-- Bus Selection -->
-                <div class="space-y-1">
-                    <label for="form-bus-id" class="text-xs font-semibold text-slate-700">Select Bus Unit <span class="text-red-500">*</span></label>
-                    <select id="form-bus-id" name="bus_id" required class="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none focus:border-[#003F87] cursor-pointer">
-                        <option value="">Select bus plate...</option>
-                        @foreach (App\Models\Bus::all() as $b)
-                            <option value="{{ $b->id }}">{{ $b->plate_number }} ({{ $b->status }})</option>
-                        @endforeach
-                    </select>
-                    <span id="error-bus-id" class="hidden text-xs text-red-500 font-medium block"></span>
-                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Bus Selection -->
+                    <div class="space-y-2">
+                        <label for="form-bus-id" class="text-xs font-bold uppercase tracking-wider text-slate-500">Select Bus Unit <span class="text-red-500">*</span></label>
+                        <select id="form-bus-id" name="bus_id" required class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white cursor-pointer">
+                            <option value="">Select bus plate...</option>
+                            @foreach (App\Models\Bus::all() as $b)
+                                <option value="{{ $b->id }}">{{ $b->plate_number }} ({{ $b->status }})</option>
+                            @endforeach
+                        </select>
+                        <span id="error-bus-id" class="hidden text-xs text-red-500 font-medium block mt-1"></span>
+                    </div>
 
-                <!-- Type & Date Grid -->
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="space-y-1">
-                        <label for="form-type" class="text-xs font-semibold text-slate-700">Service Type <span class="text-red-500">*</span></label>
-                        <select id="form-type" name="type" required class="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none focus:border-[#003F87] cursor-pointer">
+                    <!-- Service Type -->
+                    <div class="space-y-2">
+                        <label for="form-type" class="text-xs font-bold uppercase tracking-wider text-slate-500">Service Type <span class="text-red-500">*</span></label>
+                        <select id="form-type" name="type" required class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white cursor-pointer">
                             <option value="Preventive">Preventive</option>
                             <option value="Corrective">Corrective</option>
                             <option value="Inspection">Inspection</option>
                         </select>
                     </div>
-                    <div class="space-y-1">
-                        <label for="form-scheduled-at" class="text-xs font-semibold text-slate-700">Scheduled Date & Time <span class="text-red-500">*</span></label>
-                        <input type="datetime-local" id="form-scheduled-at" name="scheduled_at" required class="w-full rounded-lg border border-black/10 px-3 py-1.5 text-[13px] outline-none focus:border-[#003F87]">
-                        <span id="error-scheduled-at" class="hidden text-xs text-red-500 font-medium block"></span>
+
+                    <!-- Scheduled Date & Time -->
+                    <div class="space-y-2">
+                        <label for="form-scheduled-at" class="text-xs font-bold uppercase tracking-wider text-slate-500">Scheduled Date & Time <span class="text-red-500">*</span></label>
+                        <input type="datetime-local" id="form-scheduled-at" name="scheduled_at" required class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-3 pr-4 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
+                        <span id="error-scheduled-at" class="hidden text-xs text-red-500 font-medium block mt-1"></span>
+                    </div>
+
+                    <!-- Technician Name -->
+                    <div class="space-y-2">
+                        <label for="form-technician-name" class="text-xs font-bold uppercase tracking-wider text-slate-500">Technician Name</label>
+                        <input type="text" id="form-technician-name" name="technician_name" placeholder="e.g. John Mechanic" class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
+                        <span id="error-technician-name" class="hidden text-xs text-red-500 font-medium block mt-1"></span>
+                    </div>
+
+                    <!-- Estimated Cost -->
+                    <div class="space-y-2">
+                        <label for="form-cost" class="text-xs font-bold uppercase tracking-wider text-slate-500">Estimated Cost (PHP)</label>
+                        <input type="number" step="0.01" id="form-cost" name="cost_php" placeholder="0.00" class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
+                        <span id="error-cost" class="hidden text-xs text-red-500 font-medium block mt-1"></span>
+                    </div>
+
+                    <!-- Service Status -->
+                    <div class="space-y-2">
+                        <label for="form-status" class="text-xs font-bold uppercase tracking-wider text-slate-500">Service Status <span class="text-red-500">*</span></label>
+                        <select id="form-status" name="status" required class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white cursor-pointer">
+                            <option value="scheduled">Scheduled</option>
+                            <option value="in_progress">In Progress (Bus will go offline)</option>
+                            <option value="completed">Completed (Bus will restore to active)</option>
+                            <option value="cancelled">Cancelled</option>
+                        </select>
+                    </div>
+
+                    <!-- Expected Duration -->
+                    <div class="space-y-2">
+                        <label for="form-expected-duration" class="text-xs font-bold uppercase tracking-wider text-slate-500">Expected Duration (Minutes)</label>
+                        <input type="number" min="1" id="form-expected-duration" name="expected_duration_minutes" placeholder="120" class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
+                        <span id="error-expected-duration" class="hidden text-xs text-red-500 font-medium block mt-1"></span>
                     </div>
                 </div>
 
-                <!-- Technician & Cost Grid -->
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="space-y-1">
-                        <label for="form-technician-name" class="text-xs font-semibold text-slate-700">Technician Name</label>
-                        <input type="text" id="form-technician-name" name="technician_name" placeholder="e.g. John Mechanic" class="w-full rounded-lg border border-black/10 px-3 py-2 text-[13px] outline-none focus:border-[#003F87]">
-                        <span id="error-technician-name" class="hidden text-xs text-red-500 font-medium block"></span>
-                    </div>
-                    <div class="space-y-1">
-                        <label for="form-cost" class="text-xs font-semibold text-slate-700">Estimated Cost (PHP)</label>
-                        <input type="number" step="0.01" id="form-cost" name="cost_php" placeholder="0.00" class="w-full rounded-lg border border-black/10 px-3 py-2 text-[13px] outline-none focus:border-[#003F87]">
-                        <span id="error-cost" class="hidden text-xs text-red-500 font-medium block"></span>
-                    </div>
+                <!-- Work Details / Description -->
+                <div class="space-y-2">
+                    <label for="form-description" class="text-xs font-bold uppercase tracking-wider text-slate-500">Work Details / Description <span class="text-red-500">*</span></label>
+                    <textarea id="form-description" name="description" required rows="4" placeholder="Describe work required (e.g. Engine tune-up, replacing worn brake pads...)" class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white resize-none"></textarea>
+                    <span id="error-description" class="hidden text-xs text-red-500 font-medium block mt-1"></span>
                 </div>
 
-                <!-- Status -->
-                <div class="space-y-1">
-                    <label for="form-status" class="text-xs font-semibold text-slate-700">Service Status <span class="text-red-500">*</span></label>
-                    <select id="form-status" name="status" required class="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none focus:border-[#003F87] cursor-pointer">
-                        <option value="scheduled">Scheduled</option>
-                        <option value="in_progress">In Progress (Bus will go offline)</option>
-                        <option value="completed">Completed (Bus will restore to active)</option>
-                        <option value="cancelled">Cancelled</option>
-                    </select>
-                </div>
-
-                <!-- Description -->
-                <div class="space-y-1">
-                    <label for="form-description" class="text-xs font-semibold text-slate-700">Work Details <span class="text-red-500">*</span></label>
-                    <textarea id="form-description" name="description" required rows="3" placeholder="Describe work required (e.g. Engine tune-up, replacing worn brake pads...)" class="w-full rounded-lg border border-black/10 px-3 py-2 text-[13px] outline-none focus:border-[#003F87] resize-none"></textarea>
-                    <span id="error-description" class="hidden text-xs text-red-500 font-medium block"></span>
-                </div>
-
-                <!-- Actions -->
-                <div class="flex items-center justify-end gap-2 border-t border-slate-100 pt-3 mt-4">
-                    <button type="button" onclick="closeScheduleModal()" class="rounded-lg border border-black/10 px-4 py-2 text-[13px] text-slate-600 hover:bg-slate-50 cursor-pointer font-medium transition-colors">Cancel</button>
-                    <button type="submit" class="rounded-lg bg-[#003F87] hover:bg-[#002D62] text-white px-4.5 py-2 text-[13px] font-semibold cursor-pointer shadow-sm transition-colors">
+                <!-- Submit / Cancel -->
+                <div class="flex items-center justify-end gap-2 border-t border-slate-100 pt-4 mt-6">
+                    <button type="button" onclick="closeScheduleModal()" class="rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer transition-colors">Cancel</button>
+                    <button type="submit" id="maintenance-submit-btn" class="rounded-lg bg-[#003F87] hover:bg-[#002D62] text-white px-5 py-2 text-xs font-bold cursor-pointer shadow-sm transition-colors">
                         Schedule Service
                     </button>
                 </div>
@@ -395,6 +416,10 @@
                                 <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Current Passengers</span>
                                 <span id="drawer-bus-passengers" class="font-bold text-[#003F87]">0 aboard</span>
                             </div>
+                        </div>
+                        <div id="drawer-bus-completion-container" class="hidden border-t border-slate-100 pt-4">
+                            <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Expected Completion Time</span>
+                            <span id="drawer-bus-completion-time" class="font-bold text-[#BA7517]">Time</span>
                         </div>
                         <div class="border-t border-slate-100 pt-4 space-y-2">
                             <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Recent Services</span>

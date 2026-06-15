@@ -1,4 +1,18 @@
-<section id="screen-analytics" class="hidden space-y-8">
+{{-- ==================== FLEET UTILIZATION ANALYTICS SCREEN ==================== --}}
+<section id="screen-analytics-fleet-utilization" class="hidden space-y-8 animate-fade-in">
+
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Reports & Analytics - Fleet Utilization</h1>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+            <span>Dashboard</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span>Reports & Analytics</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span class="text-slate-600 font-bold">Fleet Utilization</span>
+        </div>
+    </div>
+
     <!-- ==================== SECTION 1 — TOP KPI OVERVIEW STRIP ==================== -->
     <div class="grid grid-cols-2 gap-4 md:grid-cols-6 border-b border-slate-100 pb-6 shrink-0">
         <!-- Card 1 -->
@@ -85,8 +99,141 @@
         </div>
     </div>
 
+    <!-- ==================== SECTION 3B — BUS RIDERSHIP SUMMARY ==================== -->
+    <div id="analytics-fleet-utilization" class="space-y-3">
+        <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 block">Bus ridership summary — today</span>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" id="bus-summary-cards-grid">
+            <!-- Rendered dynamically by javascript -->
+        </div>
+    </div>
+
+    <!-- ==================== SECTION 3C — PASSENGER LOAD TIMELINE CHART ==================== -->
+    <div class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 shrink-0">
+            <div>
+                <h2 class="text-xs font-extrabold uppercase tracking-widest text-slate-800">Passenger load over time — by bus</h2>
+                <p class="text-[10px] font-bold text-slate-400 mt-0.5">Hourly passenger on-board count per active bus unit</p>
+            </div>
+            <div class="flex items-center gap-4 text-xs font-bold text-slate-500">
+                <div id="pax-load-timeline-legend" class="flex flex-wrap items-center gap-3">
+                    <!-- Populated dynamically -->
+                </div>
+                <span class="text-[9px] font-extrabold bg-rose-50 text-[#E24B4A] border border-[#E24B4A]/10 px-2.5 py-0.5 rounded-full uppercase tracking-wider">Ref Limit: 45 pax</span>
+            </div>
+        </div>
+
+        <!-- Timeline Line Chart canvas -->
+        <div class="relative h-[280px]">
+            <canvas id="pax-load-timeline-chart"></canvas>
+        </div>
+    </div>
+
+    <!-- ==================== SECTION 4 — DISPATCH DEMAND PREDICTION ==================== -->
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-10">
+        <!-- 4A. DISPATCH PREDICTION PANEL (Hero Column 65% width) -->
+        <div class="lg:col-span-6 rounded-xl border-l-4 border-[#003F87] border-y border-r border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] flex flex-col h-[480px]">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+                <span class="text-xs font-extrabold uppercase tracking-widest text-[#003F87] flex items-center gap-1.5">
+                    <i class="ti ti-sparkles text-base animate-pulse"></i>
+                    Dispatch Demand Forecast
+                </span>
+                <span class="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Based on 30-day ridership average</span>
+            </div>
+
+            <!-- Scrollable Tomorrow's Schedule prediction table -->
+            <div class="flex-1 overflow-y-auto mt-4 pr-1.5 scrollbar-thin scrollbar-thumb-slate-200">
+                <table class="w-full text-left border-collapse table-fixed">
+                    <thead>
+                        <tr class="border-b border-slate-100 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 bg-slate-50/50">
+                            <th class="px-3 py-2 font-bold w-[16%]">Time Slot</th>
+                            <th class="px-3 py-2 font-bold w-[16%]">Pred Pax</th>
+                            <th class="px-3 py-2 font-bold w-[12%]">Rec.</th>
+                            <th class="px-3 py-2 font-bold w-[12%]">Sched.</th>
+                            <th class="px-3 py-2 font-bold w-[14%] text-center">Gap</th>
+                            <th class="px-3 py-2 font-bold w-[30%]">Action Needed</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-xs font-semibold text-slate-700 divide-y divide-slate-100" id="forecast-schedule-tbody">
+                        <!-- Rendered dynamically by javascript -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Blue-bordered Dispatch Summary Info Card below -->
+            <div class="mt-4 border border-[#003F87]/20 bg-[#F0F5FF]/60 rounded-xl p-3 flex gap-3 shrink-0 items-center">
+                <span class="text-[#003F87] bg-white/80 p-2 rounded-lg"><i class="ti ti-info-circle text-base"></i></span>
+                <div class="leading-normal">
+                    <p class="text-[10px] font-black uppercase text-[#003F87] tracking-wider">Tomorrow's Dispatch Action Plan</p>
+                    <p class="text-[11px] text-slate-600 font-semibold mt-0.5">Shortages detected: <strong class="text-slate-900">8 buses</strong> across 6 peak hours. Busiest expected: <strong class="text-slate-900">7–8 AM (+2) and 5–6 PM (+2)</strong>. Pre-position 2 standby buses at Pasig Terminal for 6:45 AM and 4:45 PM deployment.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4B & 4C. ROUTE BREAKDOWN & 30-DAY TREND (35% width) -->
+        <div class="lg:col-span-4 space-y-6 flex flex-col h-[480px]">
+            <!-- 4B. Route Breakdown Tabs Card -->
+            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)] flex flex-col h-[180px] shrink-0">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2 shrink-0">
+                    <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-800">Forecast by route — tomorrow</span>
+                    <div id="forecast-route-tabs" class="flex flex-wrap gap-1 text-[9px] font-extrabold">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+                <div class="flex-1 flex flex-col justify-center space-y-2 mt-2 leading-none">
+                    <div class="flex justify-between text-xs font-bold text-slate-500">
+                        <span>Expected Route Volume:</span>
+                        <span class="text-slate-900 font-extrabold" id="pred-route-vol">1,284 pax / day</span>
+                    </div>
+                    <div class="flex justify-between text-xs font-bold text-slate-500">
+                        <span>Recommended Dispatches:</span>
+                        <span class="text-slate-900 font-extrabold" id="pred-route-rec">29 recommended</span>
+                    </div>
+                    <div class="bg-[#FEF7ED] border border-[#BA7517]/10 p-2.5 rounded-lg text-[#8F530B] font-extrabold text-[11px] shrink-0 text-center uppercase tracking-wider" id="pred-route-busiest">
+                        Expected highest boarding: Pasig City Hall · 7–8 AM · ~67 passengers
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4C. 30-day Ridership Trend Chart Card -->
+            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)] flex-1 flex flex-col min-h-0">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2 shrink-0">
+                    <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-800">Historical ridership — last 30 days</span>
+                    <span class="text-[9px] font-bold text-slate-400">Total basis</span>
+                </div>
+                
+                <!-- Canvas Chart -->
+                <div class="flex-1 min-h-0 mt-3 relative">
+                    <canvas id="historical-trend-chart" class="w-full h-full"></canvas>
+                </div>
+
+                <div class="mt-2.5 border-t border-slate-50 pt-2 grid grid-cols-3 gap-2 text-[9px] font-bold text-slate-500 shrink-0 text-center">
+                    <div>Wkday Avg: <strong class="text-slate-800 block text-[10px] mt-0.5">1,247 pax</strong></div>
+                    <div>Wkend Avg: <strong class="text-slate-800 block text-[10px] mt-0.5">891 pax</strong></div>
+                    <div>Growth: <strong class="text-[#639922] block text-[10px] mt-0.5">+4.2%</strong></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+{{-- ==================== ROUTE PERFORMANCE ANALYTICS SCREEN ==================== --}}
+<section id="screen-analytics-route-performance" class="hidden space-y-8 animate-fade-in">
+
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Reports & Analytics - Route Performance</h1>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+            <span>Dashboard</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span>Reports & Analytics</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span class="text-slate-600 font-bold">Route Performance</span>
+        </div>
+    </div>
+
     <!-- ==================== SECTION 2 — RIDERSHIP ANALYTICS ==================== -->
-    <div class="space-y-6">
+    <div id="analytics-route-performance" class="space-y-6">
         <!-- 2A. HOURLY RIDERSHIP CHART -->
         <div class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 shrink-0">
@@ -96,10 +243,8 @@
                 </div>
                 <div class="flex items-center gap-4 text-xs font-bold text-slate-500">
                     <!-- Custom HTML Legend -->
-                    <div class="flex items-center gap-3">
-                        <span class="flex items-center gap-1"><span class="h-2.5 w-2.5 rounded bg-[#003F87]"></span> Route A — 532 pax</span>
-                        <span class="flex items-center gap-1"><span class="h-2.5 w-2.5 rounded bg-[#639922]"></span> Route B — 421 pax</span>
-                        <span class="flex items-center gap-1"><span class="h-2.5 w-2.5 rounded bg-[#BA7517]"></span> Route C — 331 pax</span>
+                    <div id="hourly-chart-legend" class="flex flex-wrap items-center gap-3">
+                        <!-- Populated dynamically -->
                     </div>
                     <span class="text-[10px] font-extrabold bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded uppercase tracking-wider">Today, May 24</span>
                 </div>
@@ -137,22 +282,8 @@
                 </div>
 
                 <!-- Custom Legend with Trends below -->
-                <div class="border-t border-slate-100 pt-3 grid grid-cols-3 gap-2 text-[10px] font-bold text-slate-500 shrink-0 justify-items-center">
-                    <div class="text-center">
-                        <span class="flex items-center gap-1.5 justify-center"><span class="h-2 w-2 rounded-full bg-[#003F87]"></span> Route A</span>
-                        <p class="text-slate-800 font-extrabold mt-0.5" id="doughnut-route-a-desc">532 pax (41%)</p>
-                        <span class="text-[#639922]" id="doughnut-route-a-trend"><i class="ti ti-trending-up"></i> +4%</span>
-                    </div>
-                    <div class="text-center">
-                        <span class="flex items-center gap-1.5 justify-center"><span class="h-2 w-2 rounded-full bg-[#639922]"></span> Route B</span>
-                        <p class="text-slate-800 font-extrabold mt-0.5" id="doughnut-route-b-desc">421 pax (33%)</p>
-                        <span class="text-[#639922]" id="doughnut-route-b-trend"><i class="ti ti-trending-up"></i> +2%</span>
-                    </div>
-                    <div class="text-center">
-                        <span class="flex items-center gap-1.5 justify-center"><span class="h-2 w-2 rounded-full bg-[#BA7517]"></span> Route C</span>
-                        <p class="text-slate-800 font-extrabold mt-0.5" id="doughnut-route-c-desc">331 pax (26%)</p>
-                        <span class="text-[#E24B4A]" id="doughnut-route-c-trend"><i class="ti ti-trending-down"></i> -1%</span>
-                    </div>
+                <div id="route-doughnut-legend" class="border-t border-slate-100 pt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-bold text-slate-500 shrink-0 justify-items-center w-full">
+                    <!-- Populated dynamically -->
                 </div>
             </div>
 
@@ -265,10 +396,8 @@
                 </div>
 
                 <!-- Insight Chips -->
-                <div class="flex flex-wrap gap-2 text-[10px] font-bold">
-                    <span class="bg-[#FDF2F2] text-[#E24B4A] border border-[#E24B4A]/10 px-2.5 py-0.5 rounded-full uppercase">Highest: Tuesday 7 AM · 312 pax</span>
-                    <span class="bg-slate-50 border border-slate-200 px-2.5 py-0.5 rounded-full text-slate-500 uppercase">Lowest: Sunday 10 PM · 7 pax</span>
-                    <span class="bg-[#E6F1FB] text-[#003F87] border border-[#003F87]/10 px-2.5 py-0.5 rounded-full uppercase">Most consistent: Weekdays 7–9 AM</span>
+                <div id="heatmap-insights-container" class="flex flex-wrap gap-2 text-[10px] font-bold">
+                    <!-- Populated dynamically -->
                 </div>
             </div>
         </div>
@@ -353,254 +482,144 @@
             </div>
         </div>
     </div>
+</section>
 
-    <!-- ==================== SECTION 3 — PER-BUS PASSENGER TRACKING ==================== -->
-    <div class="space-y-6">
-        <!-- 3A. PASSENGERS PER BUS TRIP TABLE -->
-        <div class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
-            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 shrink-0">
-                <div>
-                    <h2 class="text-xs font-extrabold uppercase tracking-widest text-slate-800">Passenger count per trip — today</h2>
-                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">Real-time driver accountability & capacity analytics database</p>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <select onchange="filterTripTableByRoute()" id="trip-route-filter" class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
-                        <option value="all">All Routes</option>
-                        <option value="Route A">Route A</option>
-                        <option value="Route B">Route B</option>
-                        <option value="Route C">Route C</option>
-                    </select>
-                    <button onclick="exportCSVDataMock()" class="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer">
-                        <i class="ti ti-download text-sm"></i>
-                        Export CSV
-                    </button>
-                </div>
-            </div>
 
-            <!-- Data-Dense Full-Width Table Layout -->
-            <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-                <table class="w-full text-left border-collapse table-fixed min-w-[800px]">
-                    <thead>
-                        <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-widest text-slate-500">
-                            <th class="px-4 py-2.5 font-bold w-[8%]">Trip #</th>
-                            <th class="px-4 py-2.5 font-bold w-[10%]">Bus Plate</th>
-                            <th class="px-4 py-2.5 font-bold w-[14%]">Driver</th>
-                            <th class="px-4 py-2.5 font-bold w-[10%]">Route</th>
-                            <th class="px-4 py-2.5 font-bold w-[9%]">Departure</th>
-                            <th class="px-4 py-2.5 font-bold w-[9%]">Arrival</th>
-                            <th class="px-4 py-2.5 font-bold w-[10%]">Pax Boarded</th>
-                            <th class="px-4 py-2.5 font-bold w-[10%]">Pax Alighted</th>
-                            <th class="px-4 py-2.5 font-bold w-[10%]">Peak Load</th>
-                            <th class="px-4 py-2.5 font-bold w-[10%]">Capacity %</th>
-                        </tr>
-                    </thead>
-                    <tbody class="text-xs font-semibold text-slate-700 divide-y divide-slate-100" id="trip-pax-tbody">
-                        <!-- Rendered dynamically by javascript -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
+{{-- ==================== DRIVER PERFORMANCE ANALYTICS SCREEN ==================== --}}
+<section id="screen-analytics-driver-performance" class="hidden space-y-8 animate-fade-in">
 
-        <!-- 3B. PER-BUS DAILY SUMMARY CARDS -->
-        <div class="space-y-3">
-            <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 block">Bus ridership summary — today</span>
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" id="bus-summary-cards-grid">
-                <!-- Rendered dynamically by javascript -->
-            </div>
-        </div>
-
-        <!-- 3C. PASSENGER LOAD TIMELINE CHART -->
-        <div class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
-            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 shrink-0">
-                <div>
-                    <h2 class="text-xs font-extrabold uppercase tracking-widest text-slate-800">Passenger load over time — by bus</h2>
-                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">Hourly passenger on-board count per active bus unit</p>
-                </div>
-                <div class="flex items-center gap-4 text-xs font-bold text-slate-500">
-                    <div class="flex flex-wrap items-center gap-3">
-                        <span class="flex items-center gap-1"><span class="h-2.5 w-4 rounded bg-[#003F87] border border-white"></span> PJY-8821 (Solid)</span>
-                        <span class="flex items-center gap-1"><span class="h-2.5 w-4 rounded bg-[#639922] border-t-2 border-b-2 border-dashed border-white"></span> QRS-4412 (Dash)</span>
-                        <span class="flex items-center gap-1"><span class="h-2.5 w-4 rounded bg-[#BA7517] border-t-2 border-b-2 border-dotted border-white"></span> TUV-3301 (Dot)</span>
-                        <span class="flex items-center gap-1"><span class="h-2.5 w-4 rounded bg-[#E24B4A] border-t-2 border-b-2 border-dashed border-white"></span> MNO-2211 (Long-dash)</span>
-                    </div>
-                    <span class="text-[9px] font-extrabold bg-rose-50 text-[#E24B4A] border border-[#E24B4A]/10 px-2.5 py-0.5 rounded-full uppercase tracking-wider">Ref Limit: 45 pax</span>
-                </div>
-            </div>
-
-            <!-- Timeline Line Chart canvas -->
-            <div class="relative h-[280px]">
-                <canvas id="pax-load-timeline-chart"></canvas>
-            </div>
-        </div>
-
-        <!-- 3D. DRIVER RIDERSHIP PERFORMANCE TABLE -->
-        <div class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
-            <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 block border-b border-slate-100 pb-3">Ridership by driver — today</span>
-            
-            <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-                <table class="w-full text-left border-collapse min-w-[700px]">
-                    <thead>
-                        <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-                            <th class="px-5 py-3 font-bold w-[10%]">Rank</th>
-                            <th class="px-5 py-3 font-bold">Driver</th>
-                            <th class="px-5 py-3 font-bold">Assigned Bus</th>
-                            <th class="px-5 py-3 font-bold">Assigned Route</th>
-                            <th class="px-5 py-3 font-bold">Trips Today</th>
-                            <th class="px-5 py-3 font-bold">Total Pax Served</th>
-                            <th class="px-5 py-3 font-bold">Avg Pax/Trip</th>
-                            <th class="px-5 py-3 font-bold">Peak Load Reached</th>
-                            <th class="px-5 py-3 font-bold text-right">Incidents</th>
-                        </tr>
-                    </thead>
-                    <tbody class="text-xs font-semibold text-slate-700 divide-y divide-slate-100" id="driver-performance-tbody">
-                        <tr class="hover:bg-slate-50/50 transition">
-                            <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-[#EF9F27] text-[10px] font-black text-[#633806]" title="Rank 1 Gold">#1</span></td>
-                            <td class="px-5 py-3.5 font-bold">Ana Flores</td>
-                            <td class="px-5 py-3.5 font-mono">TUV-3301</td>
-                            <td class="px-5 py-3.5 text-[#BA7517] font-bold">Route C</td>
-                            <td class="px-5 py-3.5">5 trips</td>
-                            <td class="px-5 py-3.5 font-extrabold text-[#003F87]">221 pax</td>
-                            <td class="px-5 py-3.5">44.2</td>
-                            <td class="px-5 py-3.5 text-rose-600 font-extrabold">45 <span class="text-[9px] font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full uppercase ml-1">Full x3</span></td>
-                            <td class="px-5 py-3.5 text-right text-emerald-600 font-bold"><i class="ti ti-check text-base"></i></td>
-                        </tr>
-                        <tr class="hover:bg-slate-50/50 transition">
-                            <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-[#D3D1C7] text-[10px] font-black text-[#444441]" title="Rank 2 Silver">#2</span></td>
-                            <td class="px-5 py-3.5 font-bold">Juan dela Cruz</td>
-                            <td class="px-5 py-3.5 font-mono">PJY-8821</td>
-                            <td class="px-5 py-3.5 text-[#003F87] font-bold">Route A</td>
-                            <td class="px-5 py-3.5">4 trips</td>
-                            <td class="px-5 py-3.5 font-extrabold text-[#003F87]">187 pax</td>
-                            <td class="px-5 py-3.5">46.8</td>
-                            <td class="px-5 py-3.5 text-rose-600 font-extrabold">45 <span class="text-[9px] font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full uppercase ml-1">Full x2</span></td>
-                            <td class="px-5 py-3.5 text-right text-emerald-600 font-bold"><i class="ti ti-check text-base"></i></td>
-                        </tr>
-                        <tr class="hover:bg-slate-50/50 transition">
-                            <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-[#F5C4B3] text-[10px] font-black text-[#712B13]" title="Rank 3 Bronze">#3</span></td>
-                            <td class="px-5 py-3.5 font-bold">Maria Santos</td>
-                            <td class="px-5 py-3.5 font-mono">QRS-4412</td>
-                            <td class="px-5 py-3.5 text-[#639922] font-bold">Route B</td>
-                            <td class="px-5 py-3.5">4 trips</td>
-                            <td class="px-5 py-3.5 font-extrabold text-[#003F87]">163 pax</td>
-                            <td class="px-5 py-3.5">40.8</td>
-                            <td class="px-5 py-3.5 text-slate-500">43</td>
-                            <td class="px-5 py-3.5 text-right"><span class="inline-flex rounded-full bg-rose-50 border border-rose-100 px-2 py-0.5 text-[9px] font-bold text-rose-600">1 alert</span></td>
-                        </tr>
-                        <tr class="hover:bg-slate-50/50 transition">
-                            <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center text-slate-400 text-xs font-extrabold">#4</span></td>
-                            <td class="px-5 py-3.5 font-bold">Carlos Bautista</td>
-                            <td class="px-5 py-3.5 font-mono">WXY-9988</td>
-                            <td class="px-5 py-3.5 text-[#639922] font-bold">Route B</td>
-                            <td class="px-5 py-3.5">3 trips</td>
-                            <td class="px-5 py-3.5 font-extrabold text-[#003F87]">121 pax</td>
-                            <td class="px-5 py-3.5">40.3</td>
-                            <td class="px-5 py-3.5 text-slate-500">39</td>
-                            <td class="px-5 py-3.5 text-right text-emerald-600 font-bold"><i class="ti ti-check text-base"></i></td>
-                        </tr>
-                        <tr class="hover:bg-slate-50/50 transition">
-                            <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center text-slate-400 text-xs font-extrabold">#5</span></td>
-                            <td class="px-5 py-3.5 font-bold">Pedro Garcia</td>
-                            <td class="px-5 py-3.5 font-mono">MNO-2211</td>
-                            <td class="px-5 py-3.5 text-[#003F87] font-bold">Route A</td>
-                            <td class="px-5 py-3.5">3 trips</td>
-                            <td class="px-5 py-3.5 font-extrabold text-[#003F87]">118 pax</td>
-                            <td class="px-5 py-3.5">39.3</td>
-                            <td class="px-5 py-3.5 text-rose-600 font-extrabold">45 <span class="text-[9px] font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full uppercase ml-1">Full x1</span></td>
-                            <td class="px-5 py-3.5 text-right text-emerald-600 font-bold"><i class="ti ti-check text-base"></i></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Reports & Analytics - Driver Performance</h1>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+            <span>Dashboard</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span>Reports & Analytics</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span class="text-slate-600 font-bold">Driver Performance</span>
         </div>
     </div>
 
-    <!-- ==================== SECTION 4 — DISPATCH DEMAND PREDICTION ==================== -->
-    <div class="grid grid-cols-1 gap-6 lg:grid-cols-10">
-        <!-- 4A. DISPATCH PREDICTION PANEL (Hero Column 65% width) -->
-        <div class="lg:col-span-6 rounded-xl border-l-4 border-[#003F87] border-y border-r border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] flex flex-col h-[480px]">
-            <div class="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
-                <span class="text-xs font-extrabold uppercase tracking-widest text-[#003F87] flex items-center gap-1.5">
-                    <i class="ti ti-sparkles text-base animate-pulse"></i>
-                    Dispatch Demand Forecast
-                </span>
-                <span class="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Based on 30-day ridership average</span>
+    <!-- ==================== SECTION 3A — PASSENGERS PER BUS TRIP TABLE ==================== -->
+    <div class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 shrink-0">
+            <div>
+                <h2 class="text-xs font-extrabold uppercase tracking-widest text-slate-800">Passenger count per trip — today</h2>
+                <p class="text-[10px] font-bold text-slate-400 mt-0.5">Real-time driver accountability & capacity analytics database</p>
             </div>
-
-            <!-- Scrollable Tomorrow's Schedule prediction table -->
-            <div class="flex-1 overflow-y-auto mt-4 pr-1.5 scrollbar-thin scrollbar-thumb-slate-200">
-                <table class="w-full text-left border-collapse table-fixed">
-                    <thead>
-                        <tr class="border-b border-slate-100 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 bg-slate-50/50">
-                            <th class="px-3 py-2 font-bold w-[16%]">Time Slot</th>
-                            <th class="px-3 py-2 font-bold w-[16%]">Pred Pax</th>
-                            <th class="px-3 py-2 font-bold w-[12%]">Rec.</th>
-                            <th class="px-3 py-2 font-bold w-[12%]">Sched.</th>
-                            <th class="px-3 py-2 font-bold w-[14%] text-center">Gap</th>
-                            <th class="px-3 py-2 font-bold w-[30%]">Action Needed</th>
-                        </tr>
-                    </thead>
-                    <tbody class="text-xs font-semibold text-slate-700 divide-y divide-slate-100" id="forecast-schedule-tbody">
-                        <!-- Rendered dynamically by javascript -->
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Blue-bordered Dispatch Summary Info Card below -->
-            <div class="mt-4 border border-[#003F87]/20 bg-[#F0F5FF]/60 rounded-xl p-3 flex gap-3 shrink-0 items-center">
-                <span class="text-[#003F87] bg-white/80 p-2 rounded-lg"><i class="ti ti-info-circle text-base"></i></span>
-                <div class="leading-normal">
-                    <p class="text-[10px] font-black uppercase text-[#003F87] tracking-wider">Tomorrow's Dispatch Action Plan</p>
-                    <p class="text-[11px] text-slate-600 font-semibold mt-0.5">Shortages detected: <strong class="text-slate-900">8 buses</strong> across 6 peak hours. Busiest expected: <strong class="text-slate-900">7–8 AM (+2) and 5–6 PM (+2)</strong>. Pre-position 2 standby buses at Pasig Terminal for 6:45 AM and 4:45 PM deployment.</p>
-                </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <select onchange="filterTripTableByRoute()" id="trip-route-filter" class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
+                    <option value="all">All Routes</option>
+                    <!-- Populated dynamically -->
+                </select>
+                <button onclick="exportCSVDataMock()" class="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer">
+                    <i class="ti ti-download text-sm"></i>
+                    Export CSV
+                </button>
             </div>
         </div>
 
-        <!-- 4B & 4C. ROUTE BREAKDOWN & 30-DAY TREND (35% width) -->
-        <div class="lg:col-span-4 space-y-6 flex flex-col h-[480px]">
-            <!-- 4B. Route Breakdown Tabs Card -->
-            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)] flex flex-col h-[180px] shrink-0">
-                <div class="flex items-center justify-between border-b border-slate-100 pb-2 shrink-0">
-                    <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-800">Forecast by route — tomorrow</span>
-                    <div class="flex gap-1 text-[9px] font-extrabold">
-                        <button onclick="switchPredictionRoute('all')" data-pred-route-tab="all" class="bg-[#003F87] text-white px-2 py-0.5 rounded transition uppercase cursor-pointer">All</button>
-                        <button onclick="switchPredictionRoute('A')" data-pred-route-tab="A" class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-200 transition uppercase cursor-pointer">A</button>
-                        <button onclick="switchPredictionRoute('B')" data-pred-route-tab="B" class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-200 transition uppercase cursor-pointer">B</button>
-                        <button onclick="switchPredictionRoute('C')" data-pred-route-tab="C" class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-200 transition uppercase cursor-pointer">C</button>
-                    </div>
-                </div>
-                <div class="flex-1 flex flex-col justify-center space-y-2 mt-2 leading-none">
-                    <div class="flex justify-between text-xs font-bold text-slate-500">
-                        <span>Expected Route Volume:</span>
-                        <span class="text-slate-900 font-extrabold" id="pred-route-vol">1,284 pax / day</span>
-                    </div>
-                    <div class="flex justify-between text-xs font-bold text-slate-500">
-                        <span>Recommended Dispatches:</span>
-                        <span class="text-slate-900 font-extrabold" id="pred-route-rec">29 recommended</span>
-                    </div>
-                    <div class="bg-[#FEF7ED] border border-[#BA7517]/10 p-2.5 rounded-lg text-[#8F530B] font-extrabold text-[11px] shrink-0 text-center uppercase tracking-wider" id="pred-route-busiest">
-                        Expected highest boarding: Pasig City Hall · 7–8 AM · ~67 passengers
-                    </div>
-                </div>
-            </div>
+        <!-- Data-Dense Full-Width Table Layout -->
+        <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
+            <table class="w-full text-left border-collapse table-fixed min-w-[800px]">
+                <thead>
+                    <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-widest text-slate-500">
+                        <th class="px-4 py-2.5 font-bold w-[8%]">Trip #</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Bus Plate</th>
+                        <th class="px-4 py-2.5 font-bold w-[14%]">Driver</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Route</th>
+                        <th class="px-4 py-2.5 font-bold w-[9%]">Departure</th>
+                        <th class="px-4 py-2.5 font-bold w-[9%]">Arrival</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Pax Boarded</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Pax Alighted</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Peak Load</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Capacity %</th>
+                    </tr>
+                </thead>
+                <tbody class="text-xs font-semibold text-slate-700 divide-y divide-slate-100" id="trip-pax-tbody">
+                    <!-- Rendered dynamically by javascript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
 
-            <!-- 4C. 30-day Ridership Trend Chart Card -->
-            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)] flex-1 flex flex-col min-h-0">
-                <div class="flex items-center justify-between border-b border-slate-100 pb-2 shrink-0">
-                    <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-800">Historical ridership — last 30 days</span>
-                    <span class="text-[9px] font-bold text-slate-400">Total basis</span>
-                </div>
-                
-                <!-- Canvas Chart -->
-                <div class="flex-1 min-h-0 mt-3 relative">
-                    <canvas id="historical-trend-chart" class="w-full h-full"></canvas>
-                </div>
-
-                <div class="mt-2.5 border-t border-slate-50 pt-2 grid grid-cols-3 gap-2 text-[9px] font-bold text-slate-500 shrink-0 text-center">
-                    <div>Wkday Avg: <strong class="text-slate-800 block text-[10px] mt-0.5">1,247 pax</strong></div>
-                    <div>Wkend Avg: <strong class="text-slate-800 block text-[10px] mt-0.5">891 pax</strong></div>
-                    <div>Growth: <strong class="text-[#639922] block text-[10px] mt-0.5">+4.2%</strong></div>
-                </div>
-            </div>
+    <!-- ==================== SECTION 3D — DRIVER PERFORMANCE TABLE ==================== -->
+    <div id="analytics-driver-performance" class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
+        <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 block border-b border-slate-100 pb-3">Ridership by driver — today</span>
+        
+        <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
+            <table class="w-full text-left border-collapse min-w-[700px]">
+                <thead>
+                    <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                        <th class="px-5 py-3 font-bold w-[10%]">Rank</th>
+                        <th class="px-5 py-3 font-bold">Driver</th>
+                        <th class="px-5 py-3 font-bold">Assigned Bus</th>
+                        <th class="px-5 py-3 font-bold">Assigned Route</th>
+                        <th class="px-5 py-3 font-bold">Trips Today</th>
+                        <th class="px-5 py-3 font-bold">Total Pax Served</th>
+                        <th class="px-5 py-3 font-bold">Avg Pax/Trip</th>
+                        <th class="px-5 py-3 font-bold">Peak Load Reached</th>
+                        <th class="px-5 py-3 font-bold text-right">Incidents</th>
+                    </tr>
+                </thead>
+                <tbody class="text-xs font-semibold text-slate-700 divide-y divide-slate-100" id="driver-performance-tbody">
+                    <tr class="hover:bg-slate-50/50 transition">
+                        <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-[#EF9F27] text-[10px] font-black text-[#633806]" title="Rank 1 Gold">#1</span></td>
+                        <td class="px-5 py-3.5 font-bold">Ana Flores</td>
+                        <td class="px-5 py-3.5 font-mono">TUV-3301</td>
+                        <td class="px-5 py-3.5 text-[#BA7517] font-bold">Route C</td>
+                        <td class="px-5 py-3.5">5 trips</td>
+                        <td class="px-5 py-3.5 font-extrabold text-[#003F87]">221 pax</td>
+                        <td class="px-5 py-3.5">44.2</td>
+                        <td class="px-5 py-3.5 text-rose-600 font-extrabold">45 <span class="text-[9px] font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full uppercase ml-1">Full x3</span></td>
+                        <td class="px-5 py-3.5 text-right text-emerald-600 font-bold"><i class="ti ti-check text-base"></i></td>
+                    </tr>
+                    <tr class="hover:bg-slate-50/50 transition">
+                        <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-[#D3D1C7] text-[10px] font-black text-[#444441]" title="Rank 2 Silver">#2</span></td>
+                        <td class="px-5 py-3.5 font-bold">Juan dela Cruz</td>
+                        <td class="px-5 py-3.5 font-mono">PJY-8821</td>
+                        <td class="px-5 py-3.5 text-[#003F87] font-bold">Route A</td>
+                        <td class="px-5 py-3.5">4 trips</td>
+                        <td class="px-5 py-3.5 font-extrabold text-[#003F87]">187 pax</td>
+                        <td class="px-5 py-3.5">46.8</td>
+                        <td class="px-5 py-3.5 text-rose-600 font-extrabold">45 <span class="text-[9px] font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full uppercase ml-1">Full x2</span></td>
+                        <td class="px-5 py-3.5 text-right text-emerald-600 font-bold"><i class="ti ti-check text-base"></i></td>
+                    </tr>
+                    <tr class="hover:bg-slate-50/50 transition">
+                        <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-[#F5C4B3] text-[10px] font-black text-[#712B13]" title="Rank 3 Bronze">#3</span></td>
+                        <td class="px-5 py-3.5 font-bold">Maria Santos</td>
+                        <td class="px-5 py-3.5 font-mono">QRS-4412</td>
+                        <td class="px-5 py-3.5 text-[#639922] font-bold">Route B</td>
+                        <td class="px-5 py-3.5">4 trips</td>
+                        <td class="px-5 py-3.5 font-extrabold text-[#003F87]">163 pax</td>
+                        <td class="px-5 py-3.5">40.8</td>
+                        <td class="px-5 py-3.5 text-slate-500">43</td>
+                        <td class="px-5 py-3.5 text-right"><span class="inline-flex rounded-full bg-rose-50 border border-rose-100 px-2 py-0.5 text-[9px] font-bold text-rose-600">1 alert</span></td>
+                    </tr>
+                    <tr class="hover:bg-slate-50/50 transition">
+                        <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center text-slate-400 text-xs font-extrabold">#4</span></td>
+                        <td class="px-5 py-3.5 font-bold">Carlos Bautista</td>
+                        <td class="px-5 py-3.5 font-mono">WXY-9988</td>
+                        <td class="px-5 py-3.5 text-[#639922] font-bold">Route B</td>
+                        <td class="px-5 py-3.5">3 trips</td>
+                        <td class="px-5 py-3.5 font-extrabold text-[#003F87]">121 pax</td>
+                        <td class="px-5 py-3.5">40.3</td>
+                        <td class="px-5 py-3.5 text-slate-500">39</td>
+                        <td class="px-5 py-3.5 text-right text-emerald-600 font-bold"><i class="ti ti-check text-base"></i></td>
+                    </tr>
+                    <tr class="hover:bg-slate-50/50 transition">
+                        <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center text-slate-400 text-xs font-extrabold">#5</span></td>
+                        <td class="px-5 py-3.5 font-bold">Pedro Garcia</td>
+                        <td class="px-5 py-3.5 font-mono">MNO-2211</td>
+                        <td class="px-5 py-3.5 text-[#003F87] font-bold">Route A</td>
+                        <td class="px-5 py-3.5">3 trips</td>
+                        <td class="px-5 py-3.5 font-extrabold text-[#003F87]">118 pax</td>
+                        <td class="px-5 py-3.5">39.3</td>
+                        <td class="px-5 py-3.5 text-rose-600 font-extrabold">45 <span class="text-[9px] font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full uppercase ml-1">Full x1</span></td>
+                        <td class="px-5 py-3.5 text-right text-emerald-600 font-bold"><i class="ti ti-check text-base"></i></td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 

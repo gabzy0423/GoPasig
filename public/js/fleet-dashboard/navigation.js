@@ -10,7 +10,8 @@ function switchScreen(screenName) {
     const screens = [
         'overview', 'monitor', 'utilization', 'drivers',
         'routes', 'schedule', 'incidents', 'maintenance',
-        'announcements', 'analytics', 'dispatch-intelligence', 'placeholder'
+        'announcements', 'analytics', 'dispatch-intelligence', 'placeholder',
+        'commuter-trips', 'commuter-sessions'
     ];
     screens.forEach(s => {
         const el = document.getElementById(`screen-${s}`);
@@ -27,16 +28,68 @@ function switchScreen(screenName) {
         btn.classList.add('text-white/70', 'hover:text-white', 'hover:bg-white/[0.04]');
     });
 
-    // Set page header title & active state
+    // Handle Commuter Monitor dropdown state based on active screen
+    const commuterMenu = document.getElementById('commuter-dropdown-menu');
+    const commuterArrow = document.getElementById('commuter-dropdown-arrow');
+    if (commuterMenu && commuterArrow) {
+        if (screenName === 'commuter-trips' || screenName === 'commuter-sessions') {
+            commuterMenu.classList.remove('hidden');
+            commuterArrow.classList.add('rotate-180');
+        } else {
+            commuterMenu.classList.add('hidden');
+            commuterArrow.classList.remove('rotate-180');
+        }
+    }
+
+    // Set breadcrumb & active nav state
+    const screenLabels = {
+        'overview':              'Overview',
+        'monitor':               'Live Monitor',
+        'utilization':           'Fleet Utilization',
+        'drivers':               'Driver Performance',
+        'routes':                'Route Performance',
+        'schedule':              'Schedule Compliance',
+        'incidents':             'Incident Reports',
+        'maintenance':           'Maintenance',
+        'announcements':         'Announcements',
+        'analytics':             'Analytics',
+        'dispatch-intelligence': 'Dispatch Intelligence',
+        'commuter-trips':        'Commuter Trip Log',
+        'commuter-sessions':     'Active Commuter Sessions',
+    };
+
+    const screenIcons = {
+        'overview':              'ti-layout-dashboard',
+        'monitor':               'ti-map-pin',
+        'utilization':           'ti-chart-donut',
+        'drivers':               'ti-id',
+        'routes':                'ti-route',
+        'schedule':              'ti-calendar-time',
+        'incidents':             'ti-alert-triangle',
+        'maintenance':           'ti-tool',
+        'announcements':         'ti-speakerphone',
+        'analytics':             'ti-chart-bar',
+        'dispatch-intelligence': 'ti-brain',
+        'commuter-trips':        'ti-clipboard-list',
+        'commuter-sessions':     'ti-key',
+    };
+
     const activeNavBtn = document.querySelector(`[data-nav="${screenName}"]`);
-    const pageTitle = document.getElementById('page-title');
+    const breadcrumbCurrent = document.getElementById('breadcrumb-current');
+    const breadcrumbIcon    = document.getElementById('breadcrumb-icon');
 
     if (activeNavBtn) {
         activeNavBtn.classList.remove('text-white/70', 'hover:text-white', 'hover:bg-white/[0.04]');
         activeNavBtn.classList.add('bg-white/12', 'text-white');
-        if (pageTitle) {
-            pageTitle.textContent = 'Fleet Ops / ' + activeNavBtn.textContent.trim();
-        }
+    }
+
+    if (breadcrumbCurrent) {
+        breadcrumbCurrent.textContent = screenLabels[screenName] ?? activeNavBtn?.textContent.trim() ?? 'Overview';
+    }
+
+    if (breadcrumbIcon) {
+        const iconClass = screenIcons[screenName] ?? 'ti-bus';
+        breadcrumbIcon.className = `ti ${iconClass} text-sm text-slate-900`;
     }
 
     // Show target screen
@@ -87,6 +140,24 @@ function switchScreen(screenName) {
         if (screenName === 'monitor' && typeof map !== 'undefined') {
             setTimeout(() => {
                 map.invalidateSize();
+            }, 50);
+        }
+
+        // Commuter Trips initial load
+        if (screenName === 'commuter-trips') {
+            setTimeout(() => {
+                if (typeof fetchCommuterTrips === 'function') {
+                    fetchCommuterTrips(1);
+                }
+            }, 50);
+        }
+
+        // Commuter Sessions initial load
+        if (screenName === 'commuter-sessions') {
+            setTimeout(() => {
+                if (typeof fetchCommuterSessions === 'function') {
+                    fetchCommuterSessions(1);
+                }
             }, 50);
         }
 

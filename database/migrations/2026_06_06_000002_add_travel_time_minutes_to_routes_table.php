@@ -8,7 +8,9 @@ return new class extends Migration {
     public function up(): void
     {
         Schema::table('routes', function (Blueprint $table) {
-            $table->integer('travel_time_minutes')->default(30)->after('status');
+            if (!Schema::hasColumn('routes', 'travel_time_minutes')) {
+                $table->integer('travel_time_minutes')->default(30)->after('status');
+            }
         });
     }
 

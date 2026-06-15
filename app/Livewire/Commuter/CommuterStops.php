@@ -126,7 +126,7 @@ class CommuterStops extends Component
         }
 
         // All routes for coordinate rendering
-        $routes = Route::all();
+        $routes = Route::getAllCached();
 
         return view('livewire.commuter.commuter-stops', [
             'stops' => $stops,

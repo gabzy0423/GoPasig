@@ -1,4 +1,14 @@
-<section id="screen-overview" class="space-y-5">
+<section id="screen-overview" class="space-y-5 animate-fade-in">
+
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Fleet Operations Overview</h1>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+            <span>Dashboard</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span class="text-slate-600 font-bold">Overview</span>
+        </div>
+    </div>
     <style>
         .toast-notification.show {
             transform: translateY(0) !important;

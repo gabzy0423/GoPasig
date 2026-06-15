@@ -12,6 +12,19 @@ use Illuminate\Http\Request;
 
 class ScheduleController extends Controller
 {
+    public function create(Request $request)
+    {
+        return redirect('/admin/dashboard#schedules-create');
+    }
+
+    /**
+     * Show the conflict check page.
+     */
+    public function conflict()
+    {
+        return redirect('/admin/dashboard#schedules-conflict');
+    }
+
     /**
      * Display a listing of schedules.
      */
@@ -63,7 +76,12 @@ class ScheduleController extends Controller
             return response()->json(['success' => false, 'message' => 'Driver not found.'], 404);
         }
 
-        // Compute estimated arrival time using route travel_time_minutes from the routes table
+        $conflictDetails = '';
+        if ($this->hasConflict($bus->id, $driver->id, $validated['route_id'], $validated['departure_time'], null, $conflictDetails)) {
+            return response()->json(['success' => false, 'message' => $conflictDetails], 422);
+        }
+
+        // Compute estimated arrival time using route duration from the database or settings
         $departure = $validated['departure_time'];
         $duration = $this->resolveRouteTravelDuration($validated['route_id']);
 
@@ -123,7 +141,12 @@ class ScheduleController extends Controller
             return response()->json(['success' => false, 'message' => 'Driver not found.'], 404);
         }
 
-        // Compute estimated arrival time using route travel_time_minutes from the routes table
+        $conflictDetails = '';
+        if ($this->hasConflict($bus->id, $driver->id, $validated['route_id'], $validated['departure_time'], $schedule->id, $conflictDetails)) {
+            return response()->json(['success' => false, 'message' => $conflictDetails], 422);
+        }
+
+        // Compute estimated arrival time using route duration from the database or settings
         $departure = $validated['departure_time'];
         $duration = $this->resolveRouteTravelDuration($validated['route_id']);
 
@@ -181,10 +204,62 @@ class ScheduleController extends Controller
         $duration = $route?->travel_time_minutes;
 
         if ($duration === null) {
-            // Use configurable fallback instead of hardcoded 30 minutes
+            // Use configurable fallback travel time from settings
             return (int) SystemSetting::get('default_travel_time_minutes', 30);
         }
 
         return (int) $duration;
+    }
+
+    /**
+     * Check if a bus or driver has a schedule conflict/overlap.
+     */
+    protected function hasConflict(int $busId, int $driverId, int $routeId, string $departureTime, $excludeScheduleId = null, &$conflictDetails = '')
+    {
+        $duration = $this->resolveRouteTravelDuration($routeId);
+        $timeParts = explode(':', $departureTime);
+        $startMin = intval($timeParts[0]) * 60 + intval($timeParts[1]);
+        $endMin = $startMin + $duration;
+
+        $schedulesQuery = Schedule::with(['route', 'bus', 'driver']);
+        if ($excludeScheduleId) {
+            $schedulesQuery->where('id', '!=', $excludeScheduleId);
+        }
+        $schedules = $schedulesQuery->get();
+
+        foreach ($schedules as $s) {
+            $isSameDriver = $s->driver_id == $driverId;
+            $isSameBus = $s->bus_id == $busId;
+
+            if ($isSameDriver || $isSameBus) {
+                $sParts = explode(':', $s->departure_time);
+                $sStart = intval($sParts[0]) * 60 + intval($sParts[1]);
+                $sDuration = $this->resolveRouteTravelDuration($s->route_id);
+                $sEnd = $sStart + $sDuration;
+
+                $buffer = $isSameDriver ? 15 : 0;
+                if (($startMin < ($sEnd + $buffer)) && ($sStart < ($endMin + $buffer))) {
+                    $entityType = $isSameDriver ? 'Driver' : 'Bus';
+                    $entityName = $isSameDriver 
+                        ? ($s->driver ? $s->driver->first_name . ' ' . $s->driver->last_name : 'Unassigned')
+                        : ($s->bus ? $s->bus->plate_number : 'Unknown Bus');
+                    
+                    $sEndHour = floor($sEnd / 60) % 24;
+                    $sEndMin = $sEnd % 60;
+                    $sEndTimeStr = sprintf('%02d:%02d', $sEndHour, $sEndMin);
+                    
+                    $conflictDetails = sprintf(
+                        "%s %s already assigned to Route %s at %s-%s",
+                        $entityType,
+                        $entityName,
+                        $s->route ? $s->route->name : $s->route_id,
+                        substr($s->departure_time, 0, 5),
+                        $sEndTimeStr
+                    );
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

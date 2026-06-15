@@ -1,5 +1,17 @@
-<section id="screen-drivers" class="hidden" style="display: none;">
+<section id="screen-drivers" class="hidden animate-fade-in" style="display: none;">
 <div class="space-y-6">
+
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Driver Performance</h1>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+            <span>Dashboard</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span>Fleet</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span class="text-slate-600 font-bold">Driver Performance</span>
+        </div>
+    </div>
     <!-- Success Alert Box -->
     <div id="driver-success-alert" class="hidden p-3 bg-[#EAF3DE] border border-[#3B6D11] text-[#3B6D11] rounded-lg text-xs font-semibold flex items-center justify-between animate-fade-in-up">
         <div class="flex items-center gap-1.5">
@@ -9,12 +21,8 @@
         <button onclick="document.getElementById('driver-success-alert').classList.add('hidden')" class="text-[#3B6D11] hover:opacity-80"><i class="ti ti-x"></i></button>
     </div>
 
-    <!-- SECTION 1: PAGE HEADER + FILTER CONTROLS -->
-    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between shrink-0">
-        <div>
-            <h1 class="text-[22px] font-medium text-[#001F44]">Driver Performance</h1>
-            <p class="text-[14px] text-slate-500 mt-0.5 font-normal">Libreng Sakay Program — Pasig City</p>
-        </div>
+    <!-- SECTION 1: FILTER CONTROLS -->
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-end shrink-0">
 
         <div class="flex flex-wrap items-center gap-3">
             <!-- Date Range -->

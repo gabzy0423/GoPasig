@@ -27,7 +27,8 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         $attempts = RateLimiter::attempts($this->ipThrottleKey());
-        $requiresCaptcha = $attempts >= 3;
+        $threshold = (int) \App\Models\SystemSetting::get('captcha_attempt_threshold', 3);
+        $requiresCaptcha = $attempts >= $threshold;
 
         return [
             'email' => ['required', 'string', 'email', 'max:255'],
@@ -76,7 +77,8 @@ class LoginRequest extends FormRequest
         }
 
         $attempts = RateLimiter::attempts($this->ipThrottleKey());
-        if ($attempts < 3) {
+        $threshold = (int) \App\Models\SystemSetting::get('captcha_attempt_threshold', 3);
+        if ($attempts < $threshold) {
             return; // Bypass Turnstile checks if IP failures are less than 3
         }
 

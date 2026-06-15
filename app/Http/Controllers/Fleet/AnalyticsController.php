@@ -214,25 +214,8 @@ class AnalyticsController extends Controller
         $timeSlotConfigs = TimeSlotConfiguration::where('is_active', true)->orderBy('order')->get();
 
         if ($timeSlotConfigs->isEmpty()) {
-            $timeSlotConfigs = collect([
-                (object) ['time_slot_display' => '05:00-06:00', 'start_time' => '05:00', 'end_time' => '06:00'],
-                (object) ['time_slot_display' => '06:00-07:00', 'start_time' => '06:00', 'end_time' => '07:00'],
-                (object) ['time_slot_display' => '07:00-08:00', 'start_time' => '07:00', 'end_time' => '08:00'],
-                (object) ['time_slot_display' => '08:00-09:00', 'start_time' => '08:00', 'end_time' => '09:00'],
-                (object) ['time_slot_display' => '09:00-10:00', 'start_time' => '09:00', 'end_time' => '10:00'],
-                (object) ['time_slot_display' => '10:00-11:00', 'start_time' => '10:00', 'end_time' => '11:00'],
-                (object) ['time_slot_display' => '11:00-12:00', 'start_time' => '11:00', 'end_time' => '12:00'],
-                (object) ['time_slot_display' => '12:00-13:00', 'start_time' => '12:00', 'end_time' => '13:00'],
-                (object) ['time_slot_display' => '13:00-14:00', 'start_time' => '13:00', 'end_time' => '14:00'],
-                (object) ['time_slot_display' => '14:00-15:00', 'start_time' => '14:00', 'end_time' => '15:00'],
-                (object) ['time_slot_display' => '15:00-16:00', 'start_time' => '15:00', 'end_time' => '16:00'],
-                (object) ['time_slot_display' => '16:00-17:00', 'start_time' => '16:00', 'end_time' => '17:00'],
-                (object) ['time_slot_display' => '17:00-18:00', 'start_time' => '17:00', 'end_time' => '18:00'],
-                (object) ['time_slot_display' => '18:00-19:00', 'start_time' => '18:00', 'end_time' => '19:00'],
-                (object) ['time_slot_display' => '19:00-20:00', 'start_time' => '19:00', 'end_time' => '20:00'],
-                (object) ['time_slot_display' => '20:00-21:00', 'start_time' => '20:00', 'end_time' => '21:00'],
-                (object) ['time_slot_display' => '21:00-22:00', 'start_time' => '21:00', 'end_time' => '22:00'],
-            ]);
+            \Illuminate\Support\Facades\Log::error('TimeSlotConfiguration table is empty. Hourly ridership charts will not be rendered. Run time slot configuration seeder.');
+            $timeSlotConfigs = collect();
         }
 
         foreach ($timeSlotConfigs as $slotConfig) {
@@ -277,7 +260,7 @@ class AnalyticsController extends Controller
             $busPax = $busData ? (int) $busData->total_pax : 0;
             $routeId = $busData ? (int) $busData->route_id : null;
 
-            $cap = $bus->capacity ?: (int) SystemSetting::get('default_bus_capacity', 45);
+            $cap = $bus->capacity;
             $avgLoad = $busTrips > 0 ? round($busPax / $busTrips) : 0;
             $utilizationPct = $cap > 0 ? min(100, round(($avgLoad / $cap) * 100)) : 0;
 
@@ -325,11 +308,13 @@ class AnalyticsController extends Controller
                     ? "{$peakHr}:00 AM – " . ($peakHr + 1) . ":00 AM"
                     : ($peakHr === 12 ? "12:00 PM – 1:00 PM" : ($peakHr - 12) . ":00 PM – " . ($peakHr - 11) . ":00 PM"));
 
-            $routeBusIds = DB::table('schedules')->where('route_id', $route->id)->distinct()->pluck('bus_id');
-            $activeBusesOnRoute = Bus::whereIn('id', $routeBusIds)->where('status', 'active')->count();
-            $totalBusesOnRoute = $routeBusIds->count();
+            // Count only buses currently assigned to this route that are active now.
+            // The old approach (joining schedules) incorrectly counted buses from past
+            // schedules that may now be active on a different route.
+            $activeBusesOnRoute = Bus::where('route_id', $route->id)->where('status', 'active')->count();
+            $totalBusesOnRoute  = Bus::where('route_id', $route->id)->count();
 
-            $cap = (int) SystemSetting::get('default_bus_capacity', 45);
+            $cap = Bus::getDefaultCapacity();
             $recBuses = max(1, (int) ceil($peakPassengers / $cap));
 
             if ($activeBusesOnRoute < $recBuses) {

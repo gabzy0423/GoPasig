@@ -26,8 +26,7 @@ return new class extends Migration {
                 'admin',
                 'dispatcher',
                 'driver',
-                'passenger'
-            ])->default('passenger');
+            ]);
 
             $table->timestamps();
         });

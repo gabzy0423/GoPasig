@@ -29,6 +29,11 @@ class RouteSeeder extends Seeder
                 [14.5838, 121.0620]
             ],
             'travel_time_minutes' => 25,
+            'delay_threshold_minutes' => 5,
+            'min_speed' => 20,
+            'max_speed' => 35,
+            'target_on_time_rate' => 90,
+            'target_headway_minutes' => 10,
         ]);
 
         $route2 = Route::create([
@@ -44,6 +49,11 @@ class RouteSeeder extends Seeder
                 [14.5500, 121.0500]
             ],
             'travel_time_minutes' => 35,
+            'delay_threshold_minutes' => 10,
+            'min_speed' => 15,
+            'max_speed' => 40,
+            'target_on_time_rate' => 85,
+            'target_headway_minutes' => 15,
         ]);
 
         $route3 = Route::create([
@@ -60,6 +70,11 @@ class RouteSeeder extends Seeder
                 [14.5786, 121.0360]
             ],
             'travel_time_minutes' => 40,
+            'delay_threshold_minutes' => 15,
+            'min_speed' => 25,
+            'max_speed' => 50,
+            'target_on_time_rate' => 80,
+            'target_headway_minutes' => 20,
         ]);
 
         $route4 = Route::create([
@@ -74,6 +89,11 @@ class RouteSeeder extends Seeder
                 [14.5450, 121.0920]
             ],
             'travel_time_minutes' => 30,
+            'delay_threshold_minutes' => 8,
+            'min_speed' => 18,
+            'max_speed' => 45,
+            'target_on_time_rate' => 85,
+            'target_headway_minutes' => 12,
         ]);
 
         // 2. Create Stops assigned to these routes
@@ -84,6 +104,7 @@ class RouteSeeder extends Seeder
             'lat' => 14.5593,
             'lng' => 121.0805,
             'sequence' => 1,
+            'segment_weight' => null,
             'amenities' => 'Shelter, Security, Ticket Booth, Charging Station'
         ]);
         Stop::create([
@@ -92,6 +113,7 @@ class RouteSeeder extends Seeder
             'lat' => 14.5838,
             'lng' => 121.0620,
             'sequence' => 2,
+            'segment_weight' => 1.0,
             'amenities' => 'Premium Station, Wi-Fi, Security Guard'
         ]);
 
@@ -102,6 +124,7 @@ class RouteSeeder extends Seeder
             'lat' => 14.5593,
             'lng' => 121.0805,
             'sequence' => 1,
+            'segment_weight' => null,
             'amenities' => 'Shelter, Security, Ticket Booth, Charging Station'
         ]);
         Stop::create([
@@ -110,6 +133,7 @@ class RouteSeeder extends Seeder
             'lat' => 14.5680,
             'lng' => 121.0760,
             'sequence' => 2,
+            'segment_weight' => 1.0,
             'amenities' => 'Shelter, CCTV, Well-lit'
         ]);
         Stop::create([
@@ -118,6 +142,7 @@ class RouteSeeder extends Seeder
             'lat' => 14.5500,
             'lng' => 121.0500,
             'sequence' => 3,
+            'segment_weight' => 3.0,
             'amenities' => 'Shelter, Security Post'
         ]);
 
@@ -128,6 +153,7 @@ class RouteSeeder extends Seeder
             'lat' => 14.5593,
             'lng' => 121.0805,
             'sequence' => 1,
+            'segment_weight' => null,
             'amenities' => 'Shelter, Security, Ticket Booth, Charging Station'
         ]);
         Stop::create([
@@ -136,6 +162,7 @@ class RouteSeeder extends Seeder
             'lat' => 14.5680,
             'lng' => 121.0580,
             'sequence' => 2,
+            'segment_weight' => 1.0,
             'amenities' => 'Shelter, Near Shaw Transit hub'
         ]);
         Stop::create([
@@ -144,6 +171,7 @@ class RouteSeeder extends Seeder
             'lat' => 14.5786,
             'lng' => 121.0360,
             'sequence' => 3,
+            'segment_weight' => 1.0,
             'amenities' => 'Shelter, CCTV, Charging Station'
         ]);
 
@@ -154,6 +182,7 @@ class RouteSeeder extends Seeder
             'lat' => 14.5593,
             'lng' => 121.0805,
             'sequence' => 1,
+            'segment_weight' => null,
             'amenities' => 'Shelter, Security, Ticket Booth, Charging Station'
         ]);
         Stop::create([
@@ -162,6 +191,7 @@ class RouteSeeder extends Seeder
             'lat' => 14.5520,
             'lng' => 121.0830,
             'sequence' => 2,
+            'segment_weight' => 1.0,
             'amenities' => 'Shelter, Near Market'
         ]);
         Stop::create([
@@ -170,6 +200,7 @@ class RouteSeeder extends Seeder
             'lat' => 14.5450,
             'lng' => 121.0920,
             'sequence' => 3,
+            'segment_weight' => 1.5,
             'amenities' => 'Shelter, Security Post'
         ]);
 

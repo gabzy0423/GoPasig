@@ -25,27 +25,27 @@ class CommuterSchedule extends Component
 
     public function loadRoutes()
     {
-        $this->routes = Route::all()->toArray();
+        $this->routes = Route::getAllCached()->toArray();
     }
 
     public function filterByRoute($routeId)
     {
-        $this->activeRouteFilter = $routeId ? (int)$routeId : null;
+        $this->activeRouteFilter = $routeId ? (int) $routeId : null;
         $this->selectedTripId = null;
         $this->selectedTrip = null;
     }
 
     public function selectTrip($tripId)
     {
-        $this->selectedTripId = $tripId ? (int)$tripId : null;
-        
+        $this->selectedTripId = $tripId ? (int) $tripId : null;
+
         if (!$this->selectedTripId) {
             $this->selectedTrip = null;
             return;
         }
 
         $schedule = Schedule::with(['route', 'route.stops', 'bus'])->find($this->selectedTripId);
-        
+
         if (!$schedule) {
             $this->selectedTrip = null;
             return;
@@ -53,12 +53,12 @@ class CommuterSchedule extends Component
 
         // Compute estimated duration in minutes
         $duration = Carbon::parse($schedule->arrival_time)->diffInMinutes(Carbon::parse($schedule->departure_time));
-        
-        // Status mapping: 'On time' => 'on_time', 'Delayed' => 'delayed', 'Cancelled' => 'cancelled'
+
+        // Status mapping: get keys dynamically from system settings
         $statusMap = [
-            'On time' => 'on_time',
-            'Delayed' => 'delayed',
-            'Cancelled' => 'cancelled',
+            SystemSetting::get('db_status_ontime_label', 'On time') => 'on_time',
+            SystemSetting::get('db_status_delayed_label', 'Delayed') => 'delayed',
+            SystemSetting::get('db_status_cancelled_label', 'Cancelled') => 'cancelled',
         ];
         $status = $statusMap[$schedule->status] ?? 'on_time';
         $delayMinutes = $status === 'delayed' ? ($schedule->delay_minutes ?: 0) : 0;
@@ -66,12 +66,13 @@ class CommuterSchedule extends Component
         // Group & sequence timeline stops (maximum 6 stops)
         $stops = [];
         if ($schedule->route && $schedule->route->stops) {
-            $routeStops = $schedule->route->stops->take(6);
+            $allRouteStops   = $schedule->route->stops->sortBy('sequence')->values();
+            // Distance-weighted cumulative offsets: offset[i] = minutes to reach stop i from departure
+            $offsets         = \App\Models\Stop::getDistanceWeightedOffsets($allRouteStops, $duration);
+
+            $routeStops      = $allRouteStops->take(6);
             $totalStopsCount = $routeStops->count();
-            
-            $routeTravelTime = $duration;
-            $averageInterval = $totalStopsCount > 1 ? ($routeTravelTime / ($totalStopsCount - 1)) : 8;
-            
+
             foreach ($routeStops as $index => $stop) {
                 // Determine stop_status: departed, current, upcoming
                 $stopStatus = 'upcoming';
@@ -87,13 +88,16 @@ class CommuterSchedule extends Component
                     }
                 }
 
-                // Estimate arrival time at this stop based on departure + (index * averageInterval)
-                $estimatedTime = Carbon::parse($schedule->departure_time)->addMinutes(round($index * $averageInterval))->format('g:i A');
+                // Estimate arrival time using the distance-weighted offset for this stop's index
+                $offsetMins    = $offsets[$index] ?? 0;
+                $estimatedTime = \Carbon\Carbon::parse($schedule->departure_time)
+                    ->addMinutes(round($offsetMins))
+                    ->format('g:i A');
 
                 $stops[] = [
-                    'stop_name' => $stop->name,
+                    'stop_name'      => $stop->name,
                     'estimated_time' => $estimatedTime,
-                    'stop_status' => $stopStatus,
+                    'stop_status'    => $stopStatus,
                 ];
             }
         }
@@ -101,7 +105,7 @@ class CommuterSchedule extends Component
         $this->selectedTrip = [
             'trip_id' => $schedule->id,
             'route_name' => $schedule->route ? $schedule->route->name : 'Route',
-            'route_color' => $schedule->route?->color ?: '#003F87',
+            'route_color' => $schedule->route?->color ?: config('brand.route_color_default', '#003F87'),
             'departure_time' => Carbon::parse($schedule->departure_time)->format('g:i A'),
             'estimated_arrival_time' => Carbon::parse($schedule->arrival_time)->format('g:i A'),
             'estimated_duration_minutes' => $duration,
@@ -147,18 +151,18 @@ class CommuterSchedule extends Component
             $query->where('route_id', $this->activeRouteFilter);
         }
 
-        $schedules = $query->get()->sortBy(function($schedule) {
+        $schedules = $query->get()->sortBy(function ($schedule) {
             return $schedule->departure_time;
         });
 
         // Map schedules to collection format
         $scheduleList = $schedules->map(function ($schedule) {
             $duration = Carbon::parse($schedule->arrival_time)->diffInMinutes(Carbon::parse($schedule->departure_time));
-            
+
             $statusMap = [
-                'On time' => 'on_time',
-                'Delayed' => 'delayed',
-                'Cancelled' => 'cancelled',
+                SystemSetting::get('db_status_ontime_label', 'On time') => 'on_time',
+                SystemSetting::get('db_status_delayed_label', 'Delayed') => 'delayed',
+                SystemSetting::get('db_status_cancelled_label', 'Cancelled') => 'cancelled',
             ];
             $status = $statusMap[$schedule->status] ?? 'on_time';
             $delayMinutes = $status === 'delayed' ? ($schedule->delay_minutes ?: 0) : 0;
@@ -167,7 +171,7 @@ class CommuterSchedule extends Component
                 'trip_id' => $schedule->id,
                 'route_id' => $schedule->route_id,
                 'route_name' => $schedule->route ? ('Route ' . $schedule->route_id . ' — ' . $schedule->route->description) : 'Route',
-                'route_color' => $schedule->route?->color ?: '#003F87',
+                'route_color' => $schedule->route?->color ?: config('brand.route_color_default', '#003F87'),
                 'departure_time' => Carbon::parse($schedule->departure_time)->format('g:i A'),
                 'estimated_arrival_time' => Carbon::parse($schedule->arrival_time)->format('g:i A'),
                 'stop_count' => $schedule->route ? $schedule->route->stops->count() : 0,
@@ -198,7 +202,7 @@ class CommuterSchedule extends Component
         }
 
         // Remove empty bands
-        $groupedSchedules = array_filter($groupedSchedules, function($list) {
+        $groupedSchedules = array_filter($groupedSchedules, function ($list) {
             return count($list) > 0;
         });
 

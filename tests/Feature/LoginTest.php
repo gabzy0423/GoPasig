@@ -80,6 +80,34 @@ class LoginTest extends TestCase
         $response->assertStatus(200);
     }
 
+    public function test_commuter_session_refreshes_correctly(): void
+    {
+        $response1 = $this->get('/commuter/dashboard');
+        $response1->assertStatus(200);
+
+        // Find the created session record
+        $session = \App\Models\CommuterSession::latest()->first();
+        $this->assertNotNull($session);
+        $token = $session->session_token;
+
+        // Manually set created_at and updated_at back in time to test refresh
+        $createdAt = now()->subHours(2);
+        $session->created_at = $createdAt;
+        $session->updated_at = $createdAt;
+        $session->expires_at = now()->addHours(22);
+        $session->save();
+
+        // Make a second request passing the cookie back (Laravel encrypts the raw token)
+        $response2 = $this->withCookie('commuter_session_token', $token)
+            ->get('/commuter/dashboard');
+        $response2->assertStatus(200);
+
+        // Refresh and check that updated_at and expires_at have been updated
+        $session->refresh();
+        $this->assertTrue($session->updated_at->isAfter($createdAt));
+        $this->assertTrue($session->expires_at->isAfter(now()->addHours(23)));
+    }
+
     public function test_unauthorized_users_cannot_access_other_dashboards(): void
     {
         $dispatcher = User::factory()->create(['role' => 'dispatcher']);

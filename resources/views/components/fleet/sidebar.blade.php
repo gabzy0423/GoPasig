@@ -54,6 +54,27 @@
             <i class="ti ti-brain text-[20px]"></i>
             Dispatch Intelligence
         </a>
+
+        <!-- Commuter Monitor Collapsible Dropdown -->
+        <div class="space-y-1">
+            <button onclick="toggleCommuterDropdown()" class="flex w-full items-center justify-between px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-all duration-200 rounded-md cursor-pointer text-left text-white/70 hover:text-white hover:bg-white/[0.04]">
+                <div class="flex items-center gap-3">
+                    <i class="ti ti-users text-[20px]"></i>
+                    <span>Commuter Monitor</span>
+                </div>
+                <i id="commuter-dropdown-arrow" class="ti ti-chevron-down text-[12px] transition-transform duration-200"></i>
+            </button>
+            <div id="commuter-dropdown-menu" class="hidden pl-6 space-y-1">
+                <a href="?tab=commuter-trips" data-nav="commuter-trips" class="flex w-full items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all duration-200 rounded-md cursor-pointer text-left text-white/70 hover:text-white hover:bg-white/[0.04]">
+                    <i class="ti ti-clipboard-list text-[18px]"></i>
+                    Commuter Trip Log
+                </a>
+                <a href="?tab=commuter-sessions" data-nav="commuter-sessions" class="flex w-full items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-all duration-200 rounded-md cursor-pointer text-left text-white/70 hover:text-white hover:bg-white/[0.04]">
+                    <i class="ti ti-key text-[18px]"></i>
+                    Active Sessions
+                </a>
+            </div>
+        </div>
     </nav>
 
     <div class="border-t border-white/10 p-4 flex items-center gap-3 shrink-0">
@@ -70,3 +91,19 @@
         </button>
     </div>
 </aside>
+
+<script>
+    function toggleCommuterDropdown() {
+        const menu = document.getElementById('commuter-dropdown-menu');
+        const arrow = document.getElementById('commuter-dropdown-arrow');
+        if (!menu || !arrow) return;
+
+        if (menu.classList.contains('hidden')) {
+            menu.classList.remove('hidden');
+            arrow.classList.add('rotate-180');
+        } else {
+            menu.classList.add('hidden');
+            arrow.classList.remove('rotate-180');
+        }
+    }
+</script>

@@ -30,6 +30,17 @@ let currentFeedStatusTab = 'All'; // 'All', 'Active', 'Resolved', 'Scheduled'
 let currentFeedTypeFilter = 'All';
 let currentFeedSearchQuery = '';
 
+let databaseStats = {
+    total_commuters: 1000,
+    total_drivers: 8,
+    route_stats: {
+        'Route A': { commuters: 335, drivers: 5 },
+        'Route B': { commuters: 268, drivers: 1 },
+        'Route C': { commuters: 253, drivers: 1 },
+        'All routes': { commuters: 1000, drivers: 8 }
+    }
+};
+
 // ── HISTORY FILTER STATE ──────────────────────────────────────
 let historyFilterSeverity = 'All';
 let historyFilterType = 'All';
@@ -46,10 +57,17 @@ function getCsrfToken() {
     return meta ? meta.getAttribute('content') : '';
 }
 
+function getAlertsBaseUrl() {
+    if (window.GoPasigConfig && window.GoPasigConfig.alertsBaseUrl) {
+        return window.GoPasigConfig.alertsBaseUrl;
+    }
+    return '/admin/api/alerts';
+}
+
 // Dynamic loader from MySQL Database API
 async function loadDatabaseAlertsData() {
     try {
-        const response = await fetch('/admin/api/alerts');
+        const response = await fetch(getAlertsBaseUrl());
         const data = await response.json();
         
         if (response.ok && data.success) {
@@ -57,6 +75,10 @@ async function loadDatabaseAlertsData() {
             resolvedAlerts = [];
             scheduledAlerts = [];
             historyAlerts = [];
+
+            if (data.stats) {
+                databaseStats = data.stats;
+            }
 
             const now = new Date();
 
@@ -95,7 +117,7 @@ async function loadDatabaseAlertsData() {
                 const formattedDate = createdTime.toLocaleDateString('en-US', optionsDate).replace(',', ' ·');
 
                 // Map reached commuters count
-                const reachedCnt = alert.reached_count || (affectsArr.includes('All routes') ? 850 : 250);
+                const reachedCnt = alert.reads_count || 0;
 
                 if (alert.status === 'resolved') {
                     resolvedAlerts.push({
@@ -959,8 +981,20 @@ function showBroadcastConfirmation() {
         if (composerState.notifyAdminOnly) {
             sumNotifying.textContent = 'Admin team only (internal)';
         } else {
-            const commuterCnt = composerState.affects.includes('All routes') ? 1680 : 450;
-            const driverCnt = composerState.affects.includes('All routes') ? 34 : 12;
+            let commuterCnt = 0;
+            let driverCnt = 0;
+            if (composerState.affects.includes('All routes') || composerState.affects.length === 0) {
+                commuterCnt = databaseStats.total_commuters;
+                driverCnt = databaseStats.total_drivers;
+            } else {
+                composerState.affects.forEach(route => {
+                    const rStats = databaseStats.route_stats[route];
+                    if (rStats) {
+                        commuterCnt += rStats.commuters;
+                        driverCnt += rStats.drivers;
+                    }
+                });
+            }
             sumNotifying.textContent = `${commuterCnt} commuters + ${driverCnt} drivers`;
         }
     }
@@ -1009,7 +1043,7 @@ async function confirmBroadcast() {
     try {
         let response;
         if (composerState.editingId) {
-            response = await fetch(`/admin/api/alerts/${composerState.editingId}`, {
+            response = await fetch(`${getAlertsBaseUrl()}/${composerState.editingId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1019,7 +1053,7 @@ async function confirmBroadcast() {
                 body: JSON.stringify(payload)
             });
         } else {
-            response = await fetch('/admin/api/alerts', {
+            response = await fetch(getAlertsBaseUrl(), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1072,8 +1106,20 @@ function showBroadcastReceipt() {
         const statsDrivers = document.getElementById('receipt-stat-drivers');
         const statsSuspended = document.getElementById('receipt-stat-suspended');
 
-        const commuterCnt = composerState.affects.includes('All routes') ? 1680 : 450;
-        const driverCnt = composerState.affects.includes('All routes') ? 34 : 12;
+        let commuterCnt = 0;
+        let driverCnt = 0;
+        if (composerState.affects.includes('All routes') || composerState.affects.length === 0) {
+            commuterCnt = databaseStats.total_commuters;
+            driverCnt = databaseStats.total_drivers;
+        } else {
+            composerState.affects.forEach(route => {
+                const rStats = databaseStats.route_stats[route];
+                if (rStats) {
+                    commuterCnt += rStats.commuters;
+                    driverCnt += rStats.drivers;
+                }
+            });
+        }
 
         statsCommuters.textContent = `${commuterCnt} commuters notified`;
         statsDrivers.textContent = `${driverCnt} drivers notified`;
@@ -1106,7 +1152,7 @@ function markResolved(id) {
 
     setTimeout(async () => {
         try {
-            const response = await fetch(`/admin/api/alerts/${id}/resolve`, {
+            const response = await fetch(`${getAlertsBaseUrl()}/${id}/resolve`, {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': getCsrfToken(),
@@ -1193,7 +1239,7 @@ async function deleteAlert(id) {
     if (!confirm('Are you sure you want to delete this alert?')) return;
 
     try {
-        const response = await fetch(`/admin/api/alerts/${id}`, {
+        const response = await fetch(`${getAlertsBaseUrl()}/${id}`, {
             method: 'DELETE',
             headers: {
                 'X-CSRF-TOKEN': getCsrfToken(),
@@ -1251,7 +1297,7 @@ async function cancelScheduledAlert(id) {
     if (!confirm('Are you sure you want to cancel this scheduled alert?')) return;
 
     try {
-        const response = await fetch(`/admin/api/alerts/${id}`, {
+        const response = await fetch(`${getAlertsBaseUrl()}/${id}`, {
             method: 'DELETE',
             headers: {
                 'X-CSRF-TOKEN': getCsrfToken(),
@@ -1280,7 +1326,7 @@ async function markAllAlertsResolved(event) {
     if (!confirm('Resolve all active service alerts?')) return;
 
     try {
-        const response = await fetch('/admin/api/alerts/resolve-all', {
+        const response = await fetch(`${getAlertsBaseUrl()}/resolve-all`, {
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN': getCsrfToken(),

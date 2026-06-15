@@ -151,12 +151,21 @@ class DemandIntelligenceSeeder extends Seeder
             $destination = $routeStops->last();
 
             for ($i = 0; $i < $count; $i++) {
+                $token = 'dummy-session-' . \Illuminate\Support\Str::random(16);
+
+                \App\Models\CommuterSession::create([
+                    'session_token' => $token,
+                    'ip_address' => '127.0.0.1',
+                    'expires_at' => now()->addHours(24),
+                ]);
+
                 CommuterTrip::create([
+                    'session_token' => $token,
                     'origin_stop_id' => $origin->id,
                     'destination_stop_id' => $destination->id,
                     'route_id' => $routeId,
-                    'status' => 'pending',
-                    'timestamp' => now()->subMinutes(rand(2, 30)),
+                    'status' => 'WAITING',
+                    'created_at' => now()->subMinutes(rand(2, 30)),
                 ]);
             }
         }

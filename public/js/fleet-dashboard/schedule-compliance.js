@@ -81,6 +81,13 @@ function updateComplianceMetricsDOM(summary) {
 }
 
 function initComplianceCharts(routeCompliance, delayTrend) {
+    if (!routeCompliance && window.GoPasigScheduleComplianceInitialData) {
+        routeCompliance = window.GoPasigScheduleComplianceInitialData.routeCompliance;
+    }
+    if (!delayTrend && window.GoPasigScheduleComplianceInitialData) {
+        delayTrend = window.GoPasigScheduleComplianceInitialData.delayTrend;
+    }
+
     const rcContainer = document.getElementById('onTimeRatePerRouteChart');
     if (rcContainer) {
         onTimeRouteChart = echarts.init(rcContainer);
@@ -182,7 +189,7 @@ function updateComplianceChartsData(routeCompliance, delayTrend) {
     }
 
     if (delayHourTrendChart && delayTrend) {
-        const hours = ['05:00', '07:00', '09:00', '11:00', '13:00', '15:00', '17:00'];
+        const hours = [...new Set(delayTrend.map(d => d.label))].sort((a, b) => a.localeCompare(b));
         const routesData = {};
         let totalDelays = 0;
 
@@ -226,6 +233,9 @@ function updateComplianceChartsData(routeCompliance, delayTrend) {
         });
 
         delayHourTrendChart.setOption({
+            xAxis: {
+                data: hours
+            },
             legend: {
                 data: Object.keys(routesData)
             },

@@ -6,21 +6,17 @@
             aria-label="Toggle navigation drawer" type="button">
             <i class="ti ti-menu-2 text-xl"></i>
         </button>
-        <div class="min-w-0">
-            <h1 id="page-title"
-                class="truncate text-[13px] font-black tracking-tight text-slate-900 uppercase sm:text-base">
-                Overview / Dashboard
-            </h1>
+
+        {{-- Branded static title --}}
+        <div class="flex items-center gap-2 select-none">
+            <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[#003F87] text-white shadow-sm">
+                <i class="ti ti-bus text-base"></i>
+            </div>
+            <span class="text-xs font-black uppercase tracking-wider text-slate-900">Fleet Management</span>
         </div>
     </div>
 
-    <div class="relative hidden w-96 max-w-xs sm:block">
-        <span class="absolute inset-y-0 left-3 flex items-center text-slate-400">
-            <i class="ti ti-search text-base"></i>
-        </span>
-        <input type="search" placeholder="Search fleet, incidents, maintenance..."
-            class="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-9 pr-4 text-xs font-semibold text-slate-900 outline-none transition-all placeholder-slate-400 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87]">
-    </div>
+
 
     <div class="ml-auto flex items-center gap-2 sm:gap-3 shrink-0">
         <button id="layout-export-btn"

@@ -20,6 +20,7 @@ let selectedPhase = 1;
 let simulatedDay = 'Monday';
 let simulatedTimeSlot = '06:00-08:00';
 let selectedRouteId = 1;
+let notifiedRoutes = {};
 
 async function fetchDispatchData() {
     selectedPhase = document.querySelector('[data-active-phase]')?.getAttribute('data-active-phase') || 1;
@@ -127,11 +128,26 @@ function updateDemandBoardDOM(routesData) {
             badgeClass = 'bg-[#FCEBEB] text-[#A32D2D]';
             badgeText = '🔴 Dispatch Now';
             progressBarColor = 'bg-[#E24B4A]';
+
+            // Trigger push notification once
+            if ('Notification' in window && Notification.permission === 'granted' && !notifiedRoutes[r.id]) {
+                let msg = `URGENT: ${r.total} commuters waiting sa ${r.name}.`;
+                if (r.suggested_bus) {
+                    msg += ` Suggested Bus: ${r.suggested_bus.plate_number} (${r.suggested_bus.distance_km} km away).`;
+                }
+                new Notification("Critical Passenger Surge", {
+                    body: msg,
+                });
+                notifiedRoutes[r.id] = true;
+            }
         } else if (r.status === 'yellow') {
             borderClass = 'border-[#BA7517] border-t-[4px]';
             badgeClass = 'bg-[#FAEEDA] text-[#854F0B]';
             badgeText = '🟡 Standby (High)';
             progressBarColor = 'bg-[#BA7517]';
+            delete notifiedRoutes[r.id];
+        } else {
+            delete notifiedRoutes[r.id];
         }
 
         const loadPercent = r.threshold > 0 ? Math.min(100, Math.round((r.total / r.threshold) * 100)) : 0;
@@ -142,6 +158,19 @@ function updateDemandBoardDOM(routesData) {
                 <div class="p-2 bg-[#E6F1FB] border border-[#003F87]/15 rounded-xl text-[11px] text-[#0C447C] font-semibold flex items-center justify-between">
                     <span>Expected Peak:</span>
                     <strong class="font-mono">${r.historical_avg} pax</strong>
+                </div>
+            `;
+        }
+
+        let suggestedBusMarkup = '';
+        if (r.suggested_bus) {
+            suggestedBusMarkup = `
+                <div class="p-2 bg-[#FAEEDA] border border-[#BA7517]/20 rounded-xl text-[11px] text-[#854F0B] font-semibold flex flex-col gap-1">
+                    <span class="text-[9.5px] font-extrabold text-[#BA7517] uppercase tracking-wide">Suggested Rescue Bus:</span>
+                    <div class="flex justify-between items-center">
+                        <span class="font-mono font-bold">${r.suggested_bus.plate_number}</span>
+                        <span class="text-[10px] opacity-90">${r.suggested_bus.distance_km} km away</span>
+                    </div>
                 </div>
             `;
         }
@@ -183,6 +212,7 @@ function updateDemandBoardDOM(routesData) {
             </div>
 
             ${predictionMarkup}
+            ${suggestedBusMarkup}
 
             <button onclick="dispatchNowAction(${r.id})" class="w-full h-9 flex items-center justify-center gap-1 bg-[#003F87] hover:bg-[#002D62] text-white text-xs font-extrabold uppercase tracking-wider rounded-xl transition shadow-sm cursor-pointer">
                 <i class="ti ti-bus-stop text-base"></i>
@@ -485,6 +515,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Threshold Form
         document.getElementById('threshold-override-form')?.addEventListener('submit', saveThresholdAction);
+
+        // Request browser push notification permission
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
 
         // Fetch initially
         fetchDispatchData();

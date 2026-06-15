@@ -98,6 +98,14 @@
         </div>
     </div>
 
+    <!-- GPS Weak Signal Warning Banner -->
+    <div id="gps-signal-weak-alert" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 z-10 animate-pulse">
+        <i class="ti ti-wifi-off text-amber-500 text-lg flex-shrink-0 mt-0.5"></i>
+        <div class="flex flex-col gap-0.5">
+            <span class="text-xs font-bold text-amber-700 leading-snug">GPS signal weak — please check your connection</span>
+        </div>
+    </div>
+
     @if($driver && $driver->assigned_bus && $bus)
         <!-- TRIP CONTROL TOGGLE BUTTON -->
         <div class="bg-white border border-slate-100 rounded-2xl p-5 shadow-[0_4px_24px_rgba(15,23,42,0.02)] flex flex-col gap-4">
@@ -152,8 +160,8 @@
                 <!-- Progress occupancy bar -->
                 @php
                     $paxPercent = $bus->capacity > 0 ? ($bus->passengers / $bus->capacity) * 100 : 0;
-                    $warningLimit = \App\Models\Bus::OCCUPANCY_WARNING_THRESHOLD;
-                    $criticalLimit = \App\Models\Bus::OCCUPANCY_CRITICAL_THRESHOLD;
+                    $warningLimit = \App\Models\Bus::getOccupancyWarningThreshold();
+                    $criticalLimit = \App\Models\Bus::getOccupancyCriticalThreshold();
                     
                     $paxColor = 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.25)]';
                     if($paxPercent >= $warningLimit && $paxPercent < $criticalLimit) {
@@ -196,7 +204,19 @@
                     @php
                         $defaultEta = 5;
                         if ($route && $route->stops->count() > 1) {
-                            $defaultEta = (int) round(($route->travel_time_minutes ?? 30) / ($route->stops->count() - 1));
+                            $routeStops = $route->stops->sortBy('sequence')->values();
+                            $offsets = \App\Models\Stop::getDistanceWeightedOffsets($routeStops, $route->travel_time_minutes ?? 30);
+                            
+                            $nextStopName = $bus->next_stop;
+                            $nextStopIndex = $routeStops->search(function ($s) use ($nextStopName) {
+                                return stripos($s->name, (string)$nextStopName) !== false || stripos((string)$nextStopName, $s->name) !== false;
+                            });
+                            
+                            if ($nextStopIndex !== false && $nextStopIndex > 0) {
+                                $defaultEta = (int) round($offsets[$nextStopIndex] - $offsets[$nextStopIndex - 1]);
+                            } else {
+                                $defaultEta = (int) round($offsets[1] ?? 5);
+                            }
                         }
                         $defaultEta = max(1, $defaultEta);
                     @endphp
@@ -210,16 +230,34 @@
                 </div>
 
                 <!-- Stops Stack Scroll (Radio Picker) -->
+                @php
+                    $nextStopSeq = 0;
+                    if ($bus->next_stop && $route) {
+                        $foundStop = $route->stops->first(function ($s) use ($bus) {
+                            return stripos($s->name, (string)$bus->next_stop) !== false || stripos((string)$bus->next_stop, $s->name) !== false;
+                        });
+                        if ($foundStop) {
+                            $nextStopSeq = $foundStop->sequence;
+                        }
+                    }
+                @endphp
                 <div class="flex flex-col gap-2.5 max-h-[175px] overflow-y-auto pr-1 no-scrollbar">
                     @forelse($route->stops->sortBy('sequence') as $stop)
-                        <label class="flex items-center justify-between p-3 bg-slate-50/40 hover:bg-slate-50 rounded-xl border border-slate-100 cursor-pointer active:scale-[0.99] transition-transform select-none">
+                        @php
+                            $isPassed = $stop->sequence < $nextStopSeq;
+                            $isCurrent = $bus->next_stop === $stop->name;
+                        @endphp
+                        <label data-stop-seq="{{ $stop->sequence }}" data-stop-name="{{ $stop->name }}" 
+                            class="stop-label-item flex items-center justify-between p-3 rounded-xl border cursor-pointer active:scale-[0.99] transition-all select-none
+                            {{ $isPassed ? 'opacity-50 bg-slate-100/70 border-slate-150' : 'bg-slate-50/40 border-slate-100 hover:bg-slate-50' }}
+                            {{ $isCurrent ? 'border-[#003F87]/30 bg-[#003F87]/5' : '' }}">
                             <div class="flex items-center gap-3">
                                 <input type="radio" name="next_stop_radio" value="{{ $stop->name }}" 
-                                    {{ $bus->next_stop === $stop->name ? 'checked' : '' }} 
+                                    {{ $isCurrent ? 'checked' : '' }} 
                                     onchange="selectNextStop('{{ $stop->name }}')"
                                     class="w-4 h-4 text-[#003F87] bg-white border-slate-250 focus:ring-[#003F87]/20 focus:ring-2">
                                 <div class="flex flex-col">
-                                    <span class="text-xs font-bold text-slate-700">{{ $stop->name }}</span>
+                                    <span class="stop-name-text text-xs font-bold {{ $isPassed ? 'line-through text-slate-400' : 'text-slate-700' }}">{{ $stop->name }}</span>
                                     <span class="text-[9px] font-semibold text-slate-450">Stop Order #{{ $stop->sequence }}</span>
                                 </div>
                             </div>
@@ -374,18 +412,18 @@
 @section('scripts')
 <script>
     // Dynamic config constants from database models
-    const warningLimit = {{ \App\Models\Bus::OCCUPANCY_WARNING_THRESHOLD }};
-    const criticalLimit = {{ \App\Models\Bus::OCCUPANCY_CRITICAL_THRESHOLD }};
-    const fastSpeedThreshold = {{ \App\Models\Bus::SPEED_FAST_THRESHOLD }};
-    const gpsSyncInterval = {{ \App\Models\Bus::GPS_SYNC_INTERVAL_MS }};
-    const speedSimInterval = {{ \App\Models\Bus::SPEED_SIMULATION_INTERVAL_MS }};
-    const simSpeedMin = {{ \App\Models\Bus::SIM_SPEED_MIN }};
-    const simSpeedMax = {{ \App\Models\Bus::SIM_SPEED_MAX }};
+    const warningLimit = {{ \App\Models\Bus::getOccupancyWarningThreshold() }};
+    const criticalLimit = {{ \App\Models\Bus::getOccupancyCriticalThreshold() }};
+    const fastSpeedThreshold = {{ \App\Models\Bus::getSpeedFastThreshold() }};
+    const gpsSyncInterval = {{ \App\Models\Bus::getGpsSyncIntervalMs() }};
+    const speedSimInterval = {{ \App\Models\Bus::getSpeedSimulationIntervalMs() }};
+    const simSpeedMin = {{ $bus ? $bus->getMinSpeed() : \App\Models\Bus::getSimSpeedMin() }};
+    const simSpeedMax = {{ $bus ? $bus->getMaxSpeed() : \App\Models\Bus::getSimSpeedMax() }};
     
     @php
         $defaultStop = \App\Models\Stop::first();
-        $fallbackLat = $defaultStop ? $defaultStop->lat : 14.5593;
-        $fallbackLng = $defaultStop ? $defaultStop->lng : 121.0805;
+        $fallbackLat = $defaultStop ? $defaultStop->lat : (float) \App\Models\SystemSetting::get('default_route_start_lat', 14.5593);
+        $fallbackLng = $defaultStop ? $defaultStop->lng : (float) \App\Models\SystemSetting::get('default_route_start_lng', 121.0805);
     @endphp
     const fallbackLat = {{ $fallbackLat }};
     const fallbackLng = {{ $fallbackLng }};
@@ -402,6 +440,10 @@
     let isRealSpeedActive = false;
     let lastDeviceLat = null;
     let lastDeviceLng = null;
+    let prevLat = null;
+    let prevLng = null;
+    let lastCoordTime = null;
+    let gpsRetryTimeout = null;
 
     // Dynamic Coordinates Path array from database (with fallback integrated)
     const mockRouteCoords = @json($gpsCoords);
@@ -410,6 +452,11 @@
     document.addEventListener("DOMContentLoaded", function() {
         if (isTrackingActive) {
             startSimulation();
+        }
+        // Initialize passed stops styling on load
+        const initialNextStop = document.getElementById('active-stop-label')?.innerText?.trim();
+        if (initialNextStop) {
+            updatePassedStopsUI(initialNextStop);
         }
     });
 
@@ -463,7 +510,43 @@
         if (activeStopLabel) {
             activeStopLabel.innerText = name;
         }
+        updatePassedStopsUI(name);
         updateNextStop();
+    }
+
+    function updatePassedStopsUI(nextStopName) {
+        const targetLabel = document.querySelector(`.stop-label-item[data-stop-name="${nextStopName}"]`);
+        if (!targetLabel) return;
+        
+        const nextStopSeq = parseInt(targetLabel.getAttribute('data-stop-seq')) || 0;
+        
+        const labels = document.querySelectorAll('.stop-label-item');
+        labels.forEach(label => {
+            const seq = parseInt(label.getAttribute('data-stop-seq')) || 0;
+            const stopName = label.getAttribute('data-stop-name');
+            const nameText = label.querySelector('.stop-name-text');
+            
+            // Remove previous statuses
+            label.classList.remove('opacity-50', 'bg-slate-100/70', 'border-slate-150', 'border-[#003F87]/30', 'bg-[#003F87]/5');
+            label.classList.add('bg-slate-50/40', 'border-slate-100');
+            if (nameText) {
+                nameText.classList.remove('line-through', 'text-slate-400');
+                nameText.classList.add('text-slate-700');
+            }
+            
+            if (seq < nextStopSeq) {
+                // Passed stop
+                label.classList.add('opacity-50', 'bg-slate-100/70', 'border-slate-150');
+                label.classList.remove('bg-slate-50/40', 'border-slate-100');
+                if (nameText) {
+                    nameText.classList.add('line-through', 'text-slate-400');
+                    nameText.classList.remove('text-slate-700');
+                }
+            } else if (stopName === nextStopName) {
+                // Current stop
+                label.classList.add('border-[#003F87]/30', 'bg-[#003F87]/5');
+            }
+        });
     }
 
     function updateNextStop() {
@@ -491,35 +574,120 @@
         .catch(err => console.error("Error updating next stop:", err));
     }
 
+    function calculateDistanceInMeters(lat1, lon1, lat2, lon2) {
+        const R = 6371e3; // Earth's radius in meters
+        const phi1 = lat1 * Math.PI / 180;
+        const phi2 = lat2 * Math.PI / 180;
+        const deltaPhi = (lat2 - lat1) * Math.PI / 180;
+        const deltaLambda = (lon2 - lon1) * Math.PI / 180;
+
+        const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+                  Math.cos(phi1) * Math.cos(phi2) *
+                  Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return R * c; // in meters
+    }
+
     function startGPSWatch() {
         if ("geolocation" in navigator) {
+            isRealSpeedActive = true; // Assume GPS is active and we want real speed
             geoWatchId = navigator.geolocation.watchPosition(
                 (position) => {
-                    lastDeviceLat = position.coords.latitude;
-                    lastDeviceLng = position.coords.longitude;
+                    const currentLat = position.coords.latitude;
+                    const currentLng = position.coords.longitude;
+                    const nowTime = Date.now();
                     
+                    lastDeviceLat = currentLat;
+                    lastDeviceLng = currentLng;
+                    
+                    // Hide the alert banner and clear reconnect timeout
+                    const weakAlert = document.getElementById('gps-signal-weak-alert');
+                    if (weakAlert) {
+                        weakAlert.classList.add('hidden');
+                    }
+                    if (gpsRetryTimeout) {
+                        clearTimeout(gpsRetryTimeout);
+                        gpsRetryTimeout = null;
+                    }
+                    
+                    let speedKmh = 0;
                     let speedMps = position.coords.speed;
+                    
                     if (speedMps !== null && speedMps >= 0) {
                         isRealSpeedActive = true;
-                        currentSpeed = Math.round(speedMps * 3.6);
-                        document.getElementById('speed-display').innerText = currentSpeed;
-                        
-                        const speedStatus = document.getElementById('speed-status-text');
-                        if (currentSpeed === 0) {
-                            speedStatus.innerText = "SHUTTLE IDLE";
-                            speedStatus.className = "text-[10px] font-semibold text-slate-400 mt-0.5";
-                        } else if (currentSpeed > fastSpeedThreshold) {
-                            speedStatus.innerText = "CRUISING FAST";
-                            speedStatus.className = "text-[10px] font-semibold text-amber-600 mt-0.5";
-                        } else {
-                            speedStatus.innerText = "DRIVING SLOW";
-                            speedStatus.className = "text-[10px] font-semibold text-emerald-600 mt-0.5";
+                        let rawKmh = speedMps * 3.6;
+                        speedKmh = rawKmh < 3 ? 0 : Math.round(rawKmh);
+                    } else {
+                        // Fallback: Compute speed from coordinates difference
+                        if (prevLat !== null && prevLng !== null && lastCoordTime !== null) {
+                            let distanceMeters = calculateDistanceInMeters(prevLat, prevLng, currentLat, currentLng);
+                            // Filter GPS jitter (ignore movements < 2 meters while stationary)
+                            if (distanceMeters < 2.0) {
+                                distanceMeters = 0;
+                            }
+                            const timeSeconds = (nowTime - lastCoordTime) / 1000;
+                            if (timeSeconds > 0.5) {
+                                const computedSpeedMps = distanceMeters / timeSeconds;
+                                let computedKmh = computedSpeedMps * 3.6;
+                                // Filter out low-speed GPS drift/jitter (speeds < 3 km/h are treated as stationary)
+                                if (computedKmh < 3) {
+                                    computedKmh = 0;
+                                }
+                                // Cap speed at 120 km/h to filter out telemetry teleportation spikes
+                                if (computedKmh < 120) {
+                                    speedKmh = Math.round(computedKmh);
+                                }
+                            }
                         }
+                        isRealSpeedActive = true;
+                    }
+                    
+                    // Keep track of last coordinate and time
+                    prevLat = currentLat;
+                    prevLng = currentLng;
+                    lastCoordTime = nowTime;
+                    
+                    currentSpeed = speedKmh;
+                    document.getElementById('speed-display').innerText = currentSpeed;
+                    
+                    const speedStatus = document.getElementById('speed-status-text');
+                    if (currentSpeed === 0) {
+                        speedStatus.innerText = "SHUTTLE IDLE";
+                        speedStatus.className = "text-[10px] font-semibold text-slate-400 mt-0.5";
+                    } else if (currentSpeed > fastSpeedThreshold) {
+                        speedStatus.innerText = "CRUISING FAST";
+                        speedStatus.className = "text-[10px] font-semibold text-amber-600 mt-0.5";
+                    } else {
+                        speedStatus.innerText = "DRIVING SLOW";
+                        speedStatus.className = "text-[10px] font-semibold text-emerald-600 mt-0.5";
                     }
                 },
                 (error) => {
                     console.warn("Geolocation watch warning: ", error);
-                    isRealSpeedActive = false;
+                    
+                    // Show the alert banner
+                    const weakAlert = document.getElementById('gps-signal-weak-alert');
+                    if (weakAlert) {
+                        weakAlert.classList.remove('hidden');
+                    }
+
+                    // Set 30-second timeout to retry tracking
+                    if (!gpsRetryTimeout) {
+                        gpsRetryTimeout = setTimeout(() => {
+                            gpsRetryTimeout = null;
+                            console.log("Retrying GPS watch connection...");
+                            stopGPSWatch();
+                            startGPSWatch();
+                        }, 30000);
+                    }
+                    
+                    // Only disable real speed if permission is denied, 
+                    // or if we have never received a valid coordinate lock.
+                    // This prevents timeouts (common when stationary) from activating the simulation loop.
+                    if (error.code === error.PERMISSION_DENIED || lastDeviceLat === null) {
+                        isRealSpeedActive = false;
+                    }
                 },
                 { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
             );
@@ -527,6 +695,10 @@
     }
 
     function stopGPSWatch() {
+        if (gpsRetryTimeout) {
+            clearTimeout(gpsRetryTimeout);
+            gpsRetryTimeout = null;
+        }
         if (geoWatchId) {
             navigator.geolocation.clearWatch(geoWatchId);
             geoWatchId = null;
@@ -534,6 +706,15 @@
         isRealSpeedActive = false;
         lastDeviceLat = null;
         lastDeviceLng = null;
+        prevLat = null;
+        prevLng = null;
+        lastCoordTime = null;
+        
+        // Hide the weak signal alert when stopping tracking manually
+        const weakAlert = document.getElementById('gps-signal-weak-alert');
+        if (weakAlert) {
+            weakAlert.classList.add('hidden');
+        }
     }
 
     function toggleTracking() {
@@ -600,6 +781,9 @@
 
     // Coordinates Simulation Loop & Mock Speed Updates
     function startSimulation() {
+        // Clear any existing intervals/watches to prevent duplicates
+        stopSimulation();
+
         startGPSWatch();
 
         speedTimer = setInterval(() => {
@@ -614,18 +798,23 @@
             let speedDiff = targetSpeed - currentSpeed;
             currentSpeed += Math.sign(speedDiff) * Math.min(Math.abs(speedDiff), 5);
             
-            document.getElementById('speed-display').innerText = currentSpeed;
+            const display = document.getElementById('speed-display');
+            if (display) {
+                display.innerText = currentSpeed;
+            }
             
             const speedStatus = document.getElementById('speed-status-text');
-            if (currentSpeed === 0) {
-                speedStatus.innerText = "SHUTTLE IDLE";
-                speedStatus.className = "text-[10px] font-semibold text-slate-400 mt-0.5";
-            } else if (currentSpeed > fastSpeedThreshold) {
-                speedStatus.innerText = "CRUISING FAST";
-                speedStatus.className = "text-[10px] font-semibold text-amber-600 mt-0.5";
-            } else {
-                speedStatus.innerText = "DRIVING SLOW";
-                speedStatus.className = "text-[10px] font-semibold text-emerald-600 mt-0.5";
+            if (speedStatus) {
+                if (currentSpeed === 0) {
+                    speedStatus.innerText = "SHUTTLE IDLE";
+                    speedStatus.className = "text-[10px] font-semibold text-slate-400 mt-0.5";
+                } else if (currentSpeed > fastSpeedThreshold) {
+                    speedStatus.innerText = "CRUISING FAST";
+                    speedStatus.className = "text-[10px] font-semibold text-amber-600 mt-0.5";
+                } else {
+                    speedStatus.innerText = "DRIVING SLOW";
+                    speedStatus.className = "text-[10px] font-semibold text-emerald-600 mt-0.5";
+                }
             }
         }, speedSimInterval);
 
@@ -633,9 +822,11 @@
             if (!isTrackingActive) return;
             
             let coord;
+            let isSim = false;
             // Use real device GPS coords if available, otherwise fall back to route simulation path
             if (lastDeviceLat !== null && lastDeviceLng !== null) {
                 coord = { lat: lastDeviceLat, lng: lastDeviceLng };
+                isSim = false;
                 console.log(`Real GPS Transmit: Lat: ${coord.lat}, Lng: ${coord.lng}`);
             } else {
                 // Ensure array has values
@@ -646,9 +837,11 @@
                         lng: Array.isArray(currentPoint) ? currentPoint[1] : currentPoint.lng
                     };
                     mockCoordIndex = (mockCoordIndex + 1) % mockRouteCoords.length;
+                    isSim = true;
                     console.log(`Simulated GPS Transmit: Lat: ${coord.lat}, Lng: ${coord.lng}`);
                 } else {
                     coord = { lat: fallbackLat, lng: fallbackLng }; // Default fallback
+                    isSim = true;
                 }
             }
 
@@ -662,7 +855,8 @@
                 body: JSON.stringify({
                     lat: coord.lat,
                     lng: coord.lng,
-                    speed: currentSpeed
+                    speed: currentSpeed,
+                    is_simulated: isSim
                 })
             })
             .then(res => res.json())
@@ -674,6 +868,7 @@
                         const stopLabel = document.getElementById('active-stop-label');
                         if (stopLabel) {
                             stopLabel.innerText = data.next_stop;
+                            updatePassedStopsUI(data.next_stop);
                         }
                     }
                 }
@@ -681,7 +876,10 @@
             .catch(err => console.error('Database GPS Sync Error:', err));
         }, gpsSyncInterval);
         
-        document.getElementById('live-trip-ping').classList.remove('hidden');
+        const livePing = document.getElementById('live-trip-ping');
+        if (livePing) {
+            livePing.classList.remove('hidden');
+        }
         const sat = document.getElementById('satellite-icon');
         if (sat) {
             sat.classList.add('text-[#003F87]');
@@ -691,19 +889,42 @@
 
     function stopSimulation() {
         stopGPSWatch();
-        clearInterval(simulationTimer);
-        clearInterval(speedTimer);
+        if (simulationTimer) {
+            clearInterval(simulationTimer);
+            simulationTimer = null;
+        }
+        if (speedTimer) {
+            clearInterval(speedTimer);
+            speedTimer = null;
+        }
         currentSpeed = 0;
-        document.getElementById('speed-display').innerText = 0;
-        document.getElementById('speed-status-text').innerText = "SHUTTLE IDLE";
-        document.getElementById('speed-status-text').className = "text-[10px] font-semibold text-slate-400 mt-0.5";
+        const display = document.getElementById('speed-display');
+        if (display) {
+            display.innerText = 0;
+        }
+        const speedStatus = document.getElementById('speed-status-text');
+        if (speedStatus) {
+            speedStatus.innerText = "SHUTTLE IDLE";
+            speedStatus.className = "text-[10px] font-semibold text-slate-400 mt-0.5";
+        }
         
-        document.getElementById('live-trip-ping').classList.add('hidden');
+        const livePing = document.getElementById('live-trip-ping');
+        if (livePing) {
+            livePing.classList.add('hidden');
+        }
         const sat = document.getElementById('satellite-icon');
         if (sat) {
             sat.classList.remove('text-[#003F87]');
             sat.classList.remove('animate-pulse');
         }
     }
+
+    // Stop intervals and GPS watch on beforeunload/pagehide to prevent memory leaks or running background tasks
+    window.addEventListener('beforeunload', () => {
+        stopSimulation();
+    });
+    window.addEventListener('pagehide', () => {
+        stopSimulation();
+    });
 </script>
 @endsection

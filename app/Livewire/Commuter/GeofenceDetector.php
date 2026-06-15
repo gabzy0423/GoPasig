@@ -4,15 +4,17 @@ namespace App\Livewire\Commuter;
 
 use Livewire\Component;
 use Carbon\Carbon;
+use App\Services\GPSKalmanFilter;
 
 class GeofenceDetector extends Component
 {
     public $lat = null;
     public $lng = null;
-    public $activeStop = null; // Currently inside this stop (if within 150m)
+    public $activeStop = null; // Currently inside this stop (within its configured radius_meters)
     public $nearestStop = null; // Nearest stop
     public $distanceToNearest = null; // In meters
-
+    public $selectedDestinationId = null;
+    public $activeTrip = null;
 
     protected $listeners = ['updateLocation' => 'updateLocation'];
 
@@ -26,7 +28,7 @@ class GeofenceDetector extends Component
         $insideStop = null;
 
         // Fetch stops dynamically from database
-        $dbStops = \App\Models\Stop::all();
+        $dbStops = \App\Models\Stop::getAllCached();
 
         foreach ($dbStops as $dbStop) {
             $dist = $this->calculateDistance($this->lat, $this->lng, $dbStop->lat, $dbStop->lng); // in meters
@@ -37,7 +39,9 @@ class GeofenceDetector extends Component
                 'lat' => floatval($dbStop->lat),
                 'lng' => floatval($dbStop->lng),
                 'amenities' => $dbStop->amenities ?: \App\Models\SystemSetting::get('default_amenity', 'Shelter'),
-                'schedule' => $this->getCombinedSchedule($dbStop)
+                'schedule' => $this->getCombinedSchedule($dbStop),
+                'route_id' => $dbStop->route_id,
+                'sequence' => $dbStop->sequence
             ];
 
             if ($minDistance === null || $dist < $minDistance) {
@@ -45,8 +49,9 @@ class GeofenceDetector extends Component
                 $closest = $stopData;
             }
 
-            // Geofence radius is 150 meters
-            if ($dist <= 150) {
+            // Use each stop's own configurable radius (falls back to 100 m if not set)
+            $geofenceRadius = $dbStop->radius_meters ?? 100;
+            if ($dist <= $geofenceRadius) {
                 $insideStop = $stopData;
             }
         }
@@ -65,6 +70,163 @@ class GeofenceDetector extends Component
                 $this->activeStop = null;
             }
         }
+
+        $this->checkActiveTripTransitions();
+    }
+
+    public function checkActiveTripTransitions()
+    {
+        $sessionToken = request()->cookie('commuter_session_token');
+        if (!$sessionToken) {
+            $this->activeTrip = null;
+            return;
+        }
+
+        $trip = \App\Models\CommuterTrip::where('session_token', $sessionToken)
+            ->whereIn('status', ['WAITING', 'ON_BUS'])
+            ->first();
+
+        if (!$trip) {
+            $this->activeTrip = null;
+            return;
+        }
+
+        // Commuter coordinates must be available
+        if ($this->lat && $this->lng) {
+            if ($trip->status === 'WAITING') {
+                // Check if they step outside geofence while waiting
+                $originStop = \App\Models\Stop::find($trip->origin_stop_id);
+                if ($originStop) {
+                    $distToOrigin = $this->calculateDistance($this->lat, $this->lng, $originStop->lat, $originStop->lng);
+                    $radius = $originStop->radius_meters ?? 100;
+                    if ($distToOrigin > $radius) {
+                        if (!session()->get('prompted_cancel_' . $trip->id)) {
+                            session()->put('prompted_cancel_' . $trip->id, true);
+                            $this->dispatch('promptCancelTrip');
+                        }
+                    } else {
+                        session()->forget('prompted_cancel_' . $trip->id);
+                    }
+                }
+
+                // Check if near any active bus on this route
+                $activeBuses = \App\Models\Bus::where('route_id', $trip->route_id)
+                    ->where('status', 'active')
+                    ->get();
+
+                foreach ($activeBuses as $bus) {
+                    $dist = $this->calculateDistance($this->lat, $this->lng, $bus->lat, $bus->lng);
+                    if ($dist <= 15) { // 15 meters boarding threshold
+                        $trip->update([
+                            'status' => 'ON_BUS',
+                            'boarded_at' => now(),
+                            'bus_id' => $bus->id,
+                        ]);
+                        $this->dispatch('commuterBoarded', busPlate: $bus->plate_number);
+                        break;
+                    }
+                }
+            } elseif ($trip->status === 'ON_BUS') {
+                // Check if arrived at destination stop
+                $destStop = \App\Models\Stop::find($trip->destination_stop_id);
+                if ($destStop) {
+                    $dist = $this->calculateDistance($this->lat, $this->lng, $destStop->lat, $destStop->lng);
+                    $radius = $destStop->radius_meters ?? 100;
+                    if ($dist <= $radius) {
+                        $trip->update([
+                            'status' => 'ARRIVED',
+                            'arrived_at' => now(),
+                        ]);
+                        $this->dispatch('commuterArrived', stopName: $destStop->name);
+                    }
+                }
+            }
+        }
+
+        // Refresh trip data for UI
+        $trip->refresh();
+        $this->activeTrip = [
+            'id' => $trip->id,
+            'status' => $trip->status,
+            'origin_stop_name' => $trip->originStop?->name ?? 'Unknown',
+            'destination_stop_name' => $trip->destinationStop?->name ?? 'Unknown',
+            'route_name' => $trip->route?->name ?? 'Unknown',
+            'route_color' => $trip->route?->color ?? '#003F87',
+        ];
+    }
+
+    public function loadActiveTrip()
+    {
+        $sessionToken = request()->cookie('commuter_session_token');
+        if (!$sessionToken) {
+            $this->activeTrip = null;
+            return;
+        }
+
+        $trip = \App\Models\CommuterTrip::where('session_token', $sessionToken)
+            ->whereIn('status', ['WAITING', 'ON_BUS'])
+            ->first();
+
+        if ($trip) {
+            $this->activeTrip = [
+                'id' => $trip->id,
+                'status' => $trip->status,
+                'origin_stop_name' => $trip->originStop?->name ?? 'Unknown',
+                'destination_stop_name' => $trip->destinationStop?->name ?? 'Unknown',
+                'route_name' => $trip->route?->name ?? 'Unknown',
+                'route_color' => $trip->route?->color ?? '#003F87',
+            ];
+        } else {
+            $this->activeTrip = null;
+        }
+    }
+
+    public function startCommuterTrip()
+    {
+        $sessionToken = request()->cookie('commuter_session_token');
+        if (!$sessionToken || !$this->activeStop || !$this->selectedDestinationId) {
+            return;
+        }
+
+        $originStopId = $this->activeStop['id'];
+        $destinationStopId = (int) $this->selectedDestinationId;
+
+        // Auto-match route: find a route containing both stops where sequence of origin < destination
+        $matchingRoute = \App\Models\Route::whereHas('stops', function ($q) use ($originStopId) {
+            $q->where('id', $originStopId);
+        })->whereHas('stops', function ($q) use ($destinationStopId) {
+            $q->where('id', $destinationStopId);
+        })->first();
+
+        if ($matchingRoute) {
+            \App\Models\CommuterTrip::create([
+                'session_token' => $sessionToken,
+                'origin_stop_id' => $originStopId,
+                'destination_stop_id' => $destinationStopId,
+                'route_id' => $matchingRoute->id,
+                'status' => 'WAITING',
+                'created_at' => now(),
+            ]);
+
+            $this->selectedDestinationId = null;
+            $this->loadActiveTrip();
+        } else {
+            session()->flash('error', 'Walang direktang ruta na nagkokonekta sa dalawang stop na ito.');
+        }
+    }
+
+    public function cancelCommuterTrip()
+    {
+        $sessionToken = request()->cookie('commuter_session_token');
+        if (!$sessionToken) return;
+
+        \App\Models\CommuterTrip::where('session_token', $sessionToken)
+            ->whereIn('status', ['WAITING', 'ON_BUS'])
+            ->update([
+                'status' => 'CANCELLED',
+            ]);
+
+        $this->activeTrip = null;
     }
 
     /**
@@ -72,10 +234,11 @@ class GeofenceDetector extends Component
      */
     private function getCombinedSchedule($targetStop)
     {
-        // Find all stops with the same name or within 50 meters of this stop
-        $stops = \App\Models\Stop::all()->filter(function ($s) use ($targetStop) {
-            return $s->name === $targetStop->name || 
-                   $this->calculateDistance($s->lat, $s->lng, $targetStop->lat, $targetStop->lng) <= 50;
+        // Find all stops with the same name or within the configurable grouping radius
+        $groupingRadius = (int) \App\Models\SystemSetting::get('stop_grouping_radius', 50);
+        $stops = \App\Models\Stop::getAllCached()->filter(function ($s) use ($targetStop, $groupingRadius) {
+            return $s->name === $targetStop->name ||
+                   $this->calculateDistance($s->lat, $s->lng, $targetStop->lat, $targetStop->lng) <= $groupingRadius;
         });
 
         $arrivals = [];
@@ -86,11 +249,18 @@ class GeofenceDetector extends Component
 
             $routeArrivalMinutes = null;
 
-            // Calculate dynamic travel interval per stop
-            $routeStops = $route->stops;
+            // Build distance-weighted cumulative time offsets for each stop on the route.
+            // Offset[i] = minutes from departure to reach stop at index i (0-based).
+            $routeStops      = $route->stops->sortBy('sequence')->values();
             $totalStopsCount = $routeStops->count();
-            $routeTravelTime = $route->travel_time_minutes ?: 25;
-            $averageInterval = $totalStopsCount > 1 ? ($routeTravelTime / ($totalStopsCount - 1)) : 5;
+            $routeTravelTime = \App\Models\RouteDuration::getDuration($route->id);
+            $offsets = \App\Models\Stop::getDistanceWeightedOffsets($routeStops, $routeTravelTime);
+
+            // Map sequence number → offset minutes (sequence is 1-based)
+            $seqToOffset = [];
+            foreach ($routeStops as $idx => $rs) {
+                $seqToOffset[$rs->sequence] = $offsets[$idx] ?? ($idx * ($routeTravelTime / max(1, $totalStopsCount - 1)));
+            }
 
             // 1. Look for active buses on this route
             $buses = \App\Models\Bus::where('route_id', $stop->route_id)
@@ -103,31 +273,33 @@ class GeofenceDetector extends Component
                 $busNextStop = \App\Models\Stop::where('route_id', $stop->route_id)
                     ->where('name', 'like', '%' . $busNextStopName . '%')
                     ->first();
-                
+
                 $busNextSeq = $busNextStop ? $busNextStop->sequence : 1;
-                $targetSeq = $stop->sequence;
-                
+                $targetSeq  = $stop->sequence;
+
                 if ($targetSeq >= $busNextSeq) {
-                    $seqDiff = $targetSeq - $busNextSeq;
-                    $incomingEtas[] = max(1, round($bus->eta + ($seqDiff * $averageInterval)));
+                    // Extra minutes = distance-weighted offset difference between target and bus's next stop
+                    $extraMins = ($seqToOffset[$targetSeq] ?? 0) - ($seqToOffset[$busNextSeq] ?? 0);
+                    $incomingEtas[] = max(1, round($bus->eta + $extraMins));
                 }
             }
 
             if (!empty($incomingEtas)) {
                 $routeArrivalMinutes = min($incomingEtas);
             } else {
-                // 2. No active buses, check schedules
+                // 2. No active buses — check scheduled departure
                 $nextSched = \App\Models\Schedule::where('route_id', $stop->route_id)
                     ->where('departure_time', '>', now()->toTimeString())
                     ->orderBy('departure_time')
                     ->first();
                 if ($nextSched) {
-                    $departure = \Carbon\Carbon::parse($nextSched->departure_time);
-                    // Add transit time based on sequence using dynamic average interval
-                    $transitMins = ($stop->sequence - 1) * $averageInterval;
-                    $expectedDepartureTime = $departure->addMinutes(round($transitMins));
-                    
-                    $diff = now()->diffInMinutes($expectedDepartureTime, false);
+                    $departure   = \Carbon\Carbon::parse($nextSched->departure_time);
+                    // Transit time = cumulative offset at this stop's 0-based index
+                    $stopIndex   = $stop->sequence - 1;
+                    $transitMins = $offsets[$stopIndex] ?? ($stopIndex * ($routeTravelTime / max(1, $totalStopsCount - 1)));
+                    $expectedArrival = $departure->copy()->addMinutes(round($transitMins));
+
+                    $diff = now()->diffInMinutes($expectedArrival, false);
                     if ($diff > 0) {
                         $routeArrivalMinutes = $diff;
                     }
@@ -147,26 +319,52 @@ class GeofenceDetector extends Component
         return "Next Libreng Sakay: " . implode(', ', $arrivals);
     }
 
-    // Haversine formula to calculate distance in meters
-    private function calculateDistance($lat1, $lon1, $lat2, $lon2)
+    // Delegate to the canonical Haversine implementation (returns meters)
+    private function calculateDistance($lat1, $lon1, $lat2, $lon2): float
     {
-        $earthRadius = 6371000; // in meters
-
-        $latDelta = deg2rad($lat2 - $lat1);
-        $lonDelta = deg2rad($lon2 - $lon1);
-
-        $a = sin($latDelta / 2) * sin($latDelta / 2) +
-             cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
-             sin($lonDelta / 2) * sin($lonDelta / 2);
-
-        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
-
-        return $earthRadius * $c;
+        return GPSKalmanFilter::calculateDistance($lat1, $lon1, $lat2, $lon2);
     }
 
     public function render()
     {
-        $stops = \App\Models\Stop::orderBy('name')->get();
+        $this->loadActiveTrip();
+        $stops = \App\Models\Stop::getAllCached()->sortBy('name');
+
+        $sessionToken = request()->cookie('commuter_session_token');
+        $breakdownAlert = null;
+        $maintenanceAlert = null;
+        if ($sessionToken) {
+            $tripObj = \App\Models\CommuterTrip::where('session_token', $sessionToken)
+                ->whereIn('status', ['WAITING', 'ON_BUS'])
+                ->first();
+            if ($tripObj) {
+                if ($tripObj->status === 'ON_BUS') {
+                    if ($tripObj->bus_id) {
+                        $busObj = \App\Models\Bus::find($tripObj->bus_id);
+                        if ($busObj) {
+                            if ($busObj->status === 'breakdown') {
+                                $breakdownAlert = "Breakdown detected — please alight safely. Rescue bus incoming.";
+                            } elseif ($busObj->status === 'maintenance') {
+                                $maintenanceAlert = "Pasensya na — ang inyong bus ay may maintenance issue. Mangyaring bumaba sa susunod na hintuan.";
+                            }
+                        }
+                    } else {
+                        $anyBroken = \App\Models\Bus::where('route_id', $tripObj->route_id)->where('status', 'breakdown')->exists();
+                        $anyMaint = \App\Models\Bus::where('route_id', $tripObj->route_id)->where('status', 'maintenance')->exists();
+                        if ($anyBroken) {
+                            $breakdownAlert = "Breakdown detected — please alight safely. Rescue bus incoming.";
+                        } elseif ($anyMaint) {
+                            $maintenanceAlert = "Pasensya na — ang inyong bus ay may maintenance issue. Mangyaring bumaba sa susunod na hintuan.";
+                        }
+                    }
+                } elseif ($tripObj->status === 'WAITING') {
+                    $isAnyBusBroken = \App\Models\Bus::where('route_id', $tripObj->route_id)->where('status', 'breakdown')->exists();
+                    if ($isAnyBusBroken) {
+                        $breakdownAlert = "Bus breakdown — please wait for next available bus";
+                    }
+                }
+            }
+        }
 
         // Load settings from database
         $simNearLat = \App\Models\SystemSetting::get('sim_near_lat', '14.5685');
@@ -177,12 +375,14 @@ class GeofenceDetector extends Component
         $simFarLng = \App\Models\SystemSetting::get('sim_far_lng', '121.0000');
         $simFarLabel = \App\Models\SystemSetting::get('sim_far_label', 'Walang kalapit na stop');
         
-        $chimeFreq1 = \App\Models\SystemSetting::get('chime_freq_1', '1318.51');
-        $chimeFreq2 = \App\Models\SystemSetting::get('chime_freq_2', '1760.00');
-        $chimeDelay = \App\Models\SystemSetting::get('chime_delay', '0.12');
+        $chimeFreq1 = \App\Models\SystemSetting::get('chime_freq_1', config('geofence.chime_freq_1'));
+        $chimeFreq2 = \App\Models\SystemSetting::get('chime_freq_2', config('geofence.chime_freq_2'));
+        $chimeDelay = \App\Models\SystemSetting::get('chime_delay', config('geofence.chime_delay'));
 
         return view('livewire.commuter.geofence-detector', [
             'stops' => $stops,
+            'breakdownAlert' => $breakdownAlert,
+            'maintenanceAlert' => $maintenanceAlert,
             'simNearLat' => $simNearLat,
             'simNearLng' => $simNearLng,
             'simNearLabel' => $simNearLabel,

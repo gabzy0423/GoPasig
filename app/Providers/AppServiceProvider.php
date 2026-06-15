@@ -21,8 +21,8 @@ class AppServiceProvider extends ServiceProvider
     {
         \Illuminate\Support\Facades\View::composer('fleet.monitor.index', function ($view) {
             $buses = \App\Models\Bus::with('route')->get();
-            $routes = \App\Models\Route::all();
-            $stops = \App\Models\Stop::all();
+            $routes = \App\Models\Route::getAllCached();
+            $stops = \App\Models\Stop::getAllCached();
             
             // Find active incidents to map them to buses
             $activeIncidents = \App\Models\Incident::whereIn('status', ['reported', 'under_review'])
@@ -42,7 +42,7 @@ class AppServiceProvider extends ServiceProvider
 
         \Illuminate\Support\Facades\View::composer('fleet.utilization.index', function ($view) {
             $buses = \App\Models\Bus::with('route')->get();
-            $routes = \App\Models\Route::all();
+            $routes = \App\Models\Route::getAllCached();
             
             // Generate last 30 days chart data dynamically
             $chartData = [];
@@ -104,7 +104,7 @@ class AppServiceProvider extends ServiceProvider
                 $lastActive = '—';
                 $lastSchedule = \App\Models\Schedule::where('bus_id', $bus->id)->orderBy('arrival_time', 'desc')->first();
                 if ($lastSchedule) {
-                    $lastActive = \Carbon\Carbon::createFromFormat('H:i:s', $lastSchedule->arrival_time)->format('g:i A');
+                    $lastActive = \Carbon\Carbon::parse($lastSchedule->arrival_time)->format('g:i A');
                 }
 
                 $busCards[] = [
@@ -193,7 +193,7 @@ class AppServiceProvider extends ServiceProvider
                 $filterStatus = 'all';
                 $sortOrder = 'newest';
 
-                $routes = \App\Models\Route::all();
+                $routes = \App\Models\Route::getAllCached();
 
                 $controller = app(\App\Http\Controllers\Fleet\AnnouncementController::class);
                 $announcementStats = $controller->getAnnouncementStats();

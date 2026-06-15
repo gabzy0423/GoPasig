@@ -26,8 +26,13 @@ class CommuterController extends Controller
         $quickStats = (object) $quickStatsArray;
 
         // Active Routes Data
-        $activeRoutes = Route::with(['buses', 'stops'])->get()->map(function ($route) use ($routeStatusService) {
-            $activeBusesOnRoute = $route->buses->where('status', 'active');
+        $routes = Route::getAllCached();
+        $activeBusesByRoute = Bus::where('status', 'active')->get()->groupBy('route_id');
+        $schedulesByRoute = Schedule::get()->groupBy('route_id');
+        $nowTimeString = now()->toTimeString();
+
+        $activeRoutes = $routes->map(function ($route) use ($routeStatusService, $activeBusesByRoute, $schedulesByRoute, $nowTimeString) {
+            $activeBusesOnRoute = $activeBusesByRoute->get($route->id, collect());
             $busesCount = $activeBusesOnRoute->count();
             
             // Calculate next ETA:
@@ -37,9 +42,10 @@ class CommuterController extends Controller
             if ($activeBusesOnRoute->isNotEmpty()) {
                 $nextEta = $activeBusesOnRoute->min('eta');
             } else {
-                $nextSched = Schedule::where('route_id', $route->id)
-                    ->where('departure_time', '>', now()->toTimeString())
-                    ->orderBy('departure_time')
+                $routeSchedules = $schedulesByRoute->get($route->id, collect());
+                $nextSched = $routeSchedules
+                    ->where('departure_time', '>', $nowTimeString)
+                    ->sortBy('departure_time')
                     ->first();
                 if ($nextSched) {
                     $departure = Carbon::parse($nextSched->departure_time);
@@ -52,14 +58,15 @@ class CommuterController extends Controller
             // Health Status: dynamic calculation via RouteStatusService
             $healthStatus = $routeStatusService->getCommuterRouteHealth($route, $activeBusesOnRoute);
 
-            $scheduledTrips = Schedule::where('route_id', $route->id)->count();
-            $completedTrips = Schedule::where('route_id', $route->id)
-                ->where('departure_time', '<=', now()->toTimeString())
+            $routeSchedules = $schedulesByRoute->get($route->id, collect());
+            $scheduledTrips = $routeSchedules->count();
+            $completedTrips = $routeSchedules
+                ->where('departure_time', '<=', $nowTimeString)
                 ->count();
 
             return (object) [
                 'route_name' => $route->name,
-                'route_color' => $route->color ?: '#003F87',
+                'route_color' => $route->color ?: \App\Models\SystemSetting::get('default_route_color', '#003F87'),
                 'health_status' => $healthStatus,
                 'buses_on_route' => $busesCount,
                 'next_eta_minutes' => $nextEta,
@@ -86,10 +93,10 @@ class CommuterController extends Controller
         // Schedule peek: via SchedulePeekService
         $schedulepeek = $schedulePeekService->getSchedulePeek();
 
-        $routesData = Route::all()->map(function($r) {
+        $routesData = Route::getAllCached()->map(function($r) {
             return [
                 'name' => $r->name,
-                'color' => $r->color ?: '#003F87',
+                'color' => $r->color ?: \App\Models\SystemSetting::get('default_route_color', '#003F87'),
                 'coords' => $r->polyline_coordinates
             ];
         });

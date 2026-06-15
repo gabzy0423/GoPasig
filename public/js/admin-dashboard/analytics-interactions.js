@@ -58,13 +58,13 @@
     }
 
     // 4B: Route prediction switch tabs
-    function switchPredictionRoute(routeLetter) {
+    function switchPredictionRoute(routeName) {
         const tabBtns = document.querySelectorAll('[data-pred-route-tab]');
         tabBtns.forEach(btn => {
             btn.className = "bg-slate-100 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-200 transition uppercase cursor-pointer";
         });
 
-        const activeBtn = document.querySelector(`[data-pred-route-tab="${routeLetter}"]`);
+        const activeBtn = document.querySelector(`[data-pred-route-tab="${routeName}"]`);
         if (activeBtn) {
             activeBtn.className = "bg-[#003F87] text-white px-2 py-0.5 rounded transition uppercase cursor-pointer";
         }
@@ -75,39 +75,55 @@
 
         if (!volEl || !recEl || !busiestEl) return;
 
-        // Determine theme coloring for the busiest card
+        // Determine theme coloring for the busiest card dynamically
         let badgeColorClass = 'bg-[#FEF7ED] border border-[#BA7517]/10 p-2.5 rounded-lg text-[#8F530B] font-extrabold text-[11px] shrink-0 text-center uppercase tracking-wider';
-        if (routeLetter === 'A') {
-            badgeColorClass = 'bg-[#E6F1FB] border border-[#003F87]/10 p-2.5 rounded-lg text-[#003F87] font-extrabold text-[11px] shrink-0 text-center uppercase tracking-wider';
-        } else if (routeLetter === 'B') {
-            badgeColorClass = 'bg-[#E8F4E0] border border-[#639922]/10 p-2.5 rounded-lg text-[#639922] font-extrabold text-[11px] shrink-0 text-center uppercase tracking-wider';
+        if (routeName !== 'all' && typeof routeComparisonData !== 'undefined' && routeComparisonData) {
+            const idx = routeComparisonData.findIndex(r => r.route === routeName);
+            if (idx !== -1) {
+                const colors = [
+                    'bg-[#E6F1FB] border border-[#003F87]/10 text-[#003F87]',
+                    'bg-[#E8F4E0] border border-[#639922]/10 text-[#639922]',
+                    'bg-[#FEF7ED] border border-[#BA7517]/10 text-[#BA7517]',
+                    'bg-[#FDF2F2] border border-[#E24B4A]/10 text-[#E24B4A]'
+                ];
+                const colorClass = colors[idx % colors.length];
+                badgeColorClass = `${colorClass} p-2.5 rounded-lg font-extrabold text-[11px] shrink-0 text-center uppercase tracking-wider`;
+            }
         }
 
         busiestEl.className = badgeColorClass;
 
-        if (typeof predictionRouteData !== 'undefined' && predictionRouteData && predictionRouteData[routeLetter]) {
-            const data = predictionRouteData[routeLetter];
+        if (typeof predictionRouteData !== 'undefined' && predictionRouteData && predictionRouteData[routeName]) {
+            const data = predictionRouteData[routeName];
             volEl.textContent = data.vol;
             recEl.textContent = data.rec;
             busiestEl.textContent = data.busiest;
         } else {
             // Fallback mock static values
-            if (routeLetter === 'all') {
+            if (routeName === 'all') {
                 volEl.textContent = '1,284 pax / day';
                 recEl.textContent = '29 recommended';
                 busiestEl.textContent = 'Expected highest boarding: Pasig City Hall · 7–8 AM · ~67 passengers';
-            } else if (routeLetter === 'A') {
-                volEl.textContent = '532 pax / day';
-                recEl.textContent = '11 recommended';
-                busiestEl.textContent = 'Expected highest boarding: Pasig City Hall · 7–8 AM · ~45 passengers';
-            } else if (routeLetter === 'B') {
-                volEl.textContent = '421 pax / day';
-                recEl.textContent = '10 recommended';
-                busiestEl.textContent = 'Expected highest boarding: Ortigas Center · 7–8 AM · ~38 passengers';
-            } else if (routeLetter === 'C') {
-                volEl.textContent = '331 pax / day';
-                recEl.textContent = '8 recommended';
-                busiestEl.textContent = 'Expected highest boarding: Shaw Blvd · 5–6 PM · ~31 passengers';
+            } else {
+                // If dynamic key wasn't found in predictionRouteData but is Route A/B/C, use fallback
+                const fallbackKey = routeName.replace('Route ', '');
+                if (fallbackKey === 'A') {
+                    volEl.textContent = '532 pax / day';
+                    recEl.textContent = '11 recommended';
+                    busiestEl.textContent = 'Expected highest boarding: Pasig City Hall · 7–8 AM · ~45 passengers';
+                } else if (fallbackKey === 'B') {
+                    volEl.textContent = '421 pax / day';
+                    recEl.textContent = '10 recommended';
+                    busiestEl.textContent = 'Expected highest boarding: Ortigas Center · 7–8 AM · ~38 passengers';
+                } else if (fallbackKey === 'C') {
+                    volEl.textContent = '331 pax / day';
+                    recEl.textContent = '8 recommended';
+                    busiestEl.textContent = 'Expected highest boarding: Shaw Blvd · 5–6 PM · ~31 passengers';
+                } else {
+                    volEl.textContent = '0 pax / day';
+                    recEl.textContent = '0 recommended';
+                    busiestEl.textContent = 'Expected highest boarding: N/A';
+                }
             }
         }
     }

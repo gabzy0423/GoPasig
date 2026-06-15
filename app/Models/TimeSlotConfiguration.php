@@ -28,4 +28,5 @@ class TimeSlotConfiguration extends Model
             ->orderBy('order')
             ->first();
     }
+
 }

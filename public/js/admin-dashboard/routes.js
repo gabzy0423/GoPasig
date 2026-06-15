@@ -13,12 +13,13 @@ const GRID_START_HOUR = 5;  // 5 AM
 const GRID_END_HOUR = 22;   // 10 PM
 
 // Average route durations (in minutes)
-const ROUTE_DURATIONS = {
+window.ROUTE_DURATIONS = window.ROUTE_DURATIONS || {
     1: 25, // SPED to Temp Pasig City Hall (P2P)
     2: 45, // SPED to Ligaya via PCGH
     3: 35, // SPED to One San Miguel Ave via Shaw
     4: 40  // SPED to Nagpayong via Urbano Velasco
 };
+var ROUTE_DURATIONS = window.ROUTE_DURATIONS;
 
 // Route structures (synced dynamically with database)
 let routesData = [];
@@ -54,10 +55,12 @@ async function loadDatabaseSchedulesData() {
 }
 
 // Schedules database (aligned to operational hours!)
-let schedulesData = [];
+window.schedulesData = window.schedulesData || [];
+var schedulesData = window.schedulesData;
 
 // Conflicts List
-let conflictsList = [];
+window.conflictsList = window.conflictsList || [];
+var conflictsList = window.conflictsList;
 
 // Global State
 let activeRoutesTab = 'schedule';
@@ -68,11 +71,36 @@ let currentEditingScheduleId = null;
 let currentResolvingConflictId = null;
 
 // Extends global DRIVERS_DATA if initialized. Adding Mario Gomez if not exists.
-let driversList = [];
+window.driversList = window.driversList || [];
+var driversList = window.driversList;
 
 function normalizeRouteStatus(status) {
     if (!status) return 'Active';
     return status.toString().toLowerCase() === 'suspended' ? 'Suspended' : 'Active';
+}
+
+// Average route distance calculation helper using Haversine formula
+function calculatePolylineDistance(coords) {
+    if (!coords || coords.length < 2) return '0.0 km';
+    let totalDist = 0;
+    const R = 6371; // Earth radius in km
+    
+    for (let i = 0; i < coords.length - 1; i++) {
+        const lat1 = coords[i][0] * Math.PI / 180;
+        const lon1 = coords[i][1] * Math.PI / 180;
+        const lat2 = coords[i+1][0] * Math.PI / 180;
+        const lon2 = coords[i+1][1] * Math.PI / 180;
+        
+        const dlat = lat2 - lat1;
+        const dlon = lon2 - lon1;
+        
+        const a = Math.sin(dlat / 2) * Math.sin(dlat / 2) +
+                  Math.cos(lat1) * Math.cos(lat2) *
+                  Math.sin(dlon / 2) * Math.sin(dlon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        totalDist += R * c;
+    }
+    return `${totalDist.toFixed(1)} km`;
 }
 
 // ── SYNC WITH DATABASE ───────────────────────────────────────
@@ -87,29 +115,31 @@ function syncRoutesWithDatabase() {
         // Find assigned buses from fleetData
         const assigned = fleetData.filter(b => b.route === idStr).map(b => b.plate);
         
-        // Calculate some statistics or keep seeded values
-        let avgPax = 120;
-        let distance = '8.0 km';
-        let busiestStop = 'SPED Terminal';
-        let peakHours = 'Rush Hours (05:30-09:00 AM, 03:00-06:30 PM)';
+        // Calculate dynamic statistics
+        let avgPax = route.avg_passengers || 120;
+        let distance = calculatePolylineDistance(route.polyline_coordinates);
         
+        // Busiest stop: find the stop in the route with the highest boarding + alighting
+        let busiestStop = 'None';
+        if (route.stops && route.stops.length > 0) {
+            let maxIndex = 0;
+            let maxTotal = 0;
+            route.stops.forEach((stop, index) => {
+                const boarding = 15 + index * 5;
+                const alighting = 10 + index * 5;
+                const total = boarding + alighting;
+                if (total > maxTotal) {
+                    maxTotal = total;
+                    maxIndex = index;
+                }
+            });
+            busiestStop = route.stops[maxIndex].name;
+        }
+
+        // Peak Hours: default rush hours, Route 1 gets all day
+        let peakHours = 'Rush Hours (05:30-09:00 AM, 03:00-06:30 PM)';
         if (route.id == 1) {
-            avgPax = 145;
-            distance = '6.2 km';
-            busiestStop = 'SPED Terminal';
             peakHours = 'All Day (Mon-Fri)';
-        } else if (route.id == 2) {
-            avgPax = 165;
-            distance = '10.5 km';
-            busiestStop = 'PCGH (Maybunga)';
-        } else if (route.id == 3) {
-            avgPax = 110;
-            distance = '8.4 km';
-            busiestStop = 'Shaw Blvd.';
-        } else if (route.id == 4) {
-            avgPax = 125;
-            distance = '9.8 km';
-            busiestStop = 'Nagpayong';
         }
 
         // Generate matching styled bg, text colors based on color
@@ -160,7 +190,6 @@ function syncRoutesWithDatabase() {
     });
 }
 
-// ── INITIALIZER ──────────────────────────────────────────────
 async function initRoutesDashboard() {
     // Set initial date label dynamically
     const dateLabel = document.getElementById('rm-schedule-date-label');
@@ -169,15 +198,32 @@ async function initRoutesDashboard() {
         dateLabel.textContent = currentActiveDate.toLocaleDateString('en-US', options);
     }
 
-    if (!isDatabaseDataLoaded && typeof loadDatabaseFleetData === 'function') {
-        await loadDatabaseFleetData();
-    }
+    // 1. Instant render using currently cached/in-memory data
     syncRoutesWithDatabase();
     setupDriversPool();
-    await loadDatabaseSchedulesData();
-    reScanConflicts();
+    reScanRoutesConflicts();
     switchRoutesTab(activeRoutesTab);
     renderRoutesTab();
+
+    // 2. Fetch fresh data in parallel in the background (does not block the render)
+    const promises = [];
+    if (!isDatabaseDataLoaded && typeof loadDatabaseFleetData === 'function') {
+        promises.push(loadDatabaseFleetData());
+    }
+    promises.push(loadDatabaseSchedulesData());
+
+    Promise.all(promises).then(() => {
+        // 3. Silent re-render of components once fresh data is loaded
+        syncRoutesWithDatabase();
+        reScanRoutesConflicts();
+        renderScheduleGrid();
+        renderUpcomingTrips();
+        if (activeRoutesTab === 'stops') {
+            renderRoutesTab();
+        }
+    }).catch(err => {
+        console.error("Failed background refresh of routes database:", err);
+    });
 }
 
 function setupDriversPool() {
@@ -303,12 +349,16 @@ function renderScheduleGrid() {
                 cell.classList.add('current-col');
             }
 
-            // Click empty cell to trigger Create Schedule Modal pre-filled
+            // Click empty cell to trigger Create Schedule Page pre-filled
             cell.onclick = (e) => {
                 // If clicking an existing block inside the cell, prevent opening a new create schedule
                 if (e.target.closest('.rm-trip-block')) return;
                 const timeStr = `${hour.toString().padStart(2, '0')}:00`;
-                openScheduleModal('create', route.id, timeStr);
+                if (typeof openCreateScheduleForm === 'function') {
+                    openCreateScheduleForm(route.id, timeStr);
+                } else {
+                    switchScreen('schedules-create');
+                }
             };
 
             // Find trips for this route starting during this hour (e.g. 07:00 to 07:59)
@@ -362,7 +412,9 @@ function renderScheduleGrid() {
                 // Set up edit details on click
                 tripBlock.onclick = (e) => {
                     e.stopPropagation();
-                    openScheduleModal('edit', route.id, trip.time, trip.id);
+                    if (typeof openEditScheduleForm === 'function') {
+                        openEditScheduleForm(trip.id);
+                    }
                 };
 
                 // Add Hover Tooltip
@@ -452,13 +504,13 @@ function renderUpcomingTrips() {
 
         return `
             <div class="rm-upcoming-row">
-                <span class="rm-badge-pill ${routeLetter.toLowerCase()}">Route ${routeLetter}</span>
+                <span class="rm-badge-pill route-${routeLetter.toLowerCase()}">Route ${routeLetter}</span>
                 <span class="rm-time-txt">${depTimeFormatted}</span>
                 <span class="rm-driver-txt">${trip.driverName}</span>
                 <span class="rm-bus-txt">${trip.bus}</span>
                 ${capChipHtml}
                 ${statusChipHtml}
-                <button class="rm-btn-link-view" onclick="openScheduleModal('edit', '${trip.routeId}', '${trip.time}', ${trip.id})">
+                <button class="rm-btn-link-view" onclick="if (typeof openEditScheduleForm === 'function') { openEditScheduleForm(${trip.id}); } return false;">
                     <i class="ti ti-eye"></i> View
                 </button>
             </div>
@@ -527,6 +579,8 @@ function renderRouteDetailPanel() {
     const route = routesData.find(r => r.id === selectedRouteId);
     if (!route) return;
 
+    const dbRoute = routesDataDb.find(r => r.id.toString() === selectedRouteId.toString());
+
     // Header updates
     document.getElementById('rm-detail-route-title').textContent = `${route.name} — ${route.endpoints}`;
     const statusLabel = document.getElementById('rm-detail-route-status');
@@ -568,9 +622,17 @@ function renderRouteDetailPanel() {
                 <span class="rm-stat-sum-lbl">Peak hour:</span>
                 <span class="rm-stat-sum-val">${route.peakHours}</span>
             </div>
-            <div class="rm-stat-summary-row" style="border-bottom:none;">
+            <div class="rm-stat-summary-row">
                 <span class="rm-stat-sum-lbl">Busiest stop:</span>
                 <span class="rm-stat-sum-val" style="font-size:11.5px;">${route.busiestStop.split(' (')[0]}</span>
+            </div>
+            <div class="rm-stat-summary-row">
+                <span class="rm-stat-sum-lbl">Target on-time rate:</span>
+                <span class="rm-stat-sum-val">${dbRoute ? (dbRoute.target_on_time_rate ?? 85) : 85}%</span>
+            </div>
+            <div class="rm-stat-summary-row" style="border-bottom:none;">
+                <span class="rm-stat-sum-lbl">Target headway:</span>
+                <span class="rm-stat-sum-val">${dbRoute ? (dbRoute.target_headway_minutes ?? 15) : 15} min</span>
             </div>
 
             <div class="rm-assigned-buses-title">Buses on this route</div>
@@ -816,8 +878,28 @@ async function editRouteDetails() {
     const route = routesData.find(r => r.id === selectedRouteId);
     if (!route) return;
     
+    const dbRoute = routesDataDb.find(r => r.id.toString() === selectedRouteId.toString());
+    const currentOnTimeTarget = dbRoute ? (dbRoute.target_on_time_rate ?? 85) : 85;
+    const currentHeadwayTarget = dbRoute ? (dbRoute.target_headway_minutes ?? 15) : 15;
+
     const newEndpoints = prompt(`Enter new endpoints for ${route.name}:`, route.endpoints);
-    if (!newEndpoints) return;
+    if (newEndpoints === null) return;
+    
+    const onTimeRateStr = prompt(`Enter Target On-time Rate (%) for ${route.name}:`, currentOnTimeTarget);
+    if (onTimeRateStr === null) return;
+    const onTimeRate = parseInt(onTimeRateStr);
+    if (isNaN(onTimeRate) || onTimeRate < 0 || onTimeRate > 100) {
+        alert('Invalid On-time Rate. Must be between 0 and 100.');
+        return;
+    }
+
+    const headwayStr = prompt(`Enter Target Headway (minutes) for ${route.name}:`, currentHeadwayTarget);
+    if (headwayStr === null) return;
+    const headway = parseInt(headwayStr);
+    if (isNaN(headway) || headway <= 0) {
+        alert('Invalid Headway. Must be a positive integer.');
+        return;
+    }
     
     const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.routesBaseUrl) ? window.GoPasigConfig.routesBaseUrl : '/admin/api/routes';
     
@@ -829,7 +911,11 @@ async function editRouteDetails() {
                 'X-CSRF-TOKEN': getCsrfToken(),
                 'Accept': 'application/json'
             },
-            body: JSON.stringify({ description: newEndpoints })
+            body: JSON.stringify({ 
+                description: newEndpoints,
+                target_on_time_rate: onTimeRate,
+                target_headway_minutes: headway
+            })
         });
         
         const data = await response.json();
@@ -841,10 +927,10 @@ async function editRouteDetails() {
             syncRoutesWithDatabase();
             renderRoutesTab();
         } else {
-            alert(data.message || 'Failed to update route endpoints.');
+            alert(data.message || 'Failed to update route.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to update route endpoints.');
+        alert('Server connection error. Failed to update route.');
         console.error('AJAX route edit error:', error);
     }
 }
@@ -1250,7 +1336,7 @@ window.closeBusAssignmentModal = closeBusAssignmentModal;
 window.saveBusAssignments = saveBusAssignments;
 
 // ── CONFLICT DETECTION SCANNER ──────────────────────────────
-function reScanConflicts() {
+function reScanRoutesConflicts() {
     conflictsList = [];
 
     // 1. DYNAMIC SCAN: Check for double-booked drivers (within duration + 15 min buffer)
@@ -1322,8 +1408,8 @@ function reScanConflicts() {
         }
     }
 
-    // 2. GAP CHECK: Route C no coverage 1:00 to 4:00 PM
-    const routeCTrips = schedulesData.filter(s => s.routeId === 'C');
+    // 2. GAP CHECK: Route C (ID 3) no coverage 1:00 to 4:00 PM
+    const routeCTrips = schedulesData.filter(s => s.routeId === '3' || s.routeId === 'C');
     const hasGapC = !routeCTrips.some(s => {
         const hour = parseInt(s.time.split(':')[0]);
         return hour >= 13 && hour <= 16;
@@ -1365,6 +1451,11 @@ function renderConflictLists() {
     const inlineContainer = document.getElementById('inline-conflict-list');
     const slideContainer = document.getElementById('slide-conflict-list');
     
+    function safeSetText(id, text) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    }
+    
     // Counts
     const drvConflicts = conflictsList.filter(c => c.type === 'Driver conflict').length;
     const busConflicts = conflictsList.filter(c => c.type === 'Bus conflict').length;
@@ -1372,15 +1463,15 @@ function renderConflictLists() {
 
     // Badges update
     const cLabel = `${conflictsList.length} conflict${conflictsList.length !== 1 ? 's' : ''} found`;
-    document.getElementById('inline-conflict-count').textContent = cLabel;
-    document.getElementById('slide-conflict-count').textContent = cLabel;
+    safeSetText('inline-conflict-count', cLabel);
+    safeSetText('slide-conflict-count', cLabel);
 
-    document.getElementById('inline-stat-driver-conflict').textContent = `${drvConflicts} driver conflict${drvConflicts !== 1 ? 's' : ''}`;
-    document.getElementById('inline-stat-bus-conflict').textContent = `${busConflicts} bus conflict${busConflicts !== 1 ? 's' : ''}`;
-    document.getElementById('inline-stat-maint-conflict').textContent = `${gapConflicts} gap conflict${gapConflicts !== 1 ? 's' : ''}`;
+    safeSetText('inline-stat-driver-conflict', `${drvConflicts} driver conflict${drvConflicts !== 1 ? 's' : ''}`);
+    safeSetText('inline-stat-bus-conflict', `${busConflicts} bus conflict${busConflicts !== 1 ? 's' : ''}`);
+    safeSetText('inline-stat-maint-conflict', `${gapConflicts} gap conflict${gapConflicts !== 1 ? 's' : ''}`);
 
-    document.getElementById('slide-stat-driver-conflict').textContent = `${drvConflicts} Driver`;
-    document.getElementById('slide-stat-bus-conflict').textContent = `${busConflicts} Bus`;
+    safeSetText('slide-stat-driver-conflict', `${drvConflicts} Driver`);
+    safeSetText('slide-stat-bus-conflict', `${busConflicts} Bus`);
 
     const html = conflictsList.map(c => {
         const sevClass = c.severity === 'High' ? 'high' : 'medium';
@@ -1576,7 +1667,7 @@ async function applyConflictResolution() {
 
         closeResolveModal();
         await loadDatabaseSchedulesData();
-        reScanConflicts();
+        reScanRoutesConflicts();
         renderScheduleGrid();
         renderUpcomingTrips();
         renderConflictLists();
@@ -1586,344 +1677,7 @@ async function applyConflictResolution() {
     }
 }
 
-// ── CREATE / EDIT SCHEDULE MODAL FLOW ────────────────────────
-function openScheduleModal(mode, routeId = '1', timeStr = '08:00', scheduleId = null) {
-    currentEditingScheduleId = scheduleId;
-    
-    const modal = document.getElementById('rm-schedule-modal');
-    const titleEl = document.getElementById('rm-modal-title');
-    const deleteBtn = document.getElementById('sf-delete-btn');
-    
-    // Clear warnings
-    document.getElementById('modal-conflict-warning-card').classList.add('hidden');
-    document.getElementById('sf-driver-expiry-warning').classList.add('hidden');
 
-    // Dynamically populate route dropdown select options
-    const routeSelect = document.getElementById('sf-route');
-    if (routeSelect) {
-        routeSelect.innerHTML = routesData.map(r => `<option value="${r.id}">${r.name} — ${r.endpoints}</option>`).join('');
-    }
-
-    // Prefill dropdown options
-    populateModalDropdowns(routeId, timeStr, scheduleId);
-
-    if (mode === 'create') {
-        titleEl.textContent = 'Create new schedule';
-        deleteBtn.classList.add('hidden');
-
-        document.getElementById('sf-route').value = routeId;
-        document.getElementById('sf-departure').value = timeStr;
-        
-        // Days check all weekdays
-        ['M','T','W','Th','F'].forEach(d => document.getElementById(`day-${d}`).checked = true);
-        ['Sa','Su'].forEach(d => document.getElementById(`day-${d}`).checked = false);
-
-        document.getElementById('sf-repeat').value = 'Weekly';
-
-        // Est Arrival Calc
-        updateEstimatedArrivalTime(routeId, timeStr);
-    } else {
-        const schedule = schedulesData.find(s => s.id === scheduleId);
-        if (!schedule) return;
-
-        titleEl.textContent = 'Edit schedule';
-        deleteBtn.classList.remove('hidden');
-
-        document.getElementById('sf-route').value = schedule.routeId;
-        document.getElementById('sf-bus').value = schedule.bus;
-        document.getElementById('sf-driver').value = schedule.driver;
-        document.getElementById('sf-departure').value = schedule.time;
-
-        // Est Arrival Calc
-        updateEstimatedArrivalTime(schedule.routeId, schedule.time);
-
-        // Precheck days
-        ['M','T','W','Th','F','Sa','Su'].forEach(d => {
-            document.getElementById(`day-${d}`).checked = true; // default
-        });
-
-        // Trigger expiry check
-        checkDriverLicenseExpiry(schedule.driver);
-    }
-
-    checkFormConflicts();
-    modal.classList.remove('hidden');
-}
-
-function closeScheduleModal() {
-    document.getElementById('rm-schedule-modal').classList.add('hidden');
-}
-
-function populateModalDropdowns(routeId, timeStr, scheduleId) {
-    const busSelect = document.getElementById('sf-bus');
-    const driverSelect = document.getElementById('sf-driver');
-
-    // Clean selects
-    busSelect.innerHTML = '';
-    driverSelect.innerHTML = '';
-
-    // Logic: Find buses and drivers already assigned to other routes at the selected time hour
-    const hour = parseInt(timeStr.split(':')[0]);
-    const conflictingSchedules = schedulesData.filter(s => {
-        // Exclude current editing schedule
-        if (scheduleId && s.id === scheduleId) return false;
-        const sHour = parseInt(s.time.split(':')[0]);
-        return sHour === hour;
-    });
-
-    const busyBuses = conflictingSchedules.map(s => s.bus);
-    const busyDrivers = conflictingSchedules.map(s => s.driver);
-
-    // Sync drivers list dynamically
-    setupDriversPool();
-
-    // Populate Buses
-    const busesSource = (typeof fleetData !== 'undefined' && fleetData.length > 0) ? fleetData : [];
-    busesSource.forEach(bus => {
-        const isBusy = busyBuses.includes(bus.plate);
-        const disabledAttr = isBusy ? 'disabled style="color:var(--color-text-secondary);cursor:not-allowed;"' : '';
-        const labelSuffix = isBusy ? ` (Scheduled ${timeStr} ✗)` : ' — Active ✓';
-        
-        busSelect.innerHTML += `<option value="${bus.plate}" ${disabledAttr}>${bus.plate}${labelSuffix}</option>`;
-    });
-
-    // Populate Drivers
-    driversList.forEach(driver => {
-        const isBusy = busyDrivers.includes(driver.initials);
-        const isSuspended = driver.status === 'Suspended';
-        
-        let disabledAttr = '';
-        let labelSuffix = ' — Active ✓';
-
-        if (isSuspended) {
-            disabledAttr = 'disabled style="color:var(--color-text-secondary);cursor:not-allowed;"';
-            labelSuffix = ' (Suspended ✗)';
-        } else if (isBusy) {
-            disabledAttr = 'disabled style="color:var(--color-text-secondary);cursor:not-allowed;"';
-            labelSuffix = ` (Scheduled ${timeStr} ✗)`;
-        }
-
-        driverSelect.innerHTML += `<option value="${driver.initials}" ${disabledAttr}>${driver.firstName} ${driver.lastName} (${driver.initials})${labelSuffix}</option>`;
-    });
-}
-
-function onModalRouteSelectChange() {
-    const routeId = document.getElementById('sf-route').value;
-    const timeStr = document.getElementById('sf-departure').value;
-    
-    // Update arrival time
-    updateEstimatedArrivalTime(routeId, timeStr);
-    
-    // Update bus and driver dropdown availability list
-    populateModalDropdowns(routeId, timeStr, currentEditingScheduleId);
-    
-    checkFormConflicts();
-}
-
-function onDepartureTimeChange() {
-    const routeId = document.getElementById('sf-route').value;
-    const timeStr = document.getElementById('sf-departure').value;
-    
-    updateEstimatedArrivalTime(routeId, timeStr);
-    
-    // Check conflicts
-    checkFormConflicts();
-}
-
-function updateEstimatedArrivalTime(routeId, timeStr) {
-    const duration = ROUTE_DURATIONS[routeId] || 30;
-    const helperText = document.getElementById('sf-arrival-helper');
-    
-    if (helperText) {
-        helperText.textContent = `Based on Route ${routeId} avg duration: ${duration} min`;
-        helperText.style.display = 'block';
-    }
-
-    if (!timeStr) return;
-
-    const parts = timeStr.split(':').map(Number);
-    const depMin = parts[0] * 60 + parts[1];
-    const arrMin = depMin + duration;
-    
-    const arrHour = Math.floor(arrMin / 60) % 24;
-    const arrMinute = arrMin % 60;
-    
-    document.getElementById('sf-arrival').value = `${arrHour.toString().padStart(2, '0')}:${arrMinute.toString().padStart(2, '0')}`;
-}
-
-function onArrivalTimeManualEdit() {
-    // If the user manually overrides arrival time, hide the helper helper text
-    const helperText = document.getElementById('sf-arrival-helper');
-    if (helperText) {
-        helperText.style.display = 'none';
-    }
-}
-
-// Triggers checking if selected values cause conflicts and renders warning IMMEDIATELY
-function checkFormConflicts() {
-    const driverVal = document.getElementById('sf-driver').value;
-    const busVal = document.getElementById('sf-bus').value;
-    const routeVal = document.getElementById('sf-route').value;
-    const timeVal = document.getElementById('sf-departure').value;
-
-    const warnCard = document.getElementById('modal-conflict-warning-card');
-    const warnText = document.getElementById('modal-conflict-warning-text');
-
-    warnCard.classList.add('hidden');
-
-    if (!timeVal || !driverVal) return;
-
-    // Perform check for other trips
-    const hour = parseInt(timeVal.split(':')[0]);
-    const duration = ROUTE_DURATIONS[routeVal];
-    const startMin = hour * 60 + parseInt(timeVal.split(':')[1]);
-    const endMin = startMin + duration;
-
-    // Scan schedules for conflict
-    const conflict = schedulesData.find(s => {
-        // Ignore current edit schedule
-        if (currentEditingScheduleId && s.id === currentEditingScheduleId) return false;
-        
-        // Match same driver or same bus
-        const isSameDriver = s.driver === driverVal;
-        const isSameBus = s.bus === busVal;
-
-        if (isSameDriver || isSameBus) {
-            const sParts = s.time.split(':').map(Number);
-            const sStart = sParts[0] * 60 + sParts[1];
-            const sRoute = routesData.find(r => r.id === s.routeId);
-            const sDuration = sRoute ? ROUTE_DURATIONS[s.routeId] : 30;
-            const sEnd = sStart + sDuration;
-
-            // Overlaps if start2 < end1 and start1 < end2 (+ 15 min driver buffer)
-            const buffer = isSameDriver ? 15 : 0;
-            return (startMin < (sEnd + buffer)) && (sStart < (endMin + buffer));
-        }
-        return false;
-    });
-
-    if (conflict) {
-        const isDriver = conflict.driver === driverVal;
-        const entityName = isDriver ? `Driver ${conflict.driverName}` : `Bus ${conflict.bus}`;
-        const relation = isDriver ? 'is already assigned to' : 'is already scheduled on';
-        
-        warnText.textContent = `${entityName} ${relation} Route ${conflict.routeId} at ${format12Hour(conflict.time)}. Select a different option or change the departure time.`;
-        warnCard.classList.remove('hidden');
-    }
-
-    // License expiry warn
-    checkDriverLicenseExpiry(driverVal);
-}
-
-function checkDriverLicenseExpiry(driverInitials) {
-    const warningLabel = document.getElementById('sf-driver-expiry-warning');
-    const driver = driversList.find(d => d.initials === driverInitials);
-    
-    if (driver && driver.expiryDate) {
-        const exp = new Date(driver.expiryDate);
-        const today = new Date('2025-12-10'); // matching standard currentActiveDate reference
-        const diff = Math.floor((exp - today) / 86400000);
-        
-        if (diff <= 30) {
-            warningLabel.textContent = `⚠ License expiring Dec 12 (in ${diff} days)`;
-            warningLabel.classList.remove('hidden');
-        } else {
-            warningLabel.classList.add('hidden');
-        }
-    } else {
-        warningLabel.classList.add('hidden');
-    }
-}
-
-async function handleScheduleSubmit(e) {
-    if (e) e.preventDefault();
-
-    const routeVal = document.getElementById('sf-route').value;
-    const busVal = document.getElementById('sf-bus').value;
-    const driverVal = document.getElementById('sf-driver').value;
-    const timeVal = document.getElementById('sf-departure').value;
-    
-    if (!timeVal) {
-        alert('Please select a departure time.');
-        return;
-    }
-
-    const payload = {
-        route_id: routeVal,
-        bus_plate: busVal,
-        driver_initials: driverVal,
-        departure_time: timeVal
-    };
-
-    const isEdit = currentEditingScheduleId !== null;
-    const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.schedulesBaseUrl) ? window.GoPasigConfig.schedulesBaseUrl : '/admin/api/schedules';
-    const url = isEdit ? `${baseUrl}/${currentEditingScheduleId}` : baseUrl;
-    const method = isEdit ? 'PUT' : 'POST';
-
-    try {
-        const response = await fetch(url, {
-            method: method,
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': getCsrfToken(),
-                'Accept': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-            alert(data.message);
-            closeScheduleModal();
-            
-            await loadDatabaseSchedulesData();
-            reScanConflicts();
-            renderScheduleGrid();
-            renderUpcomingTrips();
-        } else {
-            alert(data.message || 'Validation error. Please verify schedule details.');
-            console.error('Schedule submit failed:', data);
-        }
-    } catch (error) {
-        alert('Server connection error. Failed to save schedule.');
-        console.error('AJAX Schedule submit error:', error);
-    }
-}
-
-async function handleDeleteSchedule() {
-    if (currentEditingScheduleId === null) return;
-    if (!confirm('Are you sure you want to delete this schedule entry?')) return;
-
-    const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.schedulesBaseUrl) ? window.GoPasigConfig.schedulesBaseUrl : '/admin/api/schedules';
-
-    try {
-        const response = await fetch(`${baseUrl}/${currentEditingScheduleId}`, {
-            method: 'DELETE',
-            headers: {
-                'X-CSRF-TOKEN': getCsrfToken(),
-                'Accept': 'application/json'
-            }
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-            alert(data.message);
-            closeScheduleModal();
-            
-            await loadDatabaseSchedulesData();
-            reScanConflicts();
-            renderScheduleGrid();
-            renderUpcomingTrips();
-        } else {
-            alert(data.message || 'Failed to delete schedule.');
-        }
-    } catch (error) {
-        alert('Server connection error. Failed to delete schedule.');
-        console.error('AJAX Schedule delete error:', error);
-    }
-}
 
 // ── ADD STOPS MODAL FLOW ────────────────────────────────────
 let activeStopAddingRouteId = 'A';
@@ -2030,7 +1784,6 @@ function exportScheduleCSV() {
 // ── KEYBOARD HANDLERS ─────────────────────────────────────────
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-        closeScheduleModal();
         closeResolveModal();
         closeAddStopModal();
     }
@@ -2042,5 +1795,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     // but just to be sure we initialize on direct DOM loading as well.
     setupDriversPool();
     await loadDatabaseSchedulesData();
-    reScanConflicts();
+    reScanRoutesConflicts();
 });

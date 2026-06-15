@@ -9,6 +9,57 @@ class Bus extends Model
 {
     use HasFactory;
 
+    // -------------------------------------------------------------------------
+    // All operational thresholds are stored in system_settings and accessed via
+    // the static getter methods below (e.g. Bus::getDelayThreshold()).
+    // PHP class constants have been intentionally removed to ensure a single
+    // source of truth — the database — for every configurable value.
+    // -------------------------------------------------------------------------
+
+    /**
+     * Return the bus capacity, falling back to the system_settings value
+     * (key: default_bus_capacity, default: 45) when the column is null.
+     */
+    public function getCapacityAttribute($value)
+    {
+        return $value ?: self::getDefaultCapacity();
+    }
+
+    /**
+     * System-wide default bus capacity (seats).
+     * Reads from system_settings key `default_bus_capacity` (default: 45).
+     * Use this instead of raw SystemSetting::get() calls so the fallback
+     * value is defined in exactly one place.
+     */
+    public static function getDefaultCapacity(): int
+    {
+        return (int) SystemSetting::get('default_bus_capacity', 45);
+    }
+
+    public function getRouteDelayThreshold()
+    {
+        if ($this->route && isset($this->route->delay_threshold_minutes)) {
+            return (int) $this->route->delay_threshold_minutes;
+        }
+        return self::getDelayThreshold();
+    }
+
+    public function getMinSpeed()
+    {
+        if ($this->route && isset($this->route->min_speed)) {
+            return (int) $this->route->min_speed;
+        }
+        return self::getSimSpeedMin();
+    }
+
+    public function getMaxSpeed()
+    {
+        if ($this->route && isset($this->route->max_speed)) {
+            return (int) $this->route->max_speed;
+        }
+        return self::getSimSpeedMax();
+    }
+
     public static function getDelayThreshold()
     {
         return (int) SystemSetting::get('delay_threshold', 10);
@@ -60,7 +111,8 @@ class Bus extends Model
         'eta',
         'lat',
         'lng',
-        'status'
+        'status',
+        'is_simulated'
     ];
 
     protected $casts = [

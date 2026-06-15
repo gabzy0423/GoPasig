@@ -26,4 +26,9 @@ class ServiceAlert extends Model
     {
         return $this->belongsTo(Route::class);
     }
+
+    public function reads()
+    {
+        return $this->hasMany(ServiceAlertRead::class, 'service_alert_id');
+    }
 }

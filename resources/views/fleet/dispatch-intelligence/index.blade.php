@@ -1,5 +1,17 @@
-<section id="screen-dispatch-intelligence" class="hidden" style="display: none;">
+<section id="screen-dispatch-intelligence" class="hidden animate-fade-in" style="display: none;">
 <div class="space-y-6">
+
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Dispatch Intelligence</h1>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+            <span>Dashboard</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span>Operations</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span class="text-slate-600 font-bold">Dispatch Intelligence</span>
+        </div>
+    </div>
     <!-- Success Alert Box -->
     <div id="dispatch-alert-success" class="hidden p-4 bg-[#EAF3DE] border border-[#3B6D11] text-[#3B6D11] rounded-xl text-xs font-semibold flex items-center justify-between shadow-sm animate-fade-in-up">
         <div class="flex items-center gap-2">
@@ -18,12 +30,8 @@
         <button onclick="document.getElementById('dispatch-alert-error').classList.add('hidden')" class="text-[#A32D2D] hover:opacity-80"><i class="ti ti-x"></i></button>
     </div>
 
-    <!-- ==================== HEADER SECTION ==================== -->
-    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between shrink-0">
-        <div>
-            <h1 class="text-[22px] font-bold text-[#001F44] tracking-tight">Demand Prediction & Dispatch Intelligence</h1>
-            <p class="text-[13px] text-slate-500 mt-0.5 font-semibold">Libreng Sakay Smart Boarding Demand Analyzer</p>
-        </div>
+    <!-- ==================== CONTROLS SECTION ==================== -->
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-end shrink-0">
 
         <!-- Simulation Phase Pill Selector -->
         <div class="flex items-center bg-slate-100 p-1.5 rounded-xl border border-black/5" data-active-phase="{{ $selectedPhase }}">
@@ -239,7 +247,10 @@
 
                     <div class="space-y-1">
                         <label class="text-[10px] font-black uppercase tracking-wider text-slate-400 block font-semibold">Max Waiting Limit (pax)</label>
-                        <input type="number" id="customThreshold" value="{{ $customThreshold }}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-[#003F87]">
+                        <input type="number" id="customThreshold" value="{{ $customThreshold }}" 
+                               min="{{ \App\Models\SystemSetting::get('threshold_min_value', 5) }}" 
+                               max="{{ \App\Models\SystemSetting::get('threshold_max_value', 100) }}"
+                               class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-[#003F87]">
                     </div>
 
                     <button type="submit" class="h-9 w-full bg-[#003F87] hover:bg-[#002D62] text-white text-xs font-extrabold uppercase tracking-wider rounded-lg transition shadow-sm cursor-pointer">

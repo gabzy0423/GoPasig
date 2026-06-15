@@ -22,7 +22,7 @@ class AnnouncementController extends Controller
         $filterStatus = $request->input('status', 'all');
         $sortOrder = $request->input('sort', 'newest');
 
-        $routes = Route::all();
+        $routes = Route::getAllCached();
         $announcementStats = $this->getAnnouncementStats();
         $announcements = $this->getFilteredAnnouncements($search, $filterPriority, $filterAudience, $filterStatus, $sortOrder);
 

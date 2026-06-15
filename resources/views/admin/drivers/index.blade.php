@@ -3,19 +3,28 @@
   style="--color-background-primary:#ffffff;--color-background-secondary:#F8F7F4;--color-text-primary:#1A1917;--color-text-secondary:#5F5E5A;--color-border-tertiary:#E8E6DF;--color-border-secondary:#D6D3C9;">
 
   {{-- PAGE HEADER ROW --}}
-  <div class="dm-page-header">
-    <div class="dm-page-header-left">
-      <h1 class="dm-h1">Driver management</h1>
-      <p id="dm-registered-drivers-subtitle" class="dm-subtitle">0 registered drivers · Pasig City Libreng Sakay Program</p>
-    </div>
-    <div class="dm-page-header-right">
-      <button class="dm-btn-outline" onclick="exportDriversCSV()">
-        <i class="ti ti-download"></i> Export CSV
-      </button>
-      <button class="dm-btn-primary" onclick="openDriverModal('add')">
-        <i class="ti ti-user-plus"></i> Add driver
-      </button>
-    </div>
+  <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+              <h1 class="text-xl font-bold text-slate-900">Driver Management</h1>
+              <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+                  <span>Dashboard</span>
+                  <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+                  <span>Fleet</span>
+                  <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+                  <span class="text-slate-600 font-bold">Driver Management</span>
+              </div>
+              <p id="dm-registered-drivers-subtitle" class="text-[11px] text-slate-500 font-semibold mt-1">0 registered drivers · Pasig City Libreng Sakay Program</p>
+          </div>
+          <div class="flex items-center gap-2">
+              <button class="dm-btn-outline" onclick="exportDriversCSV()">
+                  <i class="ti ti-download"></i> Export CSV
+              </button>
+              <button onclick="window.location.hash = 'drivers-create'; return false;" class="dm-btn-primary" style="display: inline-flex; align-items: center; justify-content: center;">
+                  <i class="ti ti-user-plus"></i> Add driver
+              </button>
+          </div>
+      </div>
   </div>
 
   {{-- STATS STRIP --}}
@@ -64,15 +73,15 @@
   <div class="dm-table-card">
     <table class="dm-table">
       <colgroup>
-        <col style="width:22%">
-        <col style="width:13%">
-        <col style="width:11%">
-        <col style="width:10%">
-        <col style="width:9%">
-        <col style="width:9%">
-        <col style="width:8%">
+        <col style="width:18%">
         <col style="width:12%">
-        <col style="width:6%">
+        <col style="width:12%">
+        <col style="width:10%">
+        <col style="width:8%">
+        <col style="width:9%">
+        <col style="width:9%">
+        <col style="width:10%">
+        <col style="width:12%">
       </colgroup>
       <thead>
         <tr class="dm-thead-row">
@@ -84,7 +93,7 @@
           <th class="dm-th">Status</th>
           <th class="dm-th" style="text-align:center;">Trips today</th>
           <th class="dm-th">Pax today</th>
-          <th class="dm-th">Actions</th>
+          <th class="dm-th" style="text-align: right; padding-right: 16px;">Actions</th>
         </tr>
       </thead>
       <tbody id="drivers-tbody">
@@ -104,201 +113,9 @@
     </div>
   </div>
 
+
+
 </section>
-
-{{-- ==================== DRIVER PROFILE DRAWER ==================== --}}
-<div id="driver-profile-overlay" class="dm-drawer-overlay hidden" onclick="closeDriverProfile()"></div>
-<aside id="driver-profile-drawer" class="dm-drawer"
-  style="--color-background-primary:#ffffff;--color-background-secondary:#F8F7F4;--color-text-primary:#1A1917;--color-text-secondary:#5F5E5A;--color-border-tertiary:#E8E6DF;--color-border-secondary:#D6D3C9;">
-  <div class="dm-drawer-inner">
-
-    {{-- Drawer Close Row --}}
-    <div class="dm-drawer-top-bar">
-      <span class="dm-drawer-title">Driver Profile</span>
-      <button class="dm-icon-btn" onclick="closeDriverProfile()" title="Close">
-        <i class="ti ti-x"></i>
-      </button>
-    </div>
-
-    {{-- Profile Header --}}
-    <div class="dm-profile-header">
-      <div id="dp-avatar" class="dm-profile-avatar">AF</div>
-      <div class="dm-profile-identity">
-        <div id="dp-name" class="dm-profile-name">Ana Flores</div>
-        <div id="dp-meta" class="dm-profile-meta">EMP-0024 · License: N04-22-556677</div>
-        <div id="dp-chips" class="dm-profile-chips">
-          <span id="dp-status-chip" class="dm-status-chip dm-status-on-duty"><i class="ti ti-circle-check"></i> On
-            Duty</span>
-          <span id="dp-route-chip" class="dm-route-chip dm-route-c">Route C</span>
-          <span id="dp-license-chip" class="dm-license-warn-chip"><i class="ti ti-alert-circle"></i> License exp. Nov
-            28</span>
-        </div>
-      </div>
-      <div class="dm-profile-actions">
-        <button id="dp-edit-btn" class="dm-btn-outline dm-btn-sm" onclick="">
-          <i class="ti ti-edit"></i> Edit
-        </button>
-        <button id="dp-suspend-btn" class="dm-btn-outline dm-btn-sm dm-btn-danger" onclick="">
-          <i class="ti ti-ban"></i> Suspend
-        </button>
-      </div>
-    </div>
-
-    {{-- Stats Row --}}
-    <div class="dm-profile-stats-row">
-      <div class="dm-stat-card">
-        <span class="dm-stat-label">Trips today</span>
-        <span id="dp-stat-trips" class="dm-stat-value" style="color:#003F87;">5</span>
-      </div>
-      <div class="dm-stat-card">
-        <span class="dm-stat-label">Pax served today</span>
-        <span id="dp-stat-pax" class="dm-stat-value" style="color:#003F87;">221</span>
-      </div>
-      <div class="dm-stat-card">
-        <span class="dm-stat-label">Avg pax / trip</span>
-        <span id="dp-stat-avg" class="dm-stat-value" style="color:var(--color-text-primary);">44.2</span>
-      </div>
-      <div class="dm-stat-card">
-        <span class="dm-stat-label">Incidents (30 days)</span>
-        <span id="dp-stat-incidents" class="dm-stat-value" style="color:#3B6D11;">0</span>
-      </div>
-    </div>
-
-    {{-- Performance Score --}}
-    <div class="dm-perf-section">
-      <div class="dm-perf-row">
-        <span style="font-size:12px;color:var(--color-text-secondary);">Performance score</span>
-        <span id="dp-perf-label" style="font-size:12px;font-weight:500;color:#003F87;">94 / 100</span>
-      </div>
-      <div class="dm-perf-track">
-        <div id="dp-perf-bar" class="dm-perf-fill" style="width:94%;"></div>
-      </div>
-    </div>
-
-    {{-- Trip History Table --}}
-    <div class="dm-trip-history-title">Trip history — last 7 days</div>
-    <div class="dm-trip-table-wrap">
-      <table class="dm-trip-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Bus</th>
-            <th>Route</th>
-            <th>Trips</th>
-            <th>Pax boarded</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="dp-trip-tbody">
-          {{-- Populated by JS --}}
-        </tbody>
-      </table>
-    </div>
-
-  </div>
-</aside>
-
-{{-- ==================== ADD / EDIT DRIVER MODAL ==================== --}}
-<div id="driver-modal" class="dm-modal-overlay hidden"
-  style="--color-background-primary:#ffffff;--color-background-secondary:#F8F7F4;--color-text-primary:#1A1917;--color-text-secondary:#5F5E5A;--color-border-tertiary:#E8E6DF;--color-border-secondary:#D6D3C9;">
-  <div class="dm-modal-card">
-
-    {{-- Modal Header --}}
-    <div class="dm-modal-header">
-      <span id="dm-modal-title" class="dm-modal-title-text">Add new driver</span>
-      <button class="dm-icon-btn" onclick="closeDriverModal()"><i class="ti ti-x"></i></button>
-    </div>
-
-    {{-- Modal Body --}}
-    <div class="dm-modal-body">
-      <form id="driver-form" onsubmit="handleDriverFormSubmit(event)" novalidate>
-        <div class="dm-form-grid">
-
-          {{-- Row 1: First name / Last name --}}
-          <div class="dm-field">
-            <label class="dm-label" for="df-firstname">First name</label>
-            <input class="dm-input" id="df-firstname" type="text" placeholder="e.g. Juan" autocomplete="off">
-            <span class="dm-field-error hidden" id="df-firstname-err">Please enter a first name (min 2 chars)</span>
-          </div>
-          <div class="dm-field">
-            <label class="dm-label" for="df-lastname">Last name</label>
-            <input class="dm-input" id="df-lastname" type="text" placeholder="e.g. dela Cruz" autocomplete="off">
-            <span class="dm-field-error hidden" id="df-lastname-err">Please enter a last name (min 2 chars)</span>
-          </div>
-
-          {{-- Row 2: Employee ID / Contact --}}
-          <div class="dm-field">
-            <label class="dm-label" for="df-empid">Employee ID</label>
-            <input class="dm-input dm-input-readonly" id="df-empid" type="text" value="EMP-0035" readonly>
-          </div>
-          <div class="dm-field">
-            <label class="dm-label" for="df-contact">Contact number</label>
-            <input class="dm-input" id="df-contact" type="text" placeholder="09XX XXX XXXX" maxlength="13"
-              autocomplete="off">
-            <span class="dm-field-error hidden" id="df-contact-err">Must be 11 digits starting with 09</span>
-          </div>
-
-          {{-- Row 3: License no. / License expiry --}}
-          <div class="dm-field">
-            <label class="dm-label" for="df-license">License number</label>
-            <input class="dm-input" id="df-license" type="text" placeholder="N01-23-456789" autocomplete="off">
-            <span class="dm-field-error hidden" id="df-license-err">Required. Format: N##-##-###### (e.g.
-              N01-23-456789)</span>
-          </div>
-          <div class="dm-field">
-            <label class="dm-label" for="df-expiry">License expiry date</label>
-            <input class="dm-input" id="df-expiry" type="date">
-            <span class="dm-field-error hidden" id="df-expiry-err">Must be a future date</span>
-            <span id="df-expiry-warn" class="dm-expiry-warn hidden">
-              <i class="ti ti-alert-triangle"></i>
-              <span id="df-expiry-warn-text">License expiring in N days — notify driver to renew</span>
-            </span>
-          </div>
-
-          {{-- Row 4: Home address (full width) --}}
-          <div class="dm-field dm-field-full">
-            <label class="dm-label" for="df-address">Home address</label>
-            <input class="dm-input" id="df-address" type="text" placeholder="Street, Barangay, City" autocomplete="off">
-          </div>
-
-          {{-- Row 5: Status / Emergency contact --}}
-          <div class="dm-field">
-            <label class="dm-label" for="df-status">Status</label>
-            <select class="dm-input" id="df-status">
-              <option value="Active">Active</option>
-              <option value="Suspended">Suspended</option>
-            </select>
-          </div>
-          <div class="dm-field">
-            <label class="dm-label" for="df-emergency">Emergency contact</label>
-            <input class="dm-input" id="df-emergency" type="text" placeholder="Name — 09XX XXX XXXX" autocomplete="off">
-          </div>
-
-        </div>{{-- /.dm-form-grid --}}
-
-        {{-- Info chip --}}
-        <div class="dm-info-chip">
-          <i class="ti ti-info-circle" style="font-size:16px;color:#0C447C;flex-shrink:0;"></i>
-          <span id="dm-info-text">Driver will receive login credentials via SMS after registration.</span>
-        </div>
-
-      </form>
-    </div>{{-- /.dm-modal-body --}}
-
-    {{-- Modal Footer --}}
-    <div class="dm-modal-footer">
-      <button id="dm-delete-btn" class="dm-delete-link hidden" onclick="handleDeleteDriver()">Delete driver</button>
-      <div class="dm-footer-right">
-        <button class="dm-btn-outline" onclick="closeDriverModal()">Cancel</button>
-        <button class="dm-btn-primary" id="dm-save-btn" onclick="handleDriverFormSubmit(event)">
-          <i class="ti ti-check"></i>
-          <span id="dm-save-label">Save driver</span>
-        </button>
-      </div>
-    </div>
-
-  </div>
-</div>
 
 {{-- ==================== SCOPED CSS ==================== --}}
 <style>
@@ -741,27 +558,30 @@
   .dm-actions-cell {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
   }
 
   .dm-icon-btn {
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
     border: 0.5px solid var(--color-border-tertiary);
     background: var(--color-background-primary);
     color: var(--color-text-secondary);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
+    font-size: 15px;
     cursor: pointer;
-    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    transition: all 0.2s ease;
+    text-decoration: none;
   }
 
   .dm-icon-btn:hover {
     background: var(--color-background-secondary);
     color: #003F87;
+    border-color: #003F87;
+    transform: translateY(-1px);
   }
 
   .dm-icon-btn--ban:hover {

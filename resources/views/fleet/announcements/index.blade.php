@@ -13,8 +13,20 @@
     ];
 @endphp
 
-<section id="screen-announcements" class="hidden" style="display: none;">
+<section id="screen-announcements" class="hidden animate-fade-in" style="display: none;">
 <div class="space-y-4 lg:space-y-5">
+
+    <!-- Page Header -->
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <h1 class="text-xl font-bold text-slate-900">Dispatcher Announcements</h1>
+        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+            <span>Dashboard</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span>Operations</span>
+            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+            <span class="text-slate-600 font-bold">Dispatcher Announcements</span>
+        </div>
+    </div>
     
     <!-- Success/Error Alert Box -->
     <div id="announcements-alert" class="hidden p-3 bg-[#EAF3DE] border border-[#3B6D11] text-[#3B6D11] rounded-lg text-xs font-semibold flex items-center justify-between animate-fade-in-up">
@@ -25,12 +37,8 @@
         <button onclick="document.getElementById('announcements-alert').classList.add('hidden')" class="text-[#3B6D11] hover:opacity-80"><i class="ti ti-x"></i></button>
     </div>
 
-    <!-- Page Header -->
-    <section class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div class="space-y-1">
-            <h1 class="text-[22px] font-medium text-[#001F44]">Announcements</h1>
-            <p class="text-[14px] text-slate-500">Libreng Sakay Program - Pasig City</p>
-        </div>
+    <!-- Page Header Actions -->
+    <section class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-end">
         <button onclick="openCreateModalAction()" class="inline-flex items-center gap-1.5 rounded-lg bg-[#003F87] px-4 py-2 text-[14px] font-medium text-white hover:bg-[#002d62] transition shadow-sm cursor-pointer">
             <i class="ti ti-speakerphone text-[16px]"></i>
             <span>New Announcement</span>

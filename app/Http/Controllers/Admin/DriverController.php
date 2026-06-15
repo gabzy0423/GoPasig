@@ -11,6 +11,30 @@ use Carbon\Carbon;
 class DriverController extends Controller
 {
     /**
+     * Show the form for creating a new driver.
+     */
+    public function create()
+    {
+        return redirect('/admin/dashboard#drivers-create');
+    }
+
+    /**
+     * Display the specified driver profile.
+     */
+    public function show(Driver $driver)
+    {
+        return redirect('/admin/dashboard#drivers-show-' . $driver->id);
+    }
+
+    /**
+     * Show the form for editing the specified driver.
+     */
+    public function edit(Driver $driver)
+    {
+        return redirect('/admin/dashboard#drivers-edit-' . $driver->id);
+    }
+
+    /**
      * Display a listing of drivers and associated stats.
      */
     public function index()
@@ -66,10 +90,27 @@ class DriverController extends Controller
             ], 422);
         }
 
-        // Set default mock trip history for realistic seeding if empty
-        $tripHistory = [];
+        // Create corresponding user account
+        $firstNameClean = \Illuminate\Support\Str::slug($request->first_name, '');
+        $email = $firstNameClean . '@gopasig.com';
+
+        // Ensure email uniqueness
+        $counter = 1;
+        while (\App\Models\User::where('email', $email)->exists()) {
+            $email = $firstNameClean . $counter . '@gopasig.com';
+            $counter++;
+        }
+
+        $user = \App\Models\User::create([
+            'name' => trim($request->first_name . ' ' . $request->last_name),
+            'email' => $email,
+            'role' => 'driver',
+            'password' => \Illuminate\Support\Facades\Hash::make('password123'),
+            'email_verified_at' => now(),
+        ]);
 
         $driver = Driver::create([
+            'user_id' => $user->id,
             'first_name' => $request->first_name,
             'last_name' => $request->last_name,
             'emp_id' => $request->emp_id,
@@ -83,7 +124,7 @@ class DriverController extends Controller
             'pax_today' => 0,
             'performance_score' => 100,
             'incidents_30' => 0,
-            'trip_history' => $tripHistory,
+            'trip_history' => [],
         ]);
 
         return response()->json([
@@ -144,6 +185,12 @@ class DriverController extends Controller
     public function destroy(Driver $driver)
     {
         $name = "{$driver->first_name} {$driver->last_name}";
+        
+        // Delete associated user account if it exists
+        if ($driver->user_id) {
+            \App\Models\User::destroy($driver->user_id);
+        }
+        
         $driver->delete();
 
         return response()->json([

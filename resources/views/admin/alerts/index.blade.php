@@ -3,21 +3,30 @@
          style="--color-background-primary:#ffffff;--color-background-secondary:#F8F7F4;--color-background-tertiary:#F4F3EF;--color-text-primary:#1A1917;--color-text-secondary:#5F5E5A;--color-border-secondary:#D6D3C9;--color-border-tertiary:#E8E6DF;">
 
     {{-- PAGE HEADER ROW --}}
-    <div class="am-page-header">
-        <div class="am-page-header-left">
-            <h1 class="am-h1">Service alerts</h1>
-            <div class="am-subtitle-row">
-                <span id="active-alerts-count" class="am-badge-pill badge-emergency">0 active alerts</span>
-                <span class="am-last-broadcast">Last broadcast: 14 min ago</span>
+    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+                <h1 class="text-xl font-bold text-slate-900">Service Alerts</h1>
+                <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
+                    <span>Dashboard</span>
+                    <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+                    <span>Operations</span>
+                    <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+                    <span class="text-slate-600 font-bold">Service Alerts</span>
+                </div>
+                <div class="flex items-center gap-2 mt-1 select-none">
+                    <span id="active-alerts-count" class="inline-flex rounded-full bg-[#FCEBEB] px-2.5 py-0.5 text-[9px] font-bold text-[#A32D2D] uppercase tracking-wider">0 active alerts</span>
+                    <span class="text-[10px] text-slate-400 font-semibold">Last broadcast: 14 min ago</span>
+                </div>
             </div>
-        </div>
-        <div class="am-page-header-right">
-            <button class="am-btn-outline" onclick="toggleHistoryView(true)">
-                <i class="ti ti-history"></i> Alert history
-            </button>
-            <button class="am-btn-primary" onclick="clearComposerForm()">
-                <i class="ti ti-bell-plus"></i> New alert
-            </button>
+            <div class="flex items-center gap-2">
+                <a href="#alerts-history" onclick="switchScreen('alerts-history'); return false;" class="am-btn-outline inline-flex items-center gap-1.5 select-none no-underline">
+                    <i class="ti ti-history"></i> Alert history
+                </a>
+                <button class="am-btn-primary" onclick="clearComposerForm()">
+                    <i class="ti ti-bell-plus"></i> New alert
+                </button>
+            </div>
         </div>
     </div>
 
@@ -82,7 +91,7 @@
                         <i id="resolved-chevron" class="ti ti-chevron-right"></i>
                         <span id="resolved-count-label" class="am-collapsible-title">Resolved today (0)</span>
                     </div>
-                    <a href="#" class="am-collapsible-link" onclick="event.stopPropagation(); toggleHistoryView(true);">View all</a>
+                    <a href="#alerts-history" onclick="switchScreen('alerts-history'); return false;" class="am-collapsible-link">View all</a>
                 </div>
                 
                 <div id="resolved-rows-container" class="am-collapsible-content hidden">
@@ -370,92 +379,6 @@
                     <i class="ti ti-bell-plus"></i> Create another alert
                 </button>
             </div>
-        </div>
-
-    </div>
-
-    {{-- ==================== SECTION 4C: ALERT HISTORY LOG (FULL VIEW) ==================== --}}
-    <div id="history-full-view" class="am-history-overlay-wrapper hidden">
-        
-        <div class="am-history-modal-card animate-fade-in-up">
-            
-            {{-- HEADER --}}
-            <div class="am-history-hdr">
-                <div class="am-history-hdr-left">
-                    <h3 class="am-history-title">Alert history</h3>
-                    <span class="am-history-subtitle">Last 30 days</span>
-                </div>
-                <div class="am-history-hdr-right">
-                    <button class="am-btn-outline" onclick="exportHistoryCSV()"><i class="ti ti-download"></i> Export CSV</button>
-                    <button class="am-icon-btn-close-history" onclick="toggleHistoryView(false)" title="Close History">
-                        <i class="ti ti-x"></i>
-                    </button>
-                </div>
-            </div>
-
-            {{-- FILTERS ROW --}}
-            <div class="am-history-filters-row">
-                <div class="am-hist-filter-group">
-                    <label for="hist-filter-sev" class="am-hist-lbl">Severity</label>
-                    <select id="hist-filter-sev" class="am-select-sm" onchange="handleHistoryFilterSeverityChange(event)">
-                        <option value="All">All severities</option>
-                        <option value="Emergency">Emergency</option>
-                        <option value="High">High</option>
-                        <option value="Medium">Medium</option>
-                        <option value="Low">Low / Info</option>
-                    </select>
-                </div>
-
-                <div class="am-hist-filter-group">
-                    <label for="hist-filter-type" class="am-hist-lbl">Type</label>
-                    <select id="hist-filter-type" class="am-select-sm" onchange="handleHistoryFilterTypeChange(event)">
-                        <option value="All">All types</option>
-                        <option value="Delay">Delay</option>
-                        <option value="Route change">Route change</option>
-                        <option value="Suspension">Suspension</option>
-                        <option value="Breakdown">Breakdown</option>
-                        <option value="Weather">Weather</option>
-                    </select>
-                </div>
-
-                <div class="am-hist-filter-group">
-                    <label for="hist-filter-route" class="am-hist-lbl">Route</label>
-                    <select id="hist-filter-route" class="am-select-sm" onchange="handleHistoryFilterRouteChange(event)">
-                        <option value="All">All routes</option>
-                        <option value="Route A">Route A</option>
-                        <option value="Route B">Route B</option>
-                        <option value="Route C">Route C</option>
-                        <option value="All routes">All routes only</option>
-                    </select>
-                </div>
-            </div>
-
-            {{-- TABLE WRAPPER --}}
-            <div class="am-history-table-wrapper">
-                <table class="am-history-table">
-                    <thead>
-                        <tr class="am-table-hdr-row">
-                            <th class="am-table-th" style="width:15%;">Date & time</th>
-                            <th class="am-table-th" style="width:10%;">Type</th>
-                            <th class="am-table-th" style="width:12%;">Severity</th>
-                            <th class="am-table-th" style="width:25%;">Title</th>
-                            <th class="am-table-th" style="width:15%;">Affects</th>
-                            <th class="am-table-th" style="width:12%;">Sent by</th>
-                            <th class="am-table-th" style="width:10%;">Reached</th>
-                            <th class="am-table-th" style="width:10%;">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-table-body">
-                        {{-- Rows populated dynamically by alerts.js --}}
-                    </tbody>
-                </table>
-            </div>
-
-            {{-- PAGINATION --}}
-            <div class="am-history-pagination-row" id="history-pagination">
-                {{-- Loaded by JS --}}
-            </div>
-
         </div>
 
     </div>

@@ -36,9 +36,10 @@ function parseDescription(descText) {
     return result;
 }
 
-// Open modal and populate bus dropdown dynamically
+// Open inline form and populate bus dropdown dynamically
 function openScheduleMaintenanceModal() {
-    const modal = document.getElementById('schedule-maintenance-modal');
+    const listContainer = document.getElementById('maintenance-list-container');
+    const formContainer = document.getElementById('maintenance-form-container');
     const busSelect = document.getElementById('maintenance-bus-id');
     const form = document.getElementById('schedule-maintenance-form');
     
@@ -65,16 +66,28 @@ function openScheduleMaintenanceModal() {
         }
     }
 
-    if (modal) {
-        modal.classList.remove('hidden');
+    if (listContainer) listContainer.classList.add('hidden');
+    if (formContainer) formContainer.classList.remove('hidden');
+
+    // Update breadcrumb
+    const breadcrumbCurrent = document.getElementById('maintenance-breadcrumb-current');
+    if (breadcrumbCurrent) {
+        breadcrumbCurrent.textContent = 'Schedule Session';
     }
 }
 
-// Close Schedule Maintenance modal
+// Close inline form and return to logs list
 function closeScheduleMaintenanceModal() {
-    const modal = document.getElementById('schedule-maintenance-modal');
-    if (modal) {
-        modal.classList.add('hidden');
+    const listContainer = document.getElementById('maintenance-list-container');
+    const formContainer = document.getElementById('maintenance-form-container');
+    
+    if (listContainer) listContainer.classList.remove('hidden');
+    if (formContainer) formContainer.classList.add('hidden');
+
+    // Reset breadcrumb
+    const breadcrumbCurrent = document.getElementById('maintenance-breadcrumb-current');
+    if (breadcrumbCurrent) {
+        breadcrumbCurrent.textContent = 'Maintenance Logs';
     }
 }
 

@@ -7,6 +7,7 @@ use App\Models\DefaultRouteSetting;
 use App\Models\Route;
 use App\Models\Stop;
 use App\Models\SystemSetting;
+use App\Models\Terminal;
 use Illuminate\Http\Request;
 
 class StopController extends Controller
@@ -23,8 +24,10 @@ class StopController extends Controller
 
         $routeId = $validated['route_id'];
         $routeDefaults = DefaultRouteSetting::first();
-        $defaultOriginLabel = $routeDefaults?->default_origin_label ?? SystemSetting::get('default_route_origin_label', 'Pasig Terminal');
-        $defaultDestinationLabel = $routeDefaults?->default_destination_label ?? SystemSetting::get('default_route_destination_label', 'New Terminus');
+        $defaultOriginLabel = $routeDefaults?->default_origin_label
+            ?? SystemSetting::get('default_route_origin_label', Terminal::getDefaultName());
+        $defaultDestinationLabel = $routeDefaults?->default_destination_label
+            ?? SystemSetting::get('default_route_destination_label', Terminal::findByName('New Terminus', 'New Terminus'));
         $stopCount = Stop::where('route_id', $routeId)->count();
         $name = $validated['name'] ?? ($stopCount > 0 ? $defaultDestinationLabel : $defaultOriginLabel);
 

@@ -163,27 +163,13 @@
                         onsubmit="triggerLoadingState()">
                         @csrf
 
-                        <!-- Frosted Backend Error Card -->
+                        {{-- Error Alert --}}
                         @if ($errors->any())
-                            <div
-                                class="rounded-2xl border border-rose-100 bg-rose-50/70 p-4.5 backdrop-blur-sm shadow-sm transition-all duration-300">
-                                <div class="flex gap-3">
-                                    <div
-                                        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
-                                        <svg class="h-4.5 w-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                        </svg>
-                                    </div>
-                                    <div class="flex-1">
-                                        <h4 class="text-sm font-extrabold text-rose-950">Authentication Failed</h4>
-                                        <ul
-                                            class="mt-1 list-none space-y-0.5 text-xs font-semibold leading-relaxed text-rose-700/90">
-                                            @foreach ($errors->all() as $error)
-                                                <li>{{ $error }}</li>
-                                            @endforeach
-                                        </ul>
-                                    </div>
+                            <div class="flex items-start gap-3 rounded-xl border border-rose-300 bg-rose-100 px-4 py-3.5">
+                                <i class="ti ti-shield-exclamation text-rose-600 text-xl shrink-0 mt-0.5"></i>
+                                <div class="space-y-0.5">
+                                    <p class="font-extrabold text-sm text-rose-900">Authentication failed</p>
+                                    <p class="text-sm text-rose-700">Invalid credentials. Please check your email and password.</p>
                                 </div>
                             </div>
                         @endif

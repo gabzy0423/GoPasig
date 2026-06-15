@@ -15,6 +15,7 @@ use App\Models\ServiceAlert;
 use App\Models\Stop;
 use App\Services\GPSKalmanFilter;
 use App\Services\DashboardService;
+use App\Models\SystemSetting;
 
 class DriverController extends Controller
 {
@@ -71,7 +72,11 @@ class DriverController extends Controller
         $gpsCoords = [];
         if ($driver) {
             $bus = Bus::where('plate_number', $driver->assigned_bus)->first();
-            $route = Route::with('stops')->find($driver->assigned_route);
+            $route = Route::getAllCached()->firstWhere('id', $driver->assigned_route);
+            if ($route) {
+                $routeStops = Stop::getAllCached()->where('route_id', $route->id)->sortBy('sequence');
+                $route->setRelation('stops', $routeStops);
+            }
             if ($route && !empty($route->polyline_coordinates)) {
                 foreach ($route->polyline_coordinates as $coord) {
                     $gpsCoords[] = ['lat' => (float)$coord[0], 'lng' => (float)$coord[1]];
@@ -90,8 +95,12 @@ class DriverController extends Controller
 
         if (empty($gpsCoords)) {
             // Fallback: Load stops from any first available route with stops
-            $fallbackRoute = Route::with('stops')->has('stops')->first();
+            $fallbackRoute = Route::getAllCached()->first(function($r) {
+                return Stop::getAllCached()->where('route_id', $r->id)->isNotEmpty();
+            });
             if ($fallbackRoute) {
+                $routeStops = Stop::getAllCached()->where('route_id', $fallbackRoute->id)->sortBy('sequence');
+                $fallbackRoute->setRelation('stops', $routeStops);
                 foreach ($fallbackRoute->stops as $stop) {
                     $gpsCoords[] = ['lat' => (float)$stop->lat, 'lng' => (float)$stop->lng];
                 }
@@ -100,7 +109,7 @@ class DriverController extends Controller
 
         if (empty($gpsCoords)) {
             // Fallback: Load stops from all available stops in database
-            $allStops = Stop::orderBy('id')->get();
+            $allStops = Stop::getAllCached()->sortBy('id');
             if ($allStops->isNotEmpty()) {
                 foreach ($allStops as $stop) {
                     $gpsCoords[] = ['lat' => (float)$stop->lat, 'lng' => (float)$stop->lng];
@@ -114,8 +123,8 @@ class DriverController extends Controller
             if ($routeDefaults && $routeDefaults->default_latitude && $routeDefaults->default_longitude) {
                 $gpsCoords[] = ['lat' => (float)$routeDefaults->default_latitude, 'lng' => (float)$routeDefaults->default_longitude];
             } else {
-                $nearLat = (float) \App\Models\SystemSetting::get('sim_near_lat', 14.5768);
-                $nearLng = (float) \App\Models\SystemSetting::get('sim_near_lng', 121.0858);
+                $nearLat = (float) \App\Models\SystemSetting::get('default_route_start_lat', 14.5593);
+                $nearLng = (float) \App\Models\SystemSetting::get('default_route_start_lng', 121.0805);
                 $gpsCoords[] = ['lat' => $nearLat, 'lng' => $nearLng];
             }
         }
@@ -171,10 +180,43 @@ class DriverController extends Controller
             $bus = Bus::where('plate_number', $driver->assigned_bus)->first();
             if ($bus) {
                 $status = $request->input('status'); // 'active' or 'inactive'
+                
+                if ($status === 'active' && !$driver->assigned_route) {
+                    return response()->json(['success' => false, 'message' => 'No route assigned. Contact your dispatcher.'], 422);
+                }
+
                 $bus->update(['status' => $status]);
                 
                 if ($status === 'active') {
                     $driver->increment('trips_today');
+                    
+                    // Create an ongoing trip record
+                    $existingTrip = DB::table('trips')
+                        ->where('driver_id', $driver->id)
+                        ->where('status', 'ongoing')
+                        ->first();
+                    
+                    if (!$existingTrip) {
+                        DB::table('trips')->insert([
+                            'bus_id' => $bus->id,
+                            'driver_id' => $driver->id,
+                            'route_id' => (int) $driver->assigned_route,
+                            'status' => 'ongoing',
+                            'peak_passengers' => $bus->passengers ?: 0,
+                            'started_at' => now(),
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
+                } elseif ($status === 'inactive' || $status === 'breakdown') {
+                    DB::table('trips')
+                        ->where('driver_id', $driver->id)
+                        ->where('status', 'ongoing')
+                        ->update([
+                            'status' => $status === 'breakdown' ? 'cancelled' : 'completed',
+                            'ended_at' => now(),
+                            'updated_at' => now(),
+                        ]);
                 }
                 return response()->json(['success' => true, 'status' => $status, 'trips_today' => $driver->trips_today]);
             }
@@ -231,7 +273,8 @@ class DriverController extends Controller
                 ]);
 
                 // Update bus status if it's a breakdown
-                if ($type === 'Breakdown') {
+                $breakdownType = SystemSetting::get('incident_breakdown_type', 'Breakdown');
+                if ($type === $breakdownType) {
                     $bus->update(['status' => 'breakdown']);
                 }
 
@@ -258,6 +301,40 @@ class DriverController extends Controller
                 if ($change > 0) {
                     $driver->increment('pax_today', $change);
                 }
+                
+                // Track peak passengers in the active ongoing trip
+                $ongoingTrip = DB::table('trips')
+                    ->where('driver_id', $driver->id)
+                    ->where('status', 'ongoing')
+                    ->first();
+                
+                if (!$ongoingTrip) {
+                    if (!$driver->assigned_route) {
+                        return response()->json(['success' => false, 'message' => 'No route assigned. Contact your dispatcher.'], 422);
+                    }
+                    $routeId = (int) $driver->assigned_route;
+                    DB::table('trips')->insert([
+                        'bus_id' => $bus->id,
+                        'driver_id' => $driver->id,
+                        'route_id' => $routeId,
+                        'status' => 'ongoing',
+                        'peak_passengers' => $newPax,
+                        'started_at' => now(),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                } else {
+                    $currentPeak = (int) ($ongoingTrip->peak_passengers ?? 0);
+                    if ($newPax > $currentPeak) {
+                        DB::table('trips')
+                            ->where('id', $ongoingTrip->id)
+                            ->update([
+                                'peak_passengers' => $newPax,
+                                'updated_at' => now(),
+                            ]);
+                    }
+                }
+                
                 return response()->json(['success' => true, 'passengers' => $newPax, 'pax_today' => $driver->pax_today]);
             }
         }
@@ -299,6 +376,7 @@ class DriverController extends Controller
                 $lat = $request->input('lat');
                 $lng = $request->input('lng');
                 $speed = (int)$request->input('speed', 0);
+                $isSimulated = (bool) $request->input('is_simulated', false);
 
                 // 1. Apply Kalman Filter to smooth raw GPS inputs
                 $filtered = GPSKalmanFilter::smooth($bus->id, $lat, $lng);
@@ -330,8 +408,9 @@ class DriverController extends Controller
                         $currentStop->lng
                     );
 
-                    // If bus is within 100 meters, automatically advance to next stop in sequence
-                    if ($distanceToStop <= 100) {
+                    // If bus is within configurable threshold, automatically advance to next stop in sequence
+                    $autoAdvanceThreshold = (float) \App\Models\SystemSetting::get('stop_auto_advance_distance', 100);
+                    if ($distanceToStop <= $autoAdvanceThreshold) {
                         $currentIndex = $stops->indexOf($currentStop);
                         $nextIndex = ($currentIndex + 1) % $stops->count();
                         $currentStop = $stops->get($nextIndex);
@@ -366,8 +445,11 @@ class DriverController extends Controller
                                 ->avg('speed');
                         }
                         if (!$averageFleetSpeed) {
+                            // Limit to the last hour to avoid a full-table scan on the
+                            // ever-growing gps_logs table (receives entries every ~6 seconds).
                             $averageFleetSpeed = DB::table('gps_logs')
                                 ->where('speed', '>', 5)
+                                ->where('created_at', '>=', now()->subHour())
                                 ->avg('speed');
                         }
                         $fallbackSpeed = $averageFleetSpeed ? (int) round($averageFleetSpeed) : 15;
@@ -383,7 +465,8 @@ class DriverController extends Controller
                     'lng' => $smoothedLng,
                     'speed' => $speed,
                     'next_stop' => $nextStop,
-                    'eta' => $eta
+                    'eta' => $eta,
+                    'is_simulated' => $isSimulated
                 ]);
 
                 // Record to gps_logs table if an ongoing trip exists for this driver

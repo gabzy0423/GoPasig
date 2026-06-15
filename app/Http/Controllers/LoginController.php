@@ -14,7 +14,8 @@ class LoginController extends Controller
     {
         $ip = request()->ip();
         $attempts = RateLimiter::attempts('login_attempts_ip|' . $ip);
-        $showCaptcha = $attempts >= 3;
+        $threshold = (int) \App\Models\SystemSetting::get('captcha_attempt_threshold', 3);
+        $showCaptcha = $attempts >= $threshold;
 
         return view('auth.login', compact('showCaptcha'));
     }

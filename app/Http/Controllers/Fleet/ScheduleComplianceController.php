@@ -250,14 +250,21 @@ class ScheduleComplianceController extends Controller
             $arrTime = Carbon::parse($s->arrival_time);
             $duration = $depTime->diffInMinutes($arrTime);
 
-            $varianceMin = match (strtolower((string) $s->status)) {
-                'delayed' => max(1, (int) round($duration * 0.1)),
-                'cancelled' => 0,
-                default => 0,
-            };
-
             $departureFormatted = Carbon::parse($s->departure_time)->format('g:i A');
-            $actualDep = $uiStatus === 'Missed' ? '--' : $departureFormatted;
+            if ($s->actual_departure_time) {
+                $actualDep = Carbon::parse($s->actual_departure_time)->format('g:i A');
+                $varianceMin = (int) Carbon::parse($s->departure_time)->diffInMinutes(Carbon::parse($s->actual_departure_time), false);
+                $isEstimated = false;
+            } else {
+                $isEstimated = (strtolower((string) $s->status) === 'delayed');
+                if (strtolower((string) $s->status) === 'delayed') {
+                    $varianceMin = $s->delay_minutes ?: max(1, (int) round($duration * 0.1));
+                    $actualDep = Carbon::parse($s->departure_time)->addMinutes($varianceMin)->format('g:i A');
+                } else {
+                    $varianceMin = 0;
+                    $actualDep = $uiStatus === 'Missed' ? '--' : $departureFormatted;
+                }
+            }
 
             return [
                 'trip_id' => 'SCH-' . str_pad($s->id, 4, '0', STR_PAD_LEFT),
@@ -268,6 +275,7 @@ class ScheduleComplianceController extends Controller
                 'scheduled_departure' => $departureFormatted,
                 'actual_departure' => $actualDep,
                 'variance_minutes' => $varianceMin,
+                'is_estimated' => $isEstimated,
                 'status' => $uiStatus,
                 'schedule_id' => $s->id,
             ];
@@ -318,8 +326,11 @@ class ScheduleComplianceController extends Controller
         }
 
         // 4. Delay trend by hour (right chart)
-        $hours = ['05:00', '07:00', '09:00', '11:00', '13:00', '15:00', '17:00'];
-        $hourBlocks = [5, 7, 9, 11, 13, 15, 17];
+        $timeSlotConfigs = \App\Models\TimeSlotConfiguration::where('is_active', true)->orderBy('order')->get();
+        if ($timeSlotConfigs->isEmpty()) {
+            \Illuminate\Support\Facades\Log::error('TimeSlotConfiguration table is empty. Delay trend hourly chart will not be rendered. Run time slot configuration seeder.');
+            $timeSlotConfigs = collect();
+        }
 
         $delayTrend = [];
         $trendRoutes = $selectedRoute !== 'all'
@@ -327,21 +338,23 @@ class ScheduleComplianceController extends Controller
             : $routes;
 
         foreach ($trendRoutes as $route) {
-            foreach ($hourBlocks as $hidx => $block) {
-                $nextBlock = $hourBlocks[$hidx + 1] ?? 24;
+            foreach ($timeSlotConfigs as $slotConfig) {
+                $startHour = (int) substr($slotConfig->start_time, 0, 2);
+                $endHour = (int) substr($slotConfig->end_time, 0, 2);
+
                 $delayedCount = $baseQ()
                     ->where('route_id', $route->id)
                     ->where('status', 'Delayed')
-                    ->when($isSqlite, function ($query) use ($block, $nextBlock) {
-                        $query->whereRaw("CAST(strftime('%H', departure_time) AS INTEGER) >= ? AND CAST(strftime('%H', departure_time) AS INTEGER) < ?", [$block, $nextBlock]);
-                    }, function ($query) use ($block, $nextBlock) {
-                        $query->whereRaw("HOUR(departure_time) >= ? AND HOUR(departure_time) < ?", [$block, $nextBlock]);
+                    ->when($isSqlite, function ($query) use ($startHour, $endHour) {
+                        $query->whereRaw("CAST(strftime('%H', departure_time) AS INTEGER) >= ? AND CAST(strftime('%H', departure_time) AS INTEGER) < ?", [$startHour, $endHour]);
+                    }, function ($query) use ($startHour, $endHour) {
+                        $query->whereRaw("HOUR(departure_time) >= ? AND HOUR(departure_time) < ?", [$startHour, $endHour]);
                     })
                     ->count();
 
                 $delayTrend[] = [
                     'route' => $route->name,
-                    'label' => $hours[$hidx],
+                    'label' => $slotConfig->time_slot_display,
                     'delayed_count' => $delayedCount,
                     'color' => $colorPalette[($route->id - 1) % count($colorPalette)],
                 ];
@@ -357,8 +370,14 @@ class ScheduleComplianceController extends Controller
             $rDelayedScheds = $baseQ()->where('route_id', $route->id)->where('status', 'Delayed')->get();
             $totalDelayMin = 0;
             foreach ($rDelayedScheds as $ds) {
-                $dur = Carbon::parse($ds->departure_time)->diffInMinutes(Carbon::parse($ds->arrival_time));
-                $totalDelayMin += max(1, (int) round($dur * 0.1));
+                if ($ds->actual_departure_time) {
+                    $totalDelayMin += max(0, (int) Carbon::parse($ds->departure_time)->diffInMinutes(Carbon::parse($ds->actual_departure_time), false));
+                } elseif ($ds->delay_minutes > 0) {
+                    $totalDelayMin += $ds->delay_minutes;
+                } else {
+                    $dur = Carbon::parse($ds->departure_time)->diffInMinutes(Carbon::parse($ds->arrival_time));
+                    $totalDelayMin += max(1, (int) round($dur * 0.1));
+                }
             }
             if ($totalDelayMin > 0) {
                 $delayedRoutes[] = [
@@ -390,6 +409,10 @@ class ScheduleComplianceController extends Controller
                 'routes.id as route_id',
                 'routes.name as route_name',
                 DB::raw('COUNT(*) as late_count'),
+                DB::raw('SUM(schedules.delay_minutes) as total_delay_minutes'),
+                $isSqlite
+                ? DB::raw('SUM(CASE WHEN schedules.actual_departure_time IS NOT NULL THEN (strftime("%s", schedules.actual_departure_time) - strftime("%s", schedules.departure_time)) / 60 ELSE 0 END) as total_actual_delay_minutes')
+                : DB::raw('SUM(CASE WHEN schedules.actual_departure_time IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, schedules.departure_time, schedules.actual_departure_time) ELSE 0 END) as total_actual_delay_minutes'),
                 $isSqlite
                 ? DB::raw('SUM((strftime("%s", schedules.arrival_time) - strftime("%s", schedules.departure_time)) / 60) as total_duration')
                 : DB::raw('SUM(TIMESTAMPDIFF(MINUTE, schedules.departure_time, schedules.arrival_time)) as total_duration')
@@ -400,9 +423,16 @@ class ScheduleComplianceController extends Controller
             ->get();
 
         $lateDrivers = $driverLateStats->map(function ($row) use ($colorPalette) {
-            $avgDelay = $row->late_count > 0
-                ? max(1, (int) round(($row->total_duration / $row->late_count) * 0.1))
-                : 0;
+            $avgDelay = 0;
+            if ($row->late_count > 0) {
+                if ($row->total_actual_delay_minutes > 0) {
+                    $avgDelay = (int) round($row->total_actual_delay_minutes / $row->late_count);
+                } elseif ($row->total_delay_minutes > 0) {
+                    $avgDelay = (int) round($row->total_delay_minutes / $row->late_count);
+                } else {
+                    $avgDelay = max(1, (int) round(($row->total_duration / $row->late_count) * 0.1));
+                }
+            }
             return [
                 'driver_name' => "{$row->first_name} {$row->last_name}",
                 'late_count' => (int) $row->late_count,

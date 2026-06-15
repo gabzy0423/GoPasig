@@ -54,36 +54,23 @@ async function loadDatabaseAnalyticsData() {
 
             // Build predictionRouteData
             const topStopAll = stopBoardingData[0]?.name || 'Pasig City Hall';
-            const routeA = routeComparisonData.find(r => r.route === 'Route A');
-            const routeB = routeComparisonData.find(r => r.route === 'Route B');
-            const routeC = routeComparisonData.find(r => r.route === 'Route C');
-
-            const topStopA = stopBoardingData.find(s => s.name.includes('Hall') || s.name.includes('Kapitolyo'))?.name || 'Pasig City Hall';
-            const topStopB = stopBoardingData.find(s => s.name.includes('Ortigas') || s.name.includes('Rosario'))?.name || 'Ortigas Center';
-            const topStopC = stopBoardingData.find(s => s.name.includes('Shaw') || s.name.includes('Rosario'))?.name || 'Shaw Blvd';
 
             predictionRouteData = {
                 all: {
-                    vol: `${kpisData.total_pax_today || '1,284'} pax / day`,
-                    rec: `${kpisData.trips_scheduled || '29'} recommended`,
+                    vol: `${kpisData.total_pax_today || '0'} pax / day`,
+                    rec: `${kpisData.trips_scheduled || '0'} recommended`,
                     busiest: `Expected highest boarding: ${topStopAll} · 7–8 AM · ~67 passengers`
-                },
-                A: {
-                    vol: `${routeA ? routeA.pax : '532'} pax / day`,
-                    rec: `${routeA ? routeA.trips : '11'} recommended`,
-                    busiest: `Expected highest boarding: ${topStopA} · 7–8 AM · ~45 passengers`
-                },
-                B: {
-                    vol: `${routeB ? routeB.pax : '421'} pax / day`,
-                    rec: `${routeB ? routeB.trips : '10'} recommended`,
-                    busiest: `Expected highest boarding: ${topStopB} · 7–8 AM · ~38 passengers`
-                },
-                C: {
-                    vol: `${routeC ? routeC.pax : '331'} pax / day`,
-                    rec: `${routeC ? routeC.trips : '8'} recommended`,
-                    busiest: `Expected highest boarding: ${topStopC} · 5–6 PM · ~31 passengers`
                 }
             };
+
+            routeComparisonData.forEach(r => {
+                const estPeakPax = Math.round(r.pax * 0.15 || 30);
+                predictionRouteData[r.route] = {
+                    vol: `${r.pax.toLocaleString()} pax / day`,
+                    rec: `${r.trips} recommended`,
+                    busiest: `Expected highest boarding: ${r.busiestStop || 'SPED Terminal'} · ${r.peakHour || '7–8 AM'} · ~${estPeakPax} passengers`
+                };
+            });
 
             isAnalyticsDatabaseLoaded = true;
             console.log("Analytics Controller data successfully fetched!");

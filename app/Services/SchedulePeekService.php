@@ -15,8 +15,11 @@ class SchedulePeekService
      */
     public function getSchedulePeek(): \Illuminate\Support\Collection
     {
-        return Route::all()->map(function ($route) {
-            $schedules = Schedule::where('route_id', $route->id)->orderBy('departure_time')->get();
+        $routes = Route::getAllCached();
+        $schedulesByRoute = Schedule::orderBy('departure_time')->get()->groupBy('route_id');
+
+        return $routes->map(function ($route) use ($schedulesByRoute) {
+            $schedules = $schedulesByRoute->get($route->id, collect());
             
             $firstTrip = $schedules->first() ? Carbon::parse($schedules->first()->departure_time)->format('g:i A') : 'No schedules';
             $lastTrip = $schedules->last() ? Carbon::parse($schedules->last()->departure_time)->format('g:i A') : 'No schedules';
@@ -43,7 +46,7 @@ class SchedulePeekService
 
             return (object) [
                 'route_name' => $route->name,
-                'route_color' => $route->color ?: '#003F87',
+                'route_color' => $route->color ?: config('brand.route_color_default', '#003F87'),
                 'first_trip' => $firstTrip,
                 'last_trip' => $lastTrip,
                 'service_status' => $serviceStatus,

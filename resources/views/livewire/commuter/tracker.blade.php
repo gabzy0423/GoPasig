@@ -23,6 +23,21 @@
     }"
     x-init="requestLocation()">
 
+
+    @if($breakdownAlert)
+        <div class="w-full bg-[#FCEBEB] border-b border-[#E24B4A] px-4 py-3 flex items-start gap-3 flex-shrink-0 animate-pulse">
+            <i class="ti ti-alert-triangle text-[#A32D2D] text-lg flex-shrink-0 mt-0.5"></i>
+            <span class="text-xs font-bold text-[#A32D2D] leading-snug">{{ $breakdownAlert }}</span>
+        </div>
+    @endif
+
+    @if($maintenanceAlert)
+        <div class="w-full bg-[#FAEEDA] border-b border-[#BA7517] px-4 py-3 flex items-start gap-3 flex-shrink-0 animate-pulse">
+            <i class="ti ti-tool text-[#854F0B] text-lg flex-shrink-0 mt-0.5"></i>
+            <span class="text-xs font-bold text-[#854F0B] leading-snug">{{ $maintenanceAlert }}</span>
+        </div>
+    @endif
+
     <!-- SECTION 2 — SERVICE ALERT BANNER (Conditional) -->
     @if($activeAlerts->isNotEmpty())
         @php
@@ -108,7 +123,36 @@
                     <div class="flex flex-col gap-3">
                         <div class="flex justify-between items-start">
                             <div class="flex flex-col gap-1">
-                                <span class="text-sm font-mono font-bold text-slate-800">{{ $nearestBus->plate_number }}</span>
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                    <span class="text-sm font-mono font-bold text-slate-800">{{ $nearestBus->plate_number }}</span>
+                                    @if($nearestBus->is_simulated)
+                                        <span class="px-1.5 py-0.5 text-[8.5px] font-extrabold bg-blue-50 text-[#1D4ED8] border border-blue-100 rounded-full flex items-center gap-0.5" title="Estimated Location (No GPS Signal)">
+                                            <span class="w-1 h-1 rounded-full bg-blue-500 animate-pulse"></span>
+                                            Estimated
+                                        </span>
+                                    @endif
+                                    
+                                    @php
+                                        $nearestUpdated = \Carbon\Carbon::parse($nearestBus->updated_at);
+                                        $nearestDiff = now()->diffInSeconds($nearestUpdated);
+                                    @endphp
+                                    @if($nearestDiff < 30)
+                                        <span class="px-1.5 py-0.5 text-[8.5px] font-extrabold bg-emerald-50 text-[#0F6E56] border border-emerald-100 rounded-full flex items-center gap-0.5">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                            LIVE
+                                        </span>
+                                    @elseif($nearestDiff <= 120)
+                                        <span class="px-1.5 py-0.5 text-[8.5px] font-extrabold bg-amber-50 text-[#854F0B] border border-amber-100 rounded-full flex items-center gap-0.5" title="Bus signal temporarily lost — last known position shown">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                            STALE ({{ $nearestDiff }}s)
+                                        </span>
+                                    @else
+                                        <span class="px-1.5 py-0.5 text-[8.5px] font-extrabold bg-rose-50 text-[#A32D2D] border border-rose-100 rounded-full flex items-center gap-0.5">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                            OFFLINE
+                                        </span>
+                                    @endif
+                                </div>
                                 <div class="flex items-center gap-1.5 text-xs text-slate-500 font-bold">
                                     <span class="h-2 w-2 rounded-full" style="background-color: {{ $nearestBus->route_color }};"></span>
                                     <span>{{ $nearestBus->route_name }}</span>
@@ -163,16 +207,48 @@
                     
                     <!-- Card row 1: Plate & Status -->
                     <div class="flex justify-between items-center">
-                        <span class="bg-slate-50 border border-slate-200/80 px-2 py-0.5 rounded text-[11px] font-mono font-bold text-slate-700 tracking-tight">{{ $bus->plate_number }}</span>
-                        @if($bus->status === 'active')
-                            <span class="px-2.5 py-0.5 text-[10px] font-extrabold bg-[#E1F5EE] text-[#0F6E56] border border-emerald-100 rounded-full">On-time</span>
-                        @elseif($bus->status === 'delayed')
-                            <span class="px-2.5 py-0.5 text-[10px] font-extrabold bg-[#FAEEDA] text-[#854F0B] border border-amber-100 rounded-full">Delayed</span>
-                        @elseif($bus->status === 'idle')
-                            <span class="px-2.5 py-0.5 text-[10px] font-extrabold bg-[#F1EFE8] text-[#5F5E5A] border border-slate-200/80 rounded-full">Idle</span>
-                        @else
-                            <span class="px-2.5 py-0.5 text-[10px] font-extrabold bg-[#FCEBEB] text-[#A32D2D] border border-rose-100 rounded-full">Breakdown</span>
-                        @endif
+                        <div class="flex items-center gap-1.5">
+                            <span class="bg-slate-50 border border-slate-200/80 px-2 py-0.5 rounded text-[11px] font-mono font-bold text-slate-700 tracking-tight">{{ $bus->plate_number }}</span>
+                            @if($bus->is_simulated)
+                                <span class="px-1.5 py-0.5 text-[9px] font-extrabold bg-blue-50 text-[#1D4ED8] border border-blue-100 rounded-full flex items-center gap-1" title="Estimated Location (No GPS Signal)">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                    Estimated
+                                </span>
+                            @endif
+                        </div>
+                        <div class="flex items-center gap-1">
+                            @if($bus->status === 'active')
+                                <span class="px-2.5 py-0.5 text-[10px] font-extrabold bg-[#E1F5EE] text-[#0F6E56] border border-emerald-100 rounded-full">{{ \App\Models\SystemSetting::get('label_bus_status_ontime', 'On-time') }}</span>
+                            @elseif($bus->status === 'delayed')
+                                <span class="px-2.5 py-0.5 text-[10px] font-extrabold bg-[#FAEEDA] text-[#854F0B] border border-amber-100 rounded-full">{{ \App\Models\SystemSetting::get('label_bus_status_delayed', 'Delayed') }}</span>
+                            @elseif($bus->status === 'idle')
+                                <span class="px-2.5 py-0.5 text-[10px] font-extrabold bg-[#F1EFE8] text-[#5F5E5A] border border-slate-200/80 rounded-full">{{ \App\Models\SystemSetting::get('label_bus_status_idle', 'Idle') }}</span>
+                            @else
+                                <span class="px-2.5 py-0.5 text-[10px] font-extrabold bg-[#FCEBEB] text-[#A32D2D] border border-rose-100 rounded-full">{{ \App\Models\SystemSetting::get('label_bus_status_breakdown', 'Breakdown') }}</span>
+                            @endif
+
+                            @php
+                                $updatedTime = \Carbon\Carbon::parse($bus->updated_at);
+                                $diffSeconds = now()->diffInSeconds($updatedTime);
+                            @endphp
+
+                            @if($diffSeconds < 30)
+                                <span class="px-1.5 py-0.5 text-[9px] font-extrabold bg-emerald-50 text-[#0F6E56] border border-emerald-100 rounded-full flex items-center gap-0.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                    LIVE
+                                </span>
+                            @elseif($diffSeconds <= 120)
+                                <span class="px-1.5 py-0.5 text-[9px] font-extrabold bg-amber-50 text-[#854F0B] border border-amber-100 rounded-full flex items-center gap-0.5" title="Bus signal temporarily lost — last known position shown">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                    STALE ({{ $diffSeconds }}s)
+                                </span>
+                            @else
+                                <span class="px-1.5 py-0.5 text-[9px] font-extrabold bg-rose-50 text-[#A32D2D] border border-rose-100 rounded-full flex items-center gap-0.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                    OFFLINE
+                                </span>
+                            @endif
+                        </div>
                     </div>
 
                     <!-- Card row 2: Route details -->

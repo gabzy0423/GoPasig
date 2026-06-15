@@ -9,6 +9,12 @@
         },
         "icon": {
             "installationTime": 1780680708
+        },
+        "breadcrumbs": {
+            "installationTime": 1781257735
+        },
+        "alerts": {
+            "installationTime": 1781259616
         }
     }
 }

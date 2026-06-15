@@ -13,7 +13,7 @@ class RouteDurationSeeder extends Seeder
      */
     public function run(): void
     {
-        // Seed default route durations (based sa dati na hardcoded values)
+        // Seed default route durations from database settings
         // General durations (NULL day_of_week at time_slot)
         $defaultDurations = [
             1 => 25,  // Route 1 = 25 minutes

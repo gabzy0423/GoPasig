@@ -10,9 +10,14 @@
 @section('scripts')
 @php
     // Fetch stops data categorized by route
-    $stopsData = \App\Models\Route::with('stops')->get()->flatMap(function($route) {
+    $routes = \App\Models\Route::getAllCached();
+    $stops = \App\Models\Stop::getAllCached();
+    $stopsByRoute = $stops->groupBy('route_id');
+
+    $stopsData = $routes->flatMap(function($route) use ($stopsByRoute) {
         $color = $route->color ?: '#003F87';
-        return $route->stops->map(function($stop) use ($route, $color) {
+        $routeStops = $stopsByRoute->get($route->id, collect());
+        return $routeStops->map(function($stop) use ($route, $color) {
             return [
                 'id' => $stop->id,
                 'name' => $stop->name,
@@ -26,7 +31,7 @@
     });
 
     // Fetch route polylines
-    $routesData = \App\Models\Route::all()->map(function($r) {
+    $routesData = $routes->map(function($r) {
         return [
             'id' => $r->id,
             'name' => $r->name,

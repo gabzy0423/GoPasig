@@ -15,17 +15,21 @@ class NearestBuses extends Component
             ->get()
             ->map(function ($bus) {
                 // Route color: read from the database column
-                $color = $bus->route?->color ?: '#003F87';
+                $color = $bus->route?->color ?: config('brand.route_color_unassigned', '#888780');
 
                 // Determine arrival status dynamically
                 $fillRatio = $bus->passengers / max(1, $bus->capacity);
 
+                $statusFull = \App\Models\SystemSetting::get('label_bus_status_full', 'Full');
+                $statusDelayed = \App\Models\SystemSetting::get('label_bus_status_delayed', 'Delayed');
+                $statusOnTime = \App\Models\SystemSetting::get('label_bus_status_on_time', 'On Time');
+
                 if ($fillRatio > 0.8) {
-                    $status = 'Full';
-                } elseif ($bus->eta >= Bus::getDelayThreshold()) {
-                    $status = 'Delayed';
+                    $status = $statusFull;
+                } elseif ($bus->eta >= $bus->getRouteDelayThreshold()) {
+                    $status = $statusDelayed;
                 } else {
-                    $status = 'On Time';
+                    $status = $statusOnTime;
                 }
 
                 return (object) [

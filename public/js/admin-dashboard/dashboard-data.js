@@ -129,8 +129,17 @@ async function loadDatabaseFleetData() {
         if (typeof syncRoutesWithDatabase === 'function') {
             syncRoutesWithDatabase();
         }
-        if (typeof renderRoutesTab === 'function' && typeof activeRoutesTab !== 'undefined' && activeRoutesTab === 'stops') {
-            renderRoutesTab();
+        if (typeof activeRoutesTab !== 'undefined') {
+            if (activeRoutesTab === 'stops' && typeof renderRoutesTab === 'function') {
+                renderRoutesTab();
+            } else if (activeRoutesTab === 'schedule') {
+                if (typeof renderScheduleGrid === 'function') {
+                    renderScheduleGrid();
+                }
+                if (typeof renderUpcomingTrips === 'function') {
+                    renderUpcomingTrips();
+                }
+            }
         }
     } catch (error) {
         console.error("Failed to load dynamic database fleet data:", error);

@@ -18,6 +18,7 @@ use App\Models\TimeSlotConfiguration;
 use App\Models\SystemSetting;
 use App\Models\DispatchAlertSetting;
 use App\Models\DispatchSimulationDefault;
+use App\Models\Terminal;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -143,11 +144,14 @@ class DispatchIntelligenceController extends Controller
      */
     public function saveThreshold(Request $request)
     {
+        $min = (int) SystemSetting::get('threshold_min_value', 5);
+        $max = (int) SystemSetting::get('threshold_max_value', 100);
+
         $validated = $request->validate([
             'route_id' => 'required|exists:routes,id',
             'day' => 'required|string',
             'time_slot' => 'required|string',
-            'threshold' => 'required|integer|min:5|max:100',
+            'threshold' => "required|integer|min:{$min}|max:{$max}",
         ]);
 
         DemandThreshold::updateOrCreate(
@@ -175,12 +179,20 @@ class DispatchIntelligenceController extends Controller
         $routeId = $request->input('route_id');
         $routeStops = Stop::where('route_id', $routeId)->orderBy('sequence')->get();
         if ($routeStops->count() >= 2) {
+            $token = 'simulated-' . \Illuminate\Support\Str::random(32);
+            \App\Models\CommuterSession::create([
+                'session_token' => $token,
+                'ip_address' => $request->ip(),
+                'expires_at' => now()->addHours(24),
+            ]);
+
             CommuterTrip::create([
+                'session_token' => $token,
                 'route_id' => $routeId,
                 'origin_stop_id' => $routeStops->first()->id,
                 'destination_stop_id' => $routeStops->last()->id,
-                'status' => 'pending',
-                'timestamp' => now(),
+                'status' => 'WAITING',
+                'created_at' => now(),
             ]);
             return response()->json(['success' => true]);
         }
@@ -230,18 +242,33 @@ class DispatchIntelligenceController extends Controller
             ->first();
         $limit = $thresholdRec ? $thresholdRec->threshold_count : $defaultThreshold;
 
-        $currentPending = CommuterTrip::where('route_id', $routeId)->where('status', 'pending')->count();
-        $needed = max(0, $limit - $currentPending + rand(2, 5));
+        $currentPending = CommuterTrip::where('route_id', $routeId)
+            ->where('status', 'WAITING')
+            ->whereHas('session', function ($q) {
+                $q->where('expires_at', '>', now());
+            })
+            ->count();
+        $minSpurt = (int) $this->getSimulationDefault('sim_rush_spurt_min', 2);
+        $maxSpurt = (int) $this->getSimulationDefault('sim_rush_spurt_max', 5);
+        $needed = max(0, $limit - $currentPending + rand($minSpurt, $maxSpurt));
 
         $routeStops = Stop::where('route_id', $routeId)->orderBy('sequence')->get();
         if ($routeStops->count() >= 2) {
             for ($i = 0; $i < $needed; $i++) {
+                $token = 'simulated-' . \Illuminate\Support\Str::random(32);
+                \App\Models\CommuterSession::create([
+                    'session_token' => $token,
+                    'ip_address' => $request->ip(),
+                    'expires_at' => now()->addHours(24),
+                ]);
+
                 CommuterTrip::create([
+                    'session_token' => $token,
                     'route_id' => $routeId,
                     'origin_stop_id' => $routeStops->first()->id,
                     'destination_stop_id' => $routeStops->last()->id,
-                    'status' => 'pending',
-                    'timestamp' => now()->subMinutes(rand(1, 5)),
+                    'status' => 'WAITING',
+                    'created_at' => now()->subMinutes(rand(1, 5)),
                 ]);
             }
             return response()->json(['success' => true]);
@@ -254,7 +281,7 @@ class DispatchIntelligenceController extends Controller
      */
     public function clearSimulatorData()
     {
-        CommuterTrip::where('status', 'pending')->delete();
+        CommuterTrip::where('status', 'WAITING')->delete();
         DispatchSimulatorCount::truncate();
 
         return response()->json([
@@ -277,8 +304,15 @@ class DispatchIntelligenceController extends Controller
             return response()->json(['success' => false, 'message' => 'Route not found.'], 404);
         }
 
-        $bus = Bus::where('status', 'inactive')->first();
-        $driver = Driver::where('status', 'inactive')->first();
+        // Prefer a bus already assigned to this route; fall back to any inactive bus.
+        $bus = Bus::where('status', 'inactive')->where('route_id', $routeId)->first()
+            ?? Bus::where('status', 'inactive')->whereNull('route_id')->first()
+            ?? Bus::where('status', 'inactive')->first();
+
+        // Prefer a driver whose assigned_route matches this route; fall back to any inactive driver.
+        $driver = Driver::where('status', 'inactive')->where('assigned_route', (string) $routeId)->first()
+            ?? Driver::where('status', 'inactive')->whereNull('assigned_route')->first()
+            ?? Driver::where('status', 'inactive')->first();
 
         if (!$bus || !$driver) {
             return response()->json([
@@ -287,7 +321,10 @@ class DispatchIntelligenceController extends Controller
             ], 422);
         }
 
-        $fallbackTerminal = $this->getSimulationDefault('default_terminal', SystemSetting::get('default_terminal_name', 'SPED Terminal'));
+        $fallbackTerminal = $this->getSimulationDefault(
+            'default_terminal',
+            SystemSetting::get('default_terminal_name', Terminal::getDefaultName())
+        );
 
         DB::beginTransaction();
         try {
@@ -298,7 +335,7 @@ class DispatchIntelligenceController extends Controller
                 'driver_name' => "{$driver->first_name} {$driver->last_name}",
                 'passengers' => 0,
                 'next_stop' => Stop::where('route_id', $routeId)->orderBy('sequence')->first()->name ?? $fallbackTerminal,
-                'eta' => 5,
+                'eta' => (int) SystemSetting::get('default_dispatch_eta_minutes', 5),
             ]);
 
             // Activate driver
@@ -322,16 +359,16 @@ class DispatchIntelligenceController extends Controller
             // Create Dispatch Log
             DispatchLog::create([
                 'trip_id' => $tripId,
-                'dispatched_by' => Auth::id() ?? 1,
+                'dispatched_by' => Auth::id(), // NULL when system-triggered (no active session)
                 'dispatched_at' => now(),
                 'notes' => 'Automatic dispatch triggered by Dispatch Intelligence (Phase ' . $phase . ').',
             ]);
 
             // Mark check-ins as boarded
             CommuterTrip::where('route_id', $routeId)
-                ->where('status', 'pending')
+                ->where('status', 'WAITING')
                 ->update([
-                    'status' => 'boarded',
+                    'status' => 'ON_BUS',
                     'boarded_at' => now()
                 ]);
 
@@ -408,23 +445,40 @@ class DispatchIntelligenceController extends Controller
             $redPercentage = (int) SystemSetting::get('alert_red_percentage', 100);
         }
 
-        return Route::all()->map(function ($route) use ($day, $timeSlot, $defaultThreshold, $yellowPercentage, $redPercentage) {
-            $autoCount = CommuterTrip::where('route_id', $route->id)->where('status', 'pending')->count();
+        $routes = Route::getAllCached();
 
-            // Get manual count from database instead of session
-            $simulatorCount = DispatchSimulatorCount::where('route_id', $route->id)
-                ->where('day_of_week', $day)
-                ->where('time_slot', $timeSlot)
-                ->first();
-            $manualCount = $simulatorCount?->manual_count ?? 0;
+        $autoCounts = CommuterTrip::where('status', 'WAITING')
+            ->whereHas('session', function ($q) {
+                $q->where('expires_at', '>', now());
+            })
+            ->select('route_id', DB::raw('count(*) as count'))
+            ->groupBy('route_id')
+            ->pluck('count', 'route_id')
+            ->toArray();
 
+        $simulatorCounts = DispatchSimulatorCount::where('day_of_week', $day)
+            ->where('time_slot', $timeSlot)
+            ->pluck('manual_count', 'route_id')
+            ->toArray();
+
+        $thresholds = DemandThreshold::where('day_of_week', $day)
+            ->where('time_slot', $timeSlot)
+            ->pluck('threshold_count', 'route_id')
+            ->toArray();
+
+        $historicalAverages = DemandHistory::where('day_of_week', $day)
+            ->where('time_slot', $timeSlot)
+            ->select('route_id', DB::raw('avg(total_commuters) as avg_commuters'))
+            ->groupBy('route_id')
+            ->pluck('avg_commuters', 'route_id')
+            ->toArray();
+
+        return $routes->map(function ($route) use ($day, $timeSlot, $defaultThreshold, $yellowPercentage, $redPercentage, $autoCounts, $simulatorCounts, $thresholds, $historicalAverages) {
+            $autoCount = $autoCounts[$route->id] ?? 0;
+            $manualCount = $simulatorCounts[$route->id] ?? 0;
             $totalDemand = $autoCount + $manualCount;
 
-            $thresholdRecord = DemandThreshold::where('route_id', $route->id)
-                ->where('day_of_week', $day)
-                ->where('time_slot', $timeSlot)
-                ->first();
-            $threshold = $thresholdRecord ? $thresholdRecord->threshold_count : $defaultThreshold;
+            $threshold = $thresholds[$route->id] ?? $defaultThreshold;
 
             // Status indicator
             $status = 'green';
@@ -434,11 +488,37 @@ class DispatchIntelligenceController extends Controller
                 $status = 'yellow';
             }
 
-            // Historical average
-            $historicalAvg = DemandHistory::where('route_id', $route->id)
-                ->where('day_of_week', $day)
-                ->where('time_slot', $timeSlot)
-                ->avg('total_commuters');
+            $historicalAvg = $historicalAverages[$route->id] ?? 0;
+
+            // Auto-suggest the nearest available (inactive) bus to the route's first stop if red status
+            $suggestedBusData = null;
+            if ($status === 'red') {
+                $firstStop = Stop::where('route_id', $route->id)->orderBy('sequence')->first();
+                $firstLat = $firstStop ? (float) $firstStop->lat : 14.5593;
+                $firstLng = $firstStop ? (float) $firstStop->lng : 121.0805;
+
+                $inactiveBuses = Bus::where('status', 'inactive')->get();
+                $minDist = null;
+                $bestBus = null;
+
+                foreach ($inactiveBuses as $bus) {
+                    if ($bus->lat !== null && $bus->lng !== null) {
+                        $dist = \App\Services\GPSKalmanFilter::calculateDistance($firstLat, $firstLng, (float) $bus->lat, (float) $bus->lng);
+                        if ($minDist === null || $dist < $minDist) {
+                            $minDist = $dist;
+                            $bestBus = $bus;
+                        }
+                    }
+                }
+
+                if ($bestBus) {
+                    $suggestedBusData = [
+                        'id' => $bestBus->id,
+                        'plate_number' => $bestBus->plate_number,
+                        'distance_km' => $minDist !== null ? round($minDist / 1000, 1) : 0
+                    ];
+                }
+            }
 
             return (object) [
                 'id' => $route->id,
@@ -449,7 +529,8 @@ class DispatchIntelligenceController extends Controller
                 'total' => $totalDemand,
                 'threshold' => $threshold,
                 'status' => $status,
-                'historical_avg' => round($historicalAvg ?? 0),
+                'historical_avg' => round($historicalAvg),
+                'suggested_bus' => $suggestedBusData,
             ];
         });
     }
@@ -460,17 +541,26 @@ class DispatchIntelligenceController extends Controller
     protected function computeAlerts($day, $timeSlot, $phase, $routesData)
     {
         $alerts = [];
+        $locale = app()->getLocale();
+
         foreach ($routesData as $route) {
             // Phase 1: Reactive Alert
             if ($phase == 1) {
                 if ($route->total >= $route->threshold) {
+                    $title = SystemSetting::get('alert_template_reactive_title_' . $locale, SystemSetting::get('alert_template_reactive_title_en', 'Threshold Overflow Alarm'));
+                    $message = $this->parseAlertTemplate('alert_template_reactive_message', [
+                        'total' => $route->total,
+                        'route_name' => $route->name,
+                        'threshold' => $route->threshold
+                    ], "{total} commuters waiting on {route_name}. Limit of {threshold} exceeded! Dispatch recommended.");
+
                     $alerts[] = [
                         'route_id' => $route->id,
                         'route_name' => $route->name,
                         'type' => 'reactive',
                         'severity' => 'High',
-                        'title' => 'Threshold Overflow Alarm',
-                        'message' => "{$route->total} commuters waiting on {$route->name}. Limit of {$route->threshold} exceeded! Dispatch recommended.",
+                        'title' => $title,
+                        'message' => $message,
                     ];
                 }
             }
@@ -483,28 +573,55 @@ class DispatchIntelligenceController extends Controller
 
                 if ($historicalAvg && $historicalAvg >= $route->threshold) {
                     $slotStart = explode('-', $timeSlot)[0] ?? '7:00 AM';
+                    $title = SystemSetting::get('alert_template_predictive_title_' . $locale, SystemSetting::get('alert_template_predictive_title_en', '⚡ Pre-dispatch Recommended'));
+                    $message = $this->parseAlertTemplate('alert_template_predictive_message', [
+                        'day' => $day,
+                        'slot_start' => $slotStart,
+                        'route_name' => $route->name,
+                        'historical_avg' => round($historicalAvg)
+                    ], "Every {day} at {slot_start} = passenger demand is consistently high on {route_name} (Avg: {historical_avg} pax expected). Dispatch a bus now to pre-empt overflow.");
+
                     $alerts[] = [
                         'route_id' => $route->id,
                         'route_name' => $route->name,
                         'type' => 'predictive',
                         'severity' => 'Medium',
-                        'title' => '⚡ Pre-dispatch Recommended',
-                        'message' => "Tuwing {$day} {$slotStart} = laging maraming commuters sa {$route->name} (Avg: " . round($historicalAvg) . " pax expected). Dispatch a bus now to pre-empt overflow.",
+                        'title' => $title,
+                        'message' => $message,
                     ];
                 }
 
                 if ($route->total >= $route->threshold) {
+                    $title = SystemSetting::get('alert_template_reactive_live_title_' . $locale, SystemSetting::get('alert_template_reactive_live_title_en', 'Threshold Overflow Alarm (Live)'));
+                    $message = $this->parseAlertTemplate('alert_template_reactive_live_message', [
+                        'total' => $route->total,
+                        'route_name' => $route->name,
+                        'threshold' => $route->threshold
+                    ], "{total} commuters waiting on {route_name} (Live counter). Threshold is {threshold}! Dispatch immediately.");
+
                     $alerts[] = [
                         'route_id' => $route->id,
                         'route_name' => $route->name,
                         'type' => 'reactive',
                         'severity' => 'High',
-                        'title' => 'Threshold Overflow Alarm',
-                        'message' => "{$route->total} commuters waiting on {$route->name} (Live counter). Threshold is {$route->threshold}! Dispatch immediately.",
+                        'title' => $title,
+                        'message' => $message,
                     ];
                 }
             }
         }
         return $alerts;
+    }
+
+    /**
+     * Parse alert template with dynamic data.
+     */
+    protected function parseAlertTemplate(string $key, array $data, string $default): string
+    {
+        $locale = app()->getLocale();
+        $template = SystemSetting::get("{$key}_{$locale}", SystemSetting::get("{$key}_en", $default));
+        
+        $search = array_map(fn($k) => "{{$k}}", array_keys($data));
+        return str_replace($search, array_values($data), $template);
     }
 }

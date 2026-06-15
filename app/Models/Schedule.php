@@ -9,6 +9,11 @@ class Schedule extends Model
 {
     use HasFactory;
 
+    // Schedule status constants — single source of truth for status strings
+    const STATUS_ON_TIME   = 'On time';
+    const STATUS_DELAYED   = 'Delayed';
+    const STATUS_CANCELLED = 'Cancelled';
+
     protected $fillable = [
         'route_id',
         'bus_id',
@@ -18,6 +23,8 @@ class Schedule extends Model
         'passengers',
         'status',
         'delay_minutes',
+        'actual_departure_time',
+        'actual_arrival_time',
     ];
 
     public function route()

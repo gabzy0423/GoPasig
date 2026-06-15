@@ -467,23 +467,131 @@
 
         setElementText('doughnut-total-pax', kpisData.total_pax_today || '0');
 
-        // Update Route A, B, C doughnut breakdown descriptions & trends
-        routeComparisonData.forEach(r => {
-            const routeKey = r.route.toLowerCase().replace('route ', ''); // 'a', 'b', or 'c'
-            const descEl = document.getElementById(`doughnut-route-${routeKey}-desc`);
-            if (descEl) {
-                descEl.textContent = `${r.pax} pax (${r.percentage}%)`;
-            }
-            // Trend
-            const trendEl = document.getElementById(`doughnut-route-${routeKey}-trend`);
-            if (trendEl) {
-                const diff = r.route === 'Route A' ? '+4%' : (r.route === 'Route B' ? '+2%' : '-1%');
-                const isDown = diff.startsWith('-');
-                const colorClass = isDown ? 'text-[#E24B4A]' : 'text-[#639922]';
+        // Dynamic rendering of Hourly ridership legend
+        const legendContainer = document.getElementById('hourly-chart-legend');
+        if (legendContainer && routeComparisonData) {
+            legendContainer.innerHTML = '';
+            routeComparisonData.forEach((r, idx) => {
+                const color = r.color || ['#003F87', '#639922', '#BA7517', '#E24B4A'][idx % 4];
+                legendContainer.innerHTML += `
+                    <span class="flex items-center gap-1">
+                        <span class="h-2.5 w-2.5 rounded" style="background-color: ${color};"></span>
+                        ${r.route} — ${r.pax.toLocaleString()} pax
+                    </span>
+                `;
+            });
+        }
+
+        // Dynamic rendering of Route Doughnut Legend
+        const doughnutLegend = document.getElementById('route-doughnut-legend');
+        if (doughnutLegend && routeComparisonData) {
+            doughnutLegend.innerHTML = '';
+            const totalPax = routeComparisonData.reduce((sum, r) => sum + r.pax, 0);
+            routeComparisonData.forEach((r, idx) => {
+                const color = r.color || ['#003F87', '#639922', '#BA7517', '#E24B4A'][idx % 4];
+                const percentage = totalPax > 0 ? Math.round((r.pax / totalPax) * 100) : 0;
+                const isDown = idx === 2;
+                const trendPct = idx === 0 ? '+4%' : (idx === 1 ? '+2%' : '-1%');
+                const trendColor = isDown ? 'text-[#E24B4A]' : 'text-[#639922]';
                 const trendIcon = isDown ? 'ti-trending-down' : 'ti-trending-up';
-                trendEl.className = colorClass;
-                trendEl.innerHTML = `<i class="${trendIcon}"></i> ${diff}`;
+
+                doughnutLegend.innerHTML += `
+                    <div class="text-center">
+                        <span class="flex items-center gap-1.5 justify-center">
+                            <span class="h-2 w-2 rounded-full" style="background-color: ${color};"></span>
+                            ${r.route}
+                        </span>
+                        <p class="text-slate-800 font-extrabold mt-0.5">${r.pax.toLocaleString()} pax (${percentage}%)</p>
+                        <span class="${trendColor}"><i class="ti ${trendIcon}"></i> ${trendPct}</span>
+                    </div>
+                `;
+            });
+        }
+
+        // Dynamic rendering of Heatmap Insights
+        if (heatmapData) {
+            const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const hours = ["5 AM", "6 AM", "7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
+            let maxPax = -1, maxDay = "", maxHour = "";
+            let minPax = Infinity, minDay = "", minHour = "";
+            
+            daysOfWeek.forEach(day => {
+                const row = heatmapData[day];
+                if (row) {
+                    row.forEach((pax, hrIdx) => {
+                        if (pax > maxPax) {
+                            maxPax = pax;
+                            maxDay = day;
+                            maxHour = hours[hrIdx];
+                        }
+                        if (pax < minPax) {
+                            minPax = pax;
+                            minDay = day;
+                            minHour = hours[hrIdx];
+                        }
+                    });
+                }
+            });
+
+            const insightsContainer = document.getElementById('heatmap-insights-container');
+            if (insightsContainer) {
+                insightsContainer.innerHTML = `
+                    <span class="bg-[#FDF2F2] text-[#E24B4A] border border-[#E24B4A]/10 px-2.5 py-0.5 rounded-full uppercase">Highest: ${maxDay} ${maxHour} · ${maxPax} pax</span>
+                    <span class="bg-slate-50 border border-slate-200 px-2.5 py-0.5 rounded-full text-slate-500 uppercase">Lowest: ${minDay} ${minHour} · ${minPax} pax</span>
+                    <span class="bg-[#E6F1FB] text-[#003F87] border border-[#003F87]/10 px-2.5 py-0.5 rounded-full uppercase">Most consistent: Weekdays 7–9 AM</span>
+                `;
             }
-        });
+        }
+
+        // Dynamic rendering of Passenger load timeline legend
+        const timelineLegend = document.getElementById('pax-load-timeline-legend');
+        if (timelineLegend && typeof tripData !== 'undefined' && tripData) {
+            const activePlates = [...new Set(tripData.map(t => t.plate))].slice(0, 4);
+            const timelineConfig = [
+                { color: '#003F87', style: 'circle', dash: [], radius: 4 },
+                { color: '#639922', style: 'rect', dash: [6, 3], radius: 4.5 },
+                { color: '#BA7517', style: 'triangle', dash: [2, 4], radius: 5 },
+                { color: '#E24B4A', style: 'rectRot', dash: [10, 5], radius: 5 }
+            ];
+            
+            timelineLegend.innerHTML = '';
+            activePlates.forEach((plate, i) => {
+                const config = timelineConfig[i] || timelineConfig[0];
+                const borderStyle = config.dash.length > 0 ? 'border-dashed' : 'border-solid';
+                timelineLegend.innerHTML += `
+                    <span class="flex items-center gap-1">
+                        <span class="h-2.5 w-4 rounded border-t-2 border-b-2 ${borderStyle} border-white" style="background-color: ${config.color};"></span>
+                        ${plate}
+                    </span>
+                `;
+            });
+        }
+
+        // Dynamic Route filter select options
+        const filterSelect = document.getElementById('trip-route-filter');
+        if (filterSelect && routeComparisonData) {
+            const currentSelected = filterSelect.value;
+            filterSelect.innerHTML = '<option value="all">All Routes</option>';
+            routeComparisonData.forEach(r => {
+                filterSelect.innerHTML += `<option value="${r.route}">${r.route}</option>`;
+            });
+            if (currentSelected && filterSelect.querySelector(`option[value="${currentSelected}"]`)) {
+                filterSelect.value = currentSelected;
+            }
+        }
+
+        // Dynamic Forecast Tabs
+        const tabsContainer = document.getElementById('forecast-route-tabs');
+        if (tabsContainer && routeComparisonData) {
+            tabsContainer.innerHTML = `<button onclick="switchPredictionRoute('all')" data-pred-route-tab="all" class="bg-[#003F87] text-white px-2 py-0.5 rounded transition uppercase cursor-pointer">All</button>`;
+            routeComparisonData.forEach(r => {
+                const label = r.route.replace('Route ', '');
+                tabsContainer.innerHTML += `
+                    <button onclick="switchPredictionRoute('${r.route}')" data-pred-route-tab="${r.route}" class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-200 transition uppercase cursor-pointer">${label}</button>
+                `;
+            });
+        }
     }
+
+
 

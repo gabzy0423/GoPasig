@@ -17,6 +17,7 @@ class MaintenanceRecord extends Model
         'description',
         'scheduled_at',
         'status',
+        'expected_duration_minutes',
         'technician_name',
         'cost_php',
     ];
