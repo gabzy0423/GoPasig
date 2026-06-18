@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Driver;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
@@ -15,7 +16,8 @@ class DriverController extends Controller
      */
     public function create()
     {
-        return redirect('/admin/dashboard#drivers-create');
+        $licenseWarningDays = SystemSetting::get('license_expiry_warning_threshold_days', 30);
+        return view('admin.drivers.create', compact('licenseWarningDays'));
     }
 
     /**
@@ -46,10 +48,11 @@ class DriverController extends Controller
         $offDuty = Driver::where('status', 'inactive')->count();
         $suspended = Driver::where('status', 'suspended')->count();
 
-        // License Expiring in <= 30 Days (Urgent or Expired)
+        // License Expiring in <= threshold days (Urgent or Expired)
         $today = Carbon::today();
-        $thirtyDaysFromNow = Carbon::today()->addDays(30);
-        $expiring = Driver::whereBetween('license_expiry', [$today->toDateString(), $thirtyDaysFromNow->toDateString()])
+        $thresholdDays = (int) SystemSetting::get('license_expiry_warning_threshold_days', 30);
+        $thresholdDate = Carbon::today()->addDays($thresholdDays);
+        $expiring = Driver::whereBetween('license_expiry', [$today->toDateString(), $thresholdDate->toDateString()])
             ->orWhere('license_expiry', '<', $today->toDateString())
             ->count();
 
@@ -70,6 +73,14 @@ class DriverController extends Controller
      */
     public function store(Request $request)
     {
+        // Authorization check
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only administrators can create drivers.'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'first_name' => 'required|string|min:2',
             'last_name' => 'required|string|min:2',
@@ -105,7 +116,7 @@ class DriverController extends Controller
             'name' => trim($request->first_name . ' ' . $request->last_name),
             'email' => $email,
             'role' => 'driver',
-            'password' => \Illuminate\Support\Facades\Hash::make('password123'),
+            'password' => \Illuminate\Support\Facades\Hash::make(\Illuminate\Support\Str::random(16)),
             'email_verified_at' => now(),
         ]);
 
@@ -122,9 +133,8 @@ class DriverController extends Controller
             'emergency_contact' => $request->emergency_contact,
             'trips_today' => 0,
             'pax_today' => 0,
-            'performance_score' => 100,
+            'performance_score' => 80,
             'incidents_30' => 0,
-            'trip_history' => [],
         ]);
 
         return response()->json([
@@ -139,6 +149,14 @@ class DriverController extends Controller
      */
     public function update(Request $request, Driver $driver)
     {
+        // Authorization check
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only administrators can update drivers.'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'first_name' => 'required|string|min:2',
             'last_name' => 'required|string|min:2',
@@ -184,6 +202,14 @@ class DriverController extends Controller
      */
     public function destroy(Driver $driver)
     {
+        // Authorization check
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only administrators can delete drivers.'
+            ], 403);
+        }
+
         $name = "{$driver->first_name} {$driver->last_name}";
         
         // Delete associated user account if it exists

@@ -73,7 +73,7 @@ class AdminMaintenanceCreateTest extends TestCase
         $response->assertStatus(201);
         $response->assertJson([
             'success' => true,
-            'message' => 'Maintenance scheduled successfully. Bus status locked to maintenance!'
+            'message' => 'Maintenance scheduled successfully. Bus locked to maintenance status.'
         ]);
 
         $this->assertDatabaseHas('maintenance_records', [

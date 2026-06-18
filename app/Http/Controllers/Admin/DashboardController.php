@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Route;
 use App\Models\Bus;
 use App\Models\Trip;
+use App\Models\ServiceAlert;
 
 
 class DashboardController extends Controller
@@ -17,7 +18,30 @@ class DashboardController extends Controller
             $missingThresholdKey = !\App\Models\DispatchSimulationDefault::where('key', 'default_demand_threshold')->exists();
         }
         $routes = Route::getAllCached();
-        return view('admin.dashboard', compact('missingThresholdKey', 'routes'));
+        $primaryRouteName = $routes->first()->name ?? 'Pasig Line 1';
+        $busCapacityLimit = (int) \App\Models\SystemSetting::get('bus_capacity_default', 45);
+        $licenseWarningDays = (int) \App\Models\SystemSetting::get('license_expiry_warning_threshold_days', 30);
+        $mapCenterLat = (float) \App\Models\SystemSetting::get('map_default_latitude', 14.5690);
+        $mapCenterLng = (float) \App\Models\SystemSetting::get('map_default_longitude', 121.0680);
+        $mapZoom = (int) \App\Models\SystemSetting::get('map_default_zoom', 13);
+        $pollingInterval = (int) \App\Models\SystemSetting::get('map_gps_polling_interval_ms', 10000);
+
+        // System health status: check for active alerts or maintenance buses
+        $activeAlerts = \App\Models\ServiceAlert::where('status', 'active')->count();
+        $maintenanceBuses = Bus::where('status', 'maintenance')->count();
+        if ($activeAlerts > 0) {
+            $systemStatus = 'critical';
+        } elseif ($maintenanceBuses > 0) {
+            $systemStatus = 'degraded';
+        } else {
+            $systemStatus = 'nominal';
+        }
+
+        return view('admin.dashboard', compact(
+            'missingThresholdKey', 'routes', 'primaryRouteName', 'busCapacityLimit',
+            'licenseWarningDays', 'mapCenterLat', 'mapCenterLng', 'mapZoom',
+            'pollingInterval', 'systemStatus'
+        ));
     }
 
     public function getFleetData()
@@ -34,8 +58,8 @@ class DashboardController extends Controller
             $avgPax = $avgPaxByRoute->get($route->id);
 
             if ($avgPax === null) {
-                $fallback = [1 => 145, 2 => 165, 3 => 110, 4 => 125];
-                $avgPax = $fallback[$route->id] ?? 120;
+                // Get default average pax from SystemSetting (optional fallback)
+                $avgPax = (int) \App\Models\SystemSetting::get('default_route_avg_pax', 0);
             }
 
             $route->avg_passengers = (int) round($avgPax);

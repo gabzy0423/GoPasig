@@ -21,7 +21,7 @@ class FleetScheduleComplianceTest extends TestCase
 
         $this->route = Route::create([
             'id' => 1,
-            'name' => 'Route 1',
+            'name' => 'Route A',
             'description' => 'SPED to Pasig City Hall',
             'polyline_coordinates' => [[14.5593, 121.0805], [14.5838, 121.0620]],
             'status' => 'Active',

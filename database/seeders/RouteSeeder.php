@@ -17,7 +17,7 @@ class RouteSeeder extends Seeder
         // 1. Create the 4 operational routes
         $route1 = Route::create([
             'id' => 1,
-            'name' => 'Route 1',
+            'name' => 'Route A',
             'color' => '#003F87',
             'description' => 'SPED (Caruncho Ave.) to Temporary Pasig City Hall',
             'polyline_coordinates' => [
@@ -38,7 +38,7 @@ class RouteSeeder extends Seeder
 
         $route2 = Route::create([
             'id' => 2,
-            'name' => 'Route 2',
+            'name' => 'Route B',
             'color' => '#BA7517',
             'description' => 'SPED (Caruncho Ave.) to Ligaya (Santolan) via PCGH',
             'polyline_coordinates' => [
@@ -58,7 +58,7 @@ class RouteSeeder extends Seeder
 
         $route3 = Route::create([
             'id' => 3,
-            'name' => 'Route 3',
+            'name' => 'Route C',
             'color' => '#639922',
             'description' => 'SPED (Caruncho Ave.) to One San Miguel Ave via Shaw',
             'polyline_coordinates' => [
@@ -79,7 +79,7 @@ class RouteSeeder extends Seeder
 
         $route4 = Route::create([
             'id' => 4,
-            'name' => 'Route 4',
+            'name' => 'Route D',
             'color' => '#E24B4A',
             'description' => 'SPED (Caruncho Ave.) to Nagpayong (Pinagbuhatan) via Urbano Velasco',
             'polyline_coordinates' => [

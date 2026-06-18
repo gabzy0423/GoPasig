@@ -91,6 +91,100 @@ function closeScheduleMaintenanceModal() {
     }
 }
 
+// Open inspection modal and load record details
+function openInspectionModal(recordId) {
+    const listContainer = document.getElementById('maintenance-list-container');
+    const inspectionContainer = document.getElementById('maintenance-inspection-container');
+    const form = document.getElementById('inspection-form');
+    
+    if (form) {
+        form.reset();
+        form.dataset.recordId = recordId;
+    }
+
+    // Fetch record details to populate the form
+    const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.maintenanceBaseUrl) ? window.GoPasigConfig.maintenanceBaseUrl : '/admin/api/maintenance';
+    fetch(`${baseUrl}/${recordId}`)
+        .then(res => res.json())
+        .then(record => {
+            const busLabel = record.bus ? record.bus.plate_number : `Bus #${record.bus_id}`;
+            const parsedDesc = parseDescription(record.description);
+            
+            document.getElementById('inspection-bus-label').textContent = busLabel;
+            document.getElementById('inspection-record-status').textContent = record.status.toUpperCase();
+            document.getElementById('inspection-technician-label').textContent = parsedDesc.technician;
+            document.getElementById('inspection-date-label').textContent = formatMaintenanceDate(record.scheduled_at);
+        })
+        .catch(err => console.error('Failed to load record details:', err));
+
+    if (listContainer) listContainer.classList.add('hidden');
+    if (inspectionContainer) inspectionContainer.classList.remove('hidden');
+}
+
+// Close inspection modal and return to logs list
+function closeInspectionModal() {
+    const listContainer = document.getElementById('maintenance-list-container');
+    const inspectionContainer = document.getElementById('maintenance-inspection-container');
+    
+    if (listContainer) listContainer.classList.remove('hidden');
+    if (inspectionContainer) inspectionContainer.classList.add('hidden');
+}
+
+// Submit inspection form
+async function handleInspectionSubmit(event) {
+    event.preventDefault();
+
+    const form = event.target;
+    const recordId = form.dataset.recordId;
+    const inspectionPassed = form.querySelector('input[name="inspection_passed"]:checked').value === 'true';
+    const inspectedBy = document.getElementById('inspection-by').value.trim();
+    const inspectionNotes = document.getElementById('inspection-notes').value.trim();
+
+    if (!recordId || !inspectedBy) {
+        alert('Please fill in all required fields.');
+        return;
+    }
+
+    const payload = {
+        inspection_passed: inspectionPassed,
+        inspected_by: inspectedBy,
+        inspection_notes: inspectionNotes || ''
+    };
+
+    try {
+        const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.maintenanceBaseUrl) ? window.GoPasigConfig.maintenanceBaseUrl : '/admin/api/maintenance';
+        
+        const response = await fetch(`${baseUrl}/${recordId}/perform-inspection`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': getCsrfToken(),
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            alert(data.message);
+            closeInspectionModal();
+            
+            // Reload logs
+            await fetchMaintenanceLogs();
+            if (typeof loadDatabaseFleetData === 'function') {
+                await loadDatabaseFleetData();
+            }
+        } else {
+            alert(data.message || 'Failed to submit inspection.');
+            console.error('Inspection failed:', data);
+        }
+    } catch (error) {
+        alert('Server connection error. Failed to submit inspection.');
+        console.error('AJAX inspection error:', error);
+    }
+}
+
 // Submit new maintenance ticket via AJAX Fetch
 async function handleMaintenanceSubmit(event) {
     event.preventDefault();
@@ -201,17 +295,45 @@ async function fetchMaintenanceLogs() {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'relative pl-6 border-l border-slate-200 pb-4';
 
-            // Complete and Delete button elements
+            // Action buttons logic based on inspection state
             let actionHtml = '';
             if (record.status !== 'completed' && record.status !== 'cancelled') {
-                actionHtml = `
-                    <div class="mt-3.5 flex items-center justify-end border-t border-slate-100 pt-2 gap-3 shrink-0">
+                // Show inspection status if available
+                let inspectionStatusHtml = '';
+                if (record.inspection_passed === true) {
+                    inspectionStatusHtml = '<span class="text-[10px] font-bold text-[#639922]"><i class="ti ti-check-circle"></i> Inspection PASSED</span>';
+                } else if (record.inspection_passed === false) {
+                    inspectionStatusHtml = '<span class="text-[10px] font-bold text-[#E24B4A]"><i class="ti ti-circle-x"></i> Inspection FAILED</span>';
+                } else if (record.status === 'in_progress') {
+                    inspectionStatusHtml = '<span class="text-[10px] font-bold text-[#BA7517]"><i class="ti ti-alert-circle"></i> Awaiting Inspection</span>';
+                }
+
+                let completeButton = '';
+                if (record.status === 'in_progress' && record.inspection_passed !== true) {
+                    // Show Inspect button if not yet inspected or failed
+                    completeButton = `
+                        <button onclick="openInspectionModal(${record.id})" class="text-[10px] font-extrabold text-[#003F87] bg-[#E3F0FF] hover:bg-[#d0e5ff] px-2 py-1 rounded transition-all cursor-pointer">
+                            <i class="ti ti-checklist"></i> Inspect
+                        </button>
+                    `;
+                } else if (record.status === 'in_progress' && record.inspection_passed === true) {
+                    // Show Complete button only if inspection passed
+                    completeButton = `
                         <button onclick="completeMaintenanceTask(${record.id})" class="text-[10px] font-extrabold text-[#639922] bg-[#E8F4E0] hover:bg-[#d8edd0] px-2 py-1 rounded transition-all cursor-pointer">
-                            <i class="ti ti-check"></i> Mark as Done
+                            <i class="ti ti-check"></i> Complete Service
                         </button>
-                        <button onclick="deleteMaintenanceRecord(${record.id})" class="text-[10px] font-extrabold text-[#E24B4A] hover:underline cursor-pointer">
-                            <i class="ti ti-trash"></i> Cancel / Delete
-                        </button>
+                    `;
+                }
+
+                actionHtml = `
+                    <div class="mt-3.5 flex items-center justify-between border-t border-slate-100 pt-2 gap-3 shrink-0">
+                        <div>${inspectionStatusHtml}</div>
+                        <div class="flex gap-2">
+                            ${completeButton}
+                            <button onclick="deleteMaintenanceRecord(${record.id})" class="text-[10px] font-extrabold text-[#E24B4A] hover:underline cursor-pointer">
+                                <i class="ti ti-trash"></i> Cancel / Delete
+                            </button>
+                        </div>
                     </div>
                 `;
             } else {
@@ -307,7 +429,7 @@ async function deleteMaintenanceRecord(id) {
                 'X-CSRF-TOKEN': getCsrfToken(),
                 'Accept': 'application/json'
             }
-        });
+        })
 
         const data = await response.json();
 

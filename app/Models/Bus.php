@@ -16,6 +16,12 @@ class Bus extends Model
     // source of truth — the database — for every configurable value.
     // -------------------------------------------------------------------------
 
+    /** Sentinel value stored in driver_name when no driver is assigned. */
+    public const DEFAULT_DRIVER_NAME = 'Unassigned';
+
+    /** Sentinel value stored in next_stop when the bus has no upcoming stop. */
+    public const DEFAULT_NEXT_STOP = 'None';
+
     /**
      * Return the bus capacity, falling back to the system_settings value
      * (key: default_bus_capacity, default: 45) when the column is null.
@@ -112,8 +118,24 @@ class Bus extends Model
         'lat',
         'lng',
         'status',
+        'previous_status',
         'is_simulated'
     ];
+
+    /**
+     * Lock bus to maintenance status, preserving the prior status for restoration.
+     * Idempotent — safe to call multiple times; previous_status is only overwritten
+     * when the bus is not already in maintenance, preventing self-referential state.
+     */
+    public function lockToMaintenance(): void
+    {
+        $this->update([
+            'previous_status' => $this->status === 'maintenance'
+                ? $this->previous_status
+                : $this->status,
+            'status' => 'maintenance',
+        ]);
+    }
 
     protected $casts = [
         'lat' => 'float',

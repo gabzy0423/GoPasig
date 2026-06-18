@@ -53,9 +53,26 @@
             
             <!-- System Status Chip -->
             <div id="system-status-container">
-                <x-ui.badge color="green" variant="outline" pill class="uppercase text-[11px] tracking-wider py-1.5 font-bold shadow-sm">
-                    <span class="h-1.5 w-1.5 rounded-full bg-[#639922] animate-pulse mr-1.5"></span>
-                    Systems Nominal
+                @php
+                    $statusColor = match($systemStatus) {
+                        'critical' => 'red',
+                        'degraded' => 'yellow',
+                        default    => 'green',
+                    };
+                    $statusLabel = match($systemStatus) {
+                        'critical' => 'System Critical',
+                        'degraded' => 'System Degraded',
+                        default    => 'Systems Nominal',
+                    };
+                    $dotColor = match($systemStatus) {
+                        'critical' => 'bg-red-500',
+                        'degraded' => 'bg-yellow-400',
+                        default    => 'bg-[#639922]',
+                    };
+                @endphp
+                <x-ui.badge color="{{ $statusColor }}" variant="outline" pill class="uppercase text-[11px] tracking-wider py-1.5 font-bold shadow-sm">
+                    <span class="h-1.5 w-1.5 rounded-full {{ $dotColor }} animate-pulse mr-1.5"></span>
+                    {{ $statusLabel }}
                 </x-ui.badge>
             </div>
         </div>
@@ -73,7 +90,7 @@
                 </div>
             </div>
             <div class="mt-1">
-                <span class="text-[26px] font-black text-slate-900 leading-none" id="metric-active-buses">12</span>
+                <span class="text-[26px] font-black text-slate-900 leading-none" id="metric-active-buses">0</span>
                 <div class="text-[11px] text-[#639922] font-semibold mt-0.5 flex items-center gap-0.5" id="metric-active-buses-sub">
                     <span class="h-1.5 w-1.5 rounded-full bg-[#639922] animate-pulse mr-0.5"></span>
                     <span>Normal fleet ops</span>
@@ -143,7 +160,7 @@
                     <span class="flex h-2.5 w-2.5 rounded-full bg-[#639922] animate-pulse"></span>
                     <span class="text-[12px] font-extrabold uppercase tracking-wider text-slate-800">Live Vehicle Visualizer</span>
                 </div>
-                <span class="text-[10px] font-extrabold text-[#003F87] bg-[#E6F1FB] px-2.5 py-0.5 rounded-full uppercase tracking-widest">Pasig Line 1</span>
+                <span class="text-[10px] font-extrabold text-[#003F87] bg-[#E6F1FB] px-2.5 py-0.5 rounded-full uppercase tracking-widest">{{ $primaryRouteName }}</span>
             </div>
             
             <!-- Live Google Maps Visualizer -->
@@ -248,6 +265,15 @@
 
     <!-- ==================== SCRIPTS BLOCK ==================== -->
     <script>
+        // Inject dynamic bus capacity limit from PHP controller
+        const busCapacityLimit = {{ $busCapacityLimit }};
+
+        // Inject dynamic map settings from PHP controller
+        const mapCenterLat = {{ $mapCenterLat }};
+        const mapCenterLng = {{ $mapCenterLng }};
+        const mapZoom = {{ $mapZoom }};
+        const pollingInterval = {{ $pollingInterval }};
+
         // JS time update every 1000ms for Admin Clock
         (function() {
             function updateAdminClock() {

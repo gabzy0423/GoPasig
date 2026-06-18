@@ -189,12 +189,11 @@
                     <tr>
                         <th class="py-3 px-3 w-[15%]">Date</th>
                         <th class="py-3 px-3 w-[12%]">Bus Plate</th>
-                        <th class="py-3 px-3 w-[15%]">Route</th>
                         <th class="py-3 px-3 w-[12%]">Type</th>
                         <th class="py-3 px-3 w-[23%]">Description</th>
                         <th class="py-3 px-3 w-[13%]">Technician</th>
-                        <th class="py-3 px-3 w-[10%] text-right">Cost (PHP)</th>
-                        <th class="py-3 px-3 w-[10%]">Status</th>
+                        <th class="py-3 px-3 w-[13%]">Inspector</th>
+                        <th class="py-3 px-3 w-[12%]">Status</th>
                         <th class="py-3 px-3 w-[8%]"></th>
                     </tr>
                 </thead>
@@ -203,11 +202,10 @@
                         <tr class="hover:bg-slate-50 transition-colors">
                             <td class="py-3 px-3 text-slate-600 font-mono text-[12px]">{{ \Illuminate\Support\Carbon::parse($row->maintenance_date)->timezone('Asia/Manila')->format('M d, Y H:i') }}</td>
                             <td class="py-3 px-3 font-mono text-[#003F87] font-bold">{{ $row->bus_id }}</td>
-                            <td class="py-3 px-3 text-slate-600">{{ $row->assigned_route ?: '—' }}</td>
                             <td class="py-3 px-3"><span class="font-medium text-slate-800">{{ $row->type }}</span></td>
                             <td class="py-3 px-3 text-slate-500 truncate" title="{{ $row->description }}">{{ $row->description }}</td>
                             <td class="py-3 px-3 text-slate-700 font-medium">{{ $row->technician_name ?: '—' }}</td>
-                            <td class="py-3 px-3 text-right font-mono font-semibold text-slate-700">{{ number_format((float)$row->cost_php, 2) }}</td>
+                            <td class="py-3 px-3 text-slate-700 font-medium">{{ $row->inspected_by ?: '—' }}</td>
                             <td class="py-3 px-3">
                                 <span class="rounded px-2.5 py-0.5 text-[11px] font-bold border uppercase {{ $statusClasses[$row->status] ?? 'bg-slate-100 text-slate-600' }}">{{ $statusLabels[$row->status] ?? $row->status }}</span>
                             </td>

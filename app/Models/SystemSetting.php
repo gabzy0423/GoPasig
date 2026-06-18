@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Support\Facades\Cache;
 
 class SystemSetting extends Model
 {
@@ -15,6 +16,12 @@ class SystemSetting extends Model
         'description'
     ];
 
+    protected static function booted(): void
+    {
+        static::saved(fn ($setting) => Cache::forget("system_setting_{$setting->key}"));
+        static::deleted(fn ($setting) => Cache::forget("system_setting_{$setting->key}"));
+    }
+
     /**
      * Get a system setting value by its key.
      *
@@ -24,7 +31,9 @@ class SystemSetting extends Model
      */
     public static function get(string $key, $default = null)
     {
-        $setting = static::where('key', $key)->first();
-        return $setting ? $setting->value : $default;
+        return Cache::remember("system_setting_{$key}", now()->addSeconds(30), function () use ($key, $default) {
+            $setting = static::where('key', $key)->first();
+            return $setting ? $setting->value : $default;
+        });
     }
 }

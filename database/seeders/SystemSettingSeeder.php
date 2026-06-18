@@ -14,6 +14,8 @@ class SystemSettingSeeder extends Seeder
     {
         $settings = [
             ['key' => 'default_bus_capacity', 'value' => '45', 'description' => 'Default passenger seating capacity for buses when not specified (default: 45)'],
+            ['key' => 'bus_capacity_min', 'value' => '10', 'description' => 'Minimum allowed passenger seating capacity for buses (default: 10)'],
+            ['key' => 'bus_capacity_max', 'value' => '150', 'description' => 'Maximum allowed passenger seating capacity for buses (default: 150)'],
             ['key' => 'captcha_attempt_threshold', 'value' => '3', 'description' => 'Number of failed login attempts before displaying captcha (default: 3)'],
             ['key' => 'delay_threshold', 'value' => '10', 'description' => 'Threshold in minutes to classify a bus trip as delayed (default: 10)'],
             ['key' => 'occupancy_warning_threshold', 'value' => '50', 'description' => 'Bus passenger occupancy percentage threshold to trigger a warning status (default: 50)'],
@@ -61,6 +63,11 @@ class SystemSettingSeeder extends Seeder
                 'description' => 'Points deducted from a driver performance score per delayed schedule (default: 5)',
             ],
             [
+                'key'         => 'license_expiry_warning_threshold_days',
+                'value'       => '30',
+                'description' => 'Number of days in advance to show license expiry warning (default: 30)',
+            ],
+            [
                 'key'         => 'maintenance_due_warning_days',
                 'value'       => '7',
                 'description' => 'Number of days in advance to highlight a maintenance record as due (default: 7)',
@@ -84,6 +91,16 @@ class SystemSettingSeeder extends Seeder
                 'key'         => 'default_dispatch_eta_minutes',
                 'value'       => '5',
                 'description' => 'Default initial ETA in minutes for a bus when it is dispatched (default: 5)',
+            ],
+            [
+                'key'         => 'default_travel_time_minutes',
+                'value'       => '30',
+                'description' => 'Default route travel time in minutes when not specified (default: 30)',
+            ],
+            [
+                'key'         => 'driver_schedule_buffer_minutes',
+                'value'       => '15',
+                'description' => 'Driver fatigue protection buffer in minutes between schedules to prevent back-to-back conflicts (default: 15)',
             ],
             [
                 'key'         => 'sim_rush_spurt_min',
@@ -164,6 +181,31 @@ class SystemSettingSeeder extends Seeder
                 'key'         => 'alert_template_reactive_live_message_en',
                 'value'       => '{total} commuters waiting on {route_name} (Live counter). Threshold is {threshold}! Dispatch immediately.',
                 'description' => 'Reactive live counter threshold alert message in English',
+            ],
+            [
+                'key'         => 'default_maintenance_duration_minutes',
+                'value'       => '120',
+                'description' => 'Default expected duration in minutes for maintenance records when not specified (default: 120)',
+            ],
+            [
+                'key'         => 'default_map_center_lat',
+                'value'       => '14.5690',
+                'description' => 'Default map center latitude coordinate for dashboard overview (default: 14.5690)',
+            ],
+            [
+                'key'         => 'default_map_center_lng',
+                'value'       => '121.0680',
+                'description' => 'Default map center longitude coordinate for dashboard overview (default: 121.0680)',
+            ],
+            [
+                'key'         => 'default_map_zoom',
+                'value'       => '13.5',
+                'description' => 'Default map zoom level for dashboard overview (default: 13.5)',
+            ],
+            [
+                'key'         => 'map_telemetry_polling_interval_ms',
+                'value'       => '10000',
+                'description' => 'Interval in milliseconds for map telemetry updates polling (default: 10000)',
             ],
         ];
 

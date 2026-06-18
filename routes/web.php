@@ -49,33 +49,39 @@ Route::get('/api/commuter/buses', [CommuterController::class, 'busesApi']);
 // Admin Dashboard (Protected)
 Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
+    Route::get('/buses/create', [AdminBusController::class, 'create'])->name('buses.create');
+    Route::get('/buses/{bus}/edit', [AdminBusController::class, 'edit'])->name('buses.edit');
+    Route::get('/drivers/create', [AdminDriverController::class, 'create'])->name('drivers.create');
+    Route::get('/drivers/{driver}', [AdminDriverController::class, 'show'])->name('drivers.show');
+    Route::get('/drivers/{driver}/edit', [AdminDriverController::class, 'edit'])->name('drivers.edit');
+    Route::get('/schedules/create', [AdminScheduleController::class, 'create'])->name('schedules.create');
+    Route::get('/schedules/conflict', [AdminScheduleController::class, 'conflict'])->name('schedules.conflict');
+    Route::get('/maintenance/create', [AdminMaintenanceController::class, 'create'])->name('maintenance.create');
+    Route::get('/alerts/history', [AdminServiceAlertController::class, 'history'])->name('alerts.history');
+});
 
+// Admin API Routes (Protected by Auth, role checks done inside controllers)
+Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/api/analytics', [AdminAnalyticsController::class, 'index'])->name('api.analytics');
     Route::get('/api/fleet-data', [AdminDashboardController::class, 'getFleetData'])->name('api.fleet-data');
     Route::get('/api/settings', [AdminDashboardController::class, 'getSettings'])->name('api.settings.index');
     Route::post('/api/settings', [AdminDashboardController::class, 'saveSetting'])->name('api.settings.store');
 
-    Route::get('/buses/create', [AdminBusController::class, 'create'])->name('buses.create');
-    Route::get('/buses/{bus}/edit', [AdminBusController::class, 'edit'])->name('buses.edit');
     Route::post('/api/buses', [AdminBusController::class, 'store'])->name('api.buses.store');
     Route::put('/api/buses/{bus}', [AdminBusController::class, 'update'])->name('api.buses.update');
     Route::delete('/api/buses/{bus}', [AdminBusController::class, 'destroy'])->name('api.buses.destroy');
     Route::put('/api/buses/{bus}/assign-route', [AdminBusController::class, 'assignRoute'])->name('api.buses.assign-route');
 
-    Route::get('/drivers/create', [AdminDriverController::class, 'create'])->name('drivers.create');
-    Route::get('/drivers/{driver}', [AdminDriverController::class, 'show'])->name('drivers.show');
-    Route::get('/drivers/{driver}/edit', [AdminDriverController::class, 'edit'])->name('drivers.edit');
     Route::get('/api/drivers', [AdminDriverController::class, 'index'])->name('api.drivers.index');
     Route::post('/api/drivers', [AdminDriverController::class, 'store'])->name('api.drivers.store');
     Route::put('/api/drivers/{driver}', [AdminDriverController::class, 'update'])->name('api.drivers.update');
     Route::delete('/api/drivers/{driver}', [AdminDriverController::class, 'destroy'])->name('api.drivers.destroy');
     Route::post('/api/drivers/{driver}/suspend', [AdminDriverController::class, 'toggleSuspend'])->name('api.drivers.suspend');
 
-    Route::get('/schedules/create', [AdminScheduleController::class, 'create'])->name('schedules.create');
-    Route::get('/schedules/conflict', [AdminScheduleController::class, 'conflict'])->name('schedules.conflict');
     Route::get('/api/schedules', [AdminScheduleController::class, 'index'])->name('api.schedules.index');
     Route::post('/api/schedules', [AdminScheduleController::class, 'store'])->name('api.schedules.store');
     Route::put('/api/schedules/{schedule}', [AdminScheduleController::class, 'update'])->name('api.schedules.update');
+    Route::patch('/api/schedules/{schedule}/status', [AdminScheduleController::class, 'updateStatus'])->name('api.schedules.status');
     Route::delete('/api/schedules/{schedule}', [AdminScheduleController::class, 'destroy'])->name('api.schedules.destroy');
 
     Route::post('/api/routes', [AdminRouteController::class, 'store'])->name('api.routes.store');
@@ -86,13 +92,13 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::delete('/api/stops/{stop}', [AdminStopController::class, 'destroy'])->name('api.stops.destroy');
     Route::put('/api/routes/{route}/stops/reorder', [AdminStopController::class, 'reorder'])->name('api.routes.stops.reorder');
 
-    Route::get('/maintenance/create', [AdminMaintenanceController::class, 'create'])->name('maintenance.create');
     Route::get('/api/maintenance', [AdminMaintenanceController::class, 'index'])->name('api.maintenance.index');
+    Route::get('/api/maintenance/{id}', [AdminMaintenanceController::class, 'show'])->name('api.maintenance.show');
     Route::post('/api/maintenance', [AdminMaintenanceController::class, 'store'])->name('api.maintenance.store');
+    Route::post('/api/maintenance/{id}/perform-inspection', [AdminMaintenanceController::class, 'performInspection'])->name('api.maintenance.perform-inspection');
     Route::post('/api/maintenance/{id}/complete', [AdminMaintenanceController::class, 'complete'])->name('api.maintenance.complete');
     Route::delete('/api/maintenance/{id}', [AdminMaintenanceController::class, 'destroy'])->name('api.maintenance.destroy');
 
-    Route::get('/alerts/history', [AdminServiceAlertController::class, 'history'])->name('alerts.history');
     Route::get('/api/alerts', [AdminServiceAlertController::class, 'index'])->name('api.alerts.index');
     Route::post('/api/alerts', [AdminServiceAlertController::class, 'store'])->name('api.alerts.store');
     Route::put('/api/alerts/{id}', [AdminServiceAlertController::class, 'update'])->name('api.alerts.update');

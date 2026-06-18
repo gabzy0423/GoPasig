@@ -118,7 +118,7 @@
                 <div id="pax-load-timeline-legend" class="flex flex-wrap items-center gap-3">
                     <!-- Populated dynamically -->
                 </div>
-                <span class="text-[9px] font-extrabold bg-rose-50 text-[#E24B4A] border border-[#E24B4A]/10 px-2.5 py-0.5 rounded-full uppercase tracking-wider">Ref Limit: 45 pax</span>
+                <span class="text-[9px] font-extrabold bg-rose-50 text-[#E24B4A] border border-[#E24B4A]/10 px-2.5 py-0.5 rounded-full uppercase tracking-wider">Ref Limit: {{ $busCapacityLimit }} pax</span>
             </div>
         </div>
 

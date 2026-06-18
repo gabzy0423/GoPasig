@@ -117,9 +117,12 @@ class IncidentController extends Controller
         $breakdownType = \App\Models\SystemSetting::get('incident_breakdown_type', 'Breakdown');
         if ($validated['type'] === $breakdownType) {
             if ($trip && $trip->bus) {
-                $trip->bus->update(['status' => 'maintenance']);
+                $trip->bus->lockToMaintenance();
             }
         }
+
+        // Recalculate driver performance score
+        \App\Services\DriverPerformanceService::recalculate($trip->driver_id);
 
         return response()->json([
             'success' => true,
@@ -154,13 +157,15 @@ class IncidentController extends Controller
         // If resolved: restore bus status
         if ($newStatus === 'resolved' && $oldStatus !== 'resolved' && $oldType === $breakdownType) {
             if ($incident->trip && $incident->trip->bus) {
-                $incident->trip->bus->update(['status' => 'active']);
+                $bus = $incident->trip->bus;
+                $restoreStatus = $bus->previous_status ?? 'active';
+                $bus->update(['status' => $restoreStatus, 'previous_status' => null]);
             }
         }
         // If reopened: re-apply maintenance status
         elseif ($newStatus !== 'resolved' && $oldStatus === 'resolved' && $oldType === $breakdownType) {
             if ($incident->trip && $incident->trip->bus) {
-                $incident->trip->bus->update(['status' => 'maintenance']);
+                $incident->trip->bus->lockToMaintenance();
             }
         }
 

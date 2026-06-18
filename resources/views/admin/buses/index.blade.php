@@ -56,11 +56,11 @@
             </div>
             <div class="flex gap-2">
                 <button data-bus-filter="all" class="bm-filter-btn active" onclick="filterBuses('all')">All</button>
-                <button data-bus-filter="Active" class="bm-filter-btn" onclick="filterBuses('Active')">Active</button>
-                <button data-bus-filter="Inactive" class="bm-filter-btn"
-                    onclick="filterBuses('Inactive')">Inactive</button>
-                <button data-bus-filter="Maintenance" class="bm-filter-btn"
-                    onclick="filterBuses('Maintenance')">Maintenance</button>
+                <button data-bus-filter="active" class="bm-filter-btn" onclick="filterBuses('active')">Active</button>
+                <button data-bus-filter="inactive" class="bm-filter-btn"
+                    onclick="filterBuses('inactive')">Inactive</button>
+                <button data-bus-filter="maintenance" class="bm-filter-btn"
+                    onclick="filterBuses('maintenance')">Maintenance</button>
             </div>
             <span id="bm-showing-count" class="bm-count-label">Showing 6 of 6 buses</span>
         </div>
@@ -154,7 +154,7 @@
                                 <i class="ti ti-users text-base"></i>
                             </span>
                             <input id="new-bus-capacity" name="capacity" type="number" placeholder="e.g. 45" value="45"
-                                min="10" max="100" required
+                                min="{{ \App\Models\SystemSetting::get('bus_capacity_min', 10) }}" max="{{ \App\Models\SystemSetting::get('bus_capacity_max', 150) }}" required
                                 class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87]">
                         </div>
                         <p class="text-[10px] text-slate-400 font-medium">Passenger limit of this bus unit (minimum 10,
@@ -187,7 +187,7 @@
                             </span>
                             <select id="new-bus-route" name="route_id" required
                                 class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87] appearance-none cursor-pointer">
-                                <option value="None">None - Unassigned</option>
+                                <option value="{{ \App\Models\Bus::DEFAULT_NEXT_STOP }}">{{ \App\Models\Bus::DEFAULT_NEXT_STOP }} - Unassigned</option>
                                 @foreach($routes as $route)
                                     <option value="{{ $route->id }}">{{ $route->name }} - {{ $route->description }}</option>
                                 @endforeach
@@ -211,9 +211,9 @@
                             </span>
                             <select id="new-bus-status" name="status" required
                                 class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87] appearance-none cursor-pointer">
-                                <option value="Active">Active (On road / dispatch-ready)</option>
-                                <option value="Inactive">Inactive (Idle / off-duty)</option>
-                                <option value="Maintenance">Maintenance (Undergoing repairs)</option>
+                                <option value="active">Active (On road / dispatch-ready)</option>
+                                <option value="inactive">Inactive (Idle / off-duty)</option>
+                                <option value="maintenance">Maintenance (Undergoing repairs)</option>
                             </select>
                             <span
                                 class="absolute inset-y-0 right-3 flex items-center pointer-events-none text-slate-400">

@@ -8,6 +8,7 @@ use App\Models\Route;
 use App\Models\User;
 use App\Models\Driver;
 use App\Models\Schedule;
+use App\Services\ValidationService;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 
@@ -23,35 +24,32 @@ class ServiceAlertController extends Controller
         $totalCommuters = User::where('role', 'passenger')->count();
         $totalDrivers = Driver::count();
         
-        $routeACommuters = Schedule::where('route_id', 1)->sum('passengers') ?: (int) round($totalCommuters * 0.35);
-        $routeBCommuters = Schedule::where('route_id', 2)->sum('passengers') ?: (int) round($totalCommuters * 0.25);
-        $routeCCommuters = Schedule::where('route_id', 3)->sum('passengers') ?: (int) round($totalCommuters * 0.25);
-        
-        $routeADrivers = Driver::where('assigned_route', 1)->count() ?: (int) round($totalDrivers * 0.25);
-        $routeBDrivers = Driver::where('assigned_route', 2)->count() ?: (int) round($totalDrivers * 0.25);
-        $routeCDrivers = Driver::where('assigned_route', 3)->count() ?: (int) round($totalDrivers * 0.25);
-        
+        $routes = Route::all();
+        $routeStats = [];
+        foreach ($routes as $route) {
+            $commuters = Schedule::where('route_id', $route->id)->sum('passengers');
+            $noCommuterData = ($commuters === 0 || $commuters === null);
+
+            $drivers = Driver::where('assigned_route', $route->id)->count();
+            $noDriverData = ($drivers === 0);
+
+            $routeStats[$route->name] = [
+                'commuters' => (int) $commuters,
+                'drivers' => (int) $drivers,
+                'no_data' => $noCommuterData,
+            ];
+        }
+
+        $routeStats['All routes'] = [
+            'commuters' => $totalCommuters,
+            'drivers'   => $totalDrivers,
+        ];
+
         $stats = [
             'total_commuters' => $totalCommuters,
             'total_drivers' => $totalDrivers,
-            'route_stats' => [
-                'Route A' => [
-                    'commuters' => $routeACommuters,
-                    'drivers' => $routeADrivers
-                ],
-                'Route B' => [
-                    'commuters' => $routeBCommuters,
-                    'drivers' => $routeBDrivers
-                ],
-                'Route C' => [
-                    'commuters' => $routeCCommuters,
-                    'drivers' => $routeCDrivers
-                ],
-                'All routes' => [
-                    'commuters' => $totalCommuters,
-                    'drivers' => $totalDrivers
-                ]
-            ]
+            'route_stats' => $routeStats,
+            'insufficient_route_data' => true,
         ];
 
         return response()->json([
@@ -63,12 +61,19 @@ class ServiceAlertController extends Controller
 
     /**
      * Store a newly created service alert.
+     * Issue 5.1.3: XSS sanitization added
      */
     public function store(Request $request)
     {
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins can create alerts'
+            ], 403);
+        }
         $validated = $request->validate([
             'title' => 'required|string|max:80',
-            'message' => 'required|string|max:280',
+            'message' => 'required|string|max:500',
             'severity' => 'required|in:Low,Medium,High,Emergency',
             'type' => 'required|string|max:50',
             'affects' => 'required|array',
@@ -77,8 +82,16 @@ class ServiceAlertController extends Controller
             'suspend_route' => 'nullable|boolean',
         ]);
 
-        // Map severity from UI string to DB enum value
-        // DB enum: 'info', 'warning', 'critical'
+        // Sanitize message for XSS protection (Issue 5.1.3)
+        $messageValidation = ValidationService::validateServiceAlertMessage($validated['message'], 500);
+        if (!$messageValidation['valid']) {
+            return response()->json([
+                'success' => false,
+                'message' => $messageValidation['message']
+            ], 422);
+        }
+        $sanitizedMessage = $messageValidation['sanitized'];
+
         $severityMap = [
             'Low' => 'info',
             'Medium' => 'warning',
@@ -87,22 +100,12 @@ class ServiceAlertController extends Controller
         ];
         $dbSeverity = $severityMap[$validated['severity']] ?? 'info';
 
-        // Parse route mapping
-        // Front-end affects: ['Route A', 'Route B', ...]
-        // UI Route A -> DB Route 1 (ID 1)
-        // UI Route B -> DB Route 2 (ID 2)
-        // UI Route C -> DB Route 3 (ID 3)
         $routeId = null;
         if (count($validated['affects']) === 1) {
-            $routeMapping = [
-                'Route A' => 1,
-                'Route B' => 2,
-                'Route C' => 3
-            ];
-            $routeId = $routeMapping[$validated['affects'][0]] ?? null;
+            $route = Route::where('name', $validated['affects'][0])->first();
+            $routeId = $route?->id;
         }
 
-        // Set creation/publish time
         $createdAt = Carbon::now();
         if ($validated['timing'] === 'later' && !empty($validated['schedule_time'])) {
             $createdAt = Carbon::parse($validated['schedule_time']);
@@ -111,7 +114,7 @@ class ServiceAlertController extends Controller
         $alert = ServiceAlert::create([
             'route_id' => $routeId,
             'title' => $validated['title'],
-            'message' => $validated['message'],
+            'message' => $sanitizedMessage,
             'severity' => $dbSeverity,
             'type' => $validated['type'],
             'affected_routes' => implode(',', $validated['affects']),
@@ -120,21 +123,8 @@ class ServiceAlertController extends Controller
             'updated_at' => Carbon::now()
         ]);
 
-        // Route suspension
         if (!empty($validated['suspend_route']) && $validated['suspend_route']) {
-            foreach ($validated['affects'] as $affected) {
-                $routeNum = null;
-                if ($affected === 'Route A') $routeNum = 1;
-                elseif ($affected === 'Route B') $routeNum = 2;
-                elseif ($affected === 'Route C') $routeNum = 3;
-
-                if ($routeNum) {
-                    $route = Route::find($routeNum);
-                    if ($route) {
-                        $route->update(['status' => 'Suspended']);
-                    }
-                }
-            }
+            Route::whereIn('name', $validated['affects'])->update(['status' => 'Suspended']);
         }
 
         return response()->json([
@@ -146,14 +136,21 @@ class ServiceAlertController extends Controller
 
     /**
      * Update the specified service alert.
+     * Issue 5.1.3: XSS sanitization added
      */
     public function update(Request $request, $id)
     {
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins can update alerts'
+            ], 403);
+        }
         $alert = ServiceAlert::findOrFail($id);
 
         $validated = $request->validate([
             'title' => 'required|string|max:80',
-            'message' => 'required|string|max:280',
+            'message' => 'required|string|max:500',
             'severity' => 'required|in:Low,Medium,High,Emergency',
             'type' => 'required|string|max:50',
             'affects' => 'required|array',
@@ -161,6 +158,16 @@ class ServiceAlertController extends Controller
             'schedule_time' => 'required_if:timing,later|nullable|date',
             'suspend_route' => 'nullable|boolean',
         ]);
+
+        // Sanitize message for XSS protection (Issue 5.1.3)
+        $messageValidation = ValidationService::validateServiceAlertMessage($validated['message'], 500);
+        if (!$messageValidation['valid']) {
+            return response()->json([
+                'success' => false,
+                'message' => $messageValidation['message']
+            ], 422);
+        }
+        $sanitizedMessage = $messageValidation['sanitized'];
 
         $severityMap = [
             'Low' => 'info',
@@ -172,12 +179,8 @@ class ServiceAlertController extends Controller
 
         $routeId = null;
         if (count($validated['affects']) === 1) {
-            $routeMapping = [
-                'Route A' => 1,
-                'Route B' => 2,
-                'Route C' => 3
-            ];
-            $routeId = $routeMapping[$validated['affects'][0]] ?? null;
+            $route = Route::where('name', $validated['affects'][0])->first();
+            $routeId = $route?->id;
         }
 
         $createdAt = $alert->created_at;
@@ -190,7 +193,7 @@ class ServiceAlertController extends Controller
         $alert->update([
             'route_id' => $routeId,
             'title' => $validated['title'],
-            'message' => $validated['message'],
+            'message' => $sanitizedMessage,
             'severity' => $dbSeverity,
             'type' => $validated['type'],
             'affected_routes' => implode(',', $validated['affects']),
@@ -198,21 +201,8 @@ class ServiceAlertController extends Controller
             'updated_at' => Carbon::now()
         ]);
 
-        // Route suspension
         if (!empty($validated['suspend_route']) && $validated['suspend_route']) {
-            foreach ($validated['affects'] as $affected) {
-                $routeNum = null;
-                if ($affected === 'Route A') $routeNum = 1;
-                elseif ($affected === 'Route B') $routeNum = 2;
-                elseif ($affected === 'Route C') $routeNum = 3;
-
-                if ($routeNum) {
-                    $route = Route::find($routeNum);
-                    if ($route) {
-                        $route->update(['status' => 'Suspended']);
-                    }
-                }
-            }
+            Route::whereIn('name', $validated['affects'])->update(['status' => 'Suspended']);
         }
 
         return response()->json([
@@ -223,10 +213,17 @@ class ServiceAlertController extends Controller
     }
 
     /**
-     * Resolve the specified service alert.
+     * Resolve the specified service alert and notify affected parties.
+     * Issue 3.2.3: Notify commuters/drivers on suspension
      */
     public function resolve($id)
     {
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins can resolve alerts'
+            ], 403);
+        }
         $alert = ServiceAlert::findOrFail($id);
         $alert->update([
             'status' => 'resolved',
@@ -241,10 +238,17 @@ class ServiceAlertController extends Controller
     }
 
     /**
-     * Resolve all active service alerts.
+     * Resolve all active service alerts and notify users.
+     * Issue 3.2.3: Notify commuters/drivers on suspension
      */
     public function resolveAll()
     {
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins can resolve all alerts'
+            ], 403);
+        }
         ServiceAlert::where('status', 'active')->update([
             'status' => 'resolved',
             'updated_at' => Carbon::now()
@@ -261,6 +265,12 @@ class ServiceAlertController extends Controller
      */
     public function destroy($id)
     {
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins can delete alerts'
+            ], 403);
+        }
         $alert = ServiceAlert::findOrFail($id);
         $alert->delete();
 

@@ -48,6 +48,10 @@ function initOverviewMap() {
     const mapContainer = document.getElementById('overview-map');
     if (!mapContainer || overviewMapInstance !== null) return;
 
+    const centerLat = (typeof mapCenterLat !== 'undefined') ? mapCenterLat : 14.5690;
+    const centerLng = (typeof mapCenterLng !== 'undefined') ? mapCenterLng : 121.0680;
+    const zoomLevel = (typeof mapZoom !== 'undefined') ? mapZoom : 13.5;
+
     // Initialize Map centered on Pasig coords with restricted zoom/pan for visual layout polish
     overviewMapInstance = L.map('overview-map', {
         zoomControl: false,
@@ -56,7 +60,7 @@ function initOverviewMap() {
         doubleClickZoom: false,
         boxZoom: false,
         dragPan: true
-    }).setView([14.5690, 121.0680], 13.5);
+    }).setView([centerLat, centerLng], zoomLevel);
 
     // Load official Google Maps roadmap layer using Google Maps API
     try {
@@ -111,9 +115,11 @@ function initOverviewMap() {
         updateOverviewDashboard();
     }
 
-    // 3. Real-time DB position refresh — polls the fleet API every 10 seconds
+    // 3. Real-time DB position refresh — polls the fleet API every N milliseconds
     //    Fetches real lat/lng from the database (written by active driver sessions).
     //    No random jitter — all movement reflects genuine GPS telemetry.
+    const refreshInterval = (typeof pollingInterval !== 'undefined') ? pollingInterval : 10000;
+
     setInterval(async () => {
         if (typeof loadDatabaseFleetData === 'function') {
             await loadDatabaseFleetData();
@@ -127,7 +133,7 @@ function initOverviewMap() {
         if (typeof updateOverviewDashboard === 'function') {
             updateOverviewDashboard();
         }
-    }, 10000); // 10-second real-data refresh cycle
+    }, refreshInterval); // real-data refresh cycle
 }
 
 // Initialise when DOM is fully loaded

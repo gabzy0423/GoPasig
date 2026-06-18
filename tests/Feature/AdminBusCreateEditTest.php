@@ -25,7 +25,10 @@ class AdminBusCreateEditTest extends TestCase
 
         $response = $this->get('/admin/buses/create');
 
-        $response->assertRedirect('/admin/dashboard#buses');
+        $response->assertStatus(200);
+        $response->assertViewHas('minCapacity', 10);
+        $response->assertViewHas('maxCapacity', 150);
+        $response->assertViewHas('defaultCapacity', 45);
     }
 
     public function test_unauthorized_users_cannot_access_bus_create_page(): void

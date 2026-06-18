@@ -411,7 +411,10 @@ class DriverController extends Controller
                     // If bus is within configurable threshold, automatically advance to next stop in sequence
                     $autoAdvanceThreshold = (float) \App\Models\SystemSetting::get('stop_auto_advance_distance', 100);
                     if ($distanceToStop <= $autoAdvanceThreshold) {
-                        $currentIndex = $stops->indexOf($currentStop);
+                        $currentIndex = $stops->search(fn ($stop) => $stop->is($currentStop));
+                        if ($currentIndex === false) {
+                            $currentIndex = 0;
+                        }
                         $nextIndex = ($currentIndex + 1) % $stops->count();
                         $currentStop = $stops->get($nextIndex);
 

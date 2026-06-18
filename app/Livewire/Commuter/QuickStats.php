@@ -3,27 +3,19 @@
 namespace App\Livewire\Commuter;
 
 use Livewire\Component;
-use App\Models\Bus;
-use App\Models\Schedule;
-use App\Models\ServiceAlert;
+use App\Services\CommuterDashboardCacheService;
 
 class QuickStats extends Component
 {
     public function render()
     {
-        $activeBusesCollection = Bus::with('route')->where('status', 'active')->get();
-        $activeBuses = $activeBusesCollection->count();
-        $delayedBuses = $activeBusesCollection->filter(function ($bus) {
-            return $bus->eta >= $bus->getRouteDelayThreshold();
-        })->count();
-        $passengersToday = Schedule::sum('passengers');
-        $openAlerts = ServiceAlert::where('status', 'active')->count();
+        $stats = app(CommuterDashboardCacheService::class)->dashboardData()['quickStats'];
 
         return view('livewire.commuter.quick-stats', [
-            'activeBuses' => $activeBuses,
-            'delayedBuses' => $delayedBuses,
-            'passengersToday' => $passengersToday,
-            'openAlerts' => $openAlerts,
+            'activeBuses' => $stats['active_buses'],
+            'delayedBuses' => $stats['delayed_buses'],
+            'passengersToday' => $stats['passengers_today'],
+            'openAlerts' => $stats['open_alerts'],
         ]);
     }
 }

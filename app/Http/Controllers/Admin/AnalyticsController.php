@@ -23,10 +23,46 @@ class AnalyticsController extends Controller
     /**
      * Fetch all dashboard analytics data dynamically.
      */
-    public function index()
+    public function index(Request $request)
     {
+        // Parse date range parameters
+        $startDate = $request->query('start') ? Carbon::parse($request->query('start')) : Carbon::today();
+        $endDate = $request->query('end') ? Carbon::parse($request->query('end')) : Carbon::today();
+        
+        // If no explicit date range, default based on system setting
+        if (!$request->has('start') && !$request->has('end')) {
+            $dateRange = SystemSetting::get('analytics_default_date_range', 'today');
+            
+            switch ($dateRange) {
+                case 'yesterday':
+                    $rangeStart = Carbon::yesterday();
+                    $rangeEnd = Carbon::yesterday();
+                    break;
+                case 'week':
+                    $rangeStart = Carbon::now()->startOfWeek();
+                    $rangeEnd = Carbon::now()->endOfWeek();
+                    break;
+                case 'month':
+                    $rangeStart = Carbon::now()->startOfMonth();
+                    $rangeEnd = Carbon::now()->endOfMonth();
+                    break;
+                case 'today':
+                default:
+                    $rangeStart = Carbon::today();
+                    $rangeEnd = Carbon::today();
+                    break;
+            }
+        } else {
+            // Custom range
+            $rangeStart = $startDate;
+            $rangeEnd = $endDate;
+        }
+
+        // Fetch bus capacity limit from SystemSetting (not hardcoded)
+        $busCapacityLimit = (int) SystemSetting::get('bus_capacity_default', 45);
+
         // 1. KPI Metrics
-        $todaySchedules = Schedule::whereDate('created_at', Carbon::today());
+        $todaySchedules = Schedule::whereBetween('created_at', [$rangeStart->toDateString(), $rangeEnd->toDateString()]);
 
         $totalPaxToday = $todaySchedules->sum('passengers');
         $avgPaxTrip = round($todaySchedules->avg('passengers'), 1) ?: 0;
@@ -46,8 +82,10 @@ class AnalyticsController extends Controller
         $startOfWeek = Carbon::now()->startOfWeek()->toDateString();
         $endOfWeek = Carbon::now()->endOfWeek()->toDateString();
         $paxThisWeek = DemandHistory::whereBetween('date', [$startOfWeek, $endOfWeek])->sum('total_commuters') + $totalPaxToday;
-        if ($paxThisWeek < $totalPaxToday) {
-            $paxThisWeek = $totalPaxToday * 7;
+        $insufficientWeeklyData = false;
+        // Flag when we don't have enough historical data
+        if ($paxThisWeek === 0 && $totalPaxToday === 0) {
+            $insufficientWeeklyData = true;
         }
 
         // Calculate yesterday's metrics dynamically
@@ -84,6 +122,7 @@ class AnalyticsController extends Controller
             'total_buses' => $totalBuses,
             'on_time_rate' => $onTimeRate,
             'delayed_trips' => $delayedCount,
+            'insufficient_data' => $insufficientWeeklyData,
         ];
 
         // 2. Hourly Ridership by configured time slots
@@ -238,7 +277,7 @@ class AnalyticsController extends Controller
                 'depTime' => Carbon::parse($s->departure_time)->format('g:i A'),
                 'arrTime' => Carbon::parse($s->arrival_time)->format('g:i A'),
                 'boarded' => $s->passengers,
-                'alighted' => $s->passengers, // logical completed trip total alighting
+                'alighted' => $s->passengers,
                 'peakLoad' => $s->passengers,
                 'capacity' => $capacityPct,
             ];
@@ -258,7 +297,7 @@ class AnalyticsController extends Controller
 
             $busSummaryCards[] = [
                 'plate' => $bus->plate_number,
-                'status' => $bus->status === 'active' ? 'Active' : ($bus->status === 'maintenance' ? 'Maintenance' : 'Idle'),
+                'status' => ucfirst($bus->status),
                 'trips' => $tripsCount,
                 'totalPax' => $busPaxSum,
                 'avgPax' => $busAvg,
@@ -280,10 +319,6 @@ class AnalyticsController extends Controller
                 ->where('time_slot', $dbTimeSlot)
                 ->avg('total_commuters');
 
-            $histAvg = DemandHistory::where('day_of_week', $dayTomorrow)
-                ->where('time_slot', $dbTimeSlot)
-                ->avg('total_commuters');
-
             if ($histAvg !== null) {
                 $predPax = round($histAvg);
             } else {
@@ -291,8 +326,8 @@ class AnalyticsController extends Controller
                 $predPax = 0;
             }
 
-            // Recommended buses based on predicted passenger load (assuming bus capacity configured in settings)
-            $recBuses = (int) ceil($predPax / Bus::getDefaultCapacity());
+            // Recommended buses based on predicted passenger load (using SystemSetting for capacity)
+            $recBuses = (int) ceil($predPax / $busCapacityLimit);
 
             // Count actual scheduled trips in this time slot template
             $schedBuses = Schedule::where('departure_time', '>=', $slotConfig->start_time)
@@ -366,8 +401,6 @@ class AnalyticsController extends Controller
                     $total += $pax;
                 }
 
-
-
                 $dataRow['total'] = $total;
                 $historicalTrend[] = $dataRow;
             }
@@ -386,6 +419,7 @@ class AnalyticsController extends Controller
             'forecastTable' => $forecastTable,
             'driverPerformance' => $driverPerformance,
             'historicalTrend' => $historicalTrend,
+            'busCapacityLimit' => $busCapacityLimit,
         ]);
     }
 }

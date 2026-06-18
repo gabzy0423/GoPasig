@@ -50,9 +50,9 @@ function renderBusesTable() {
             <td class="bm-td"><span class="${routeClass}">${routeLabel}</span></td>
             <td class="bm-td font-semibold text-slate-700">${bus.driver}</td>
             <td class="bm-td font-bold text-center text-slate-600">${bus.capacity} seats</td>
-            <td class="bm-td font-bold text-center text-slate-600">${bus.status === 'Active' ? bus.passengers : '—'}</td>
-            <td class="bm-td font-bold text-center text-slate-600">${bus.status === 'Active' ? `${bus.speed} km/h` : '—'}</td>
-            <td class="bm-td font-semibold text-slate-500">${bus.status === 'Active' ? bus.nextStop : '—'}</td>
+            <td class="bm-td font-bold text-center text-slate-600">${bus.status === 'active' ? bus.passengers : '—'}</td>
+            <td class="bm-td font-bold text-center text-slate-600">${bus.status === 'active' ? `${bus.speed} km/h` : '—'}</td>
+            <td class="bm-td font-semibold text-slate-500">${bus.status === 'active' ? bus.nextStop : '—'}</td>
             <td class="bm-td"><span class="inline-flex rounded-full ${badgeClass} px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">${bus.status}</span></td>
             <td class="bm-td text-right shrink-0">
                 <div class="flex justify-end gap-2">
@@ -79,9 +79,9 @@ function updateBusSummaryStats() {
     let maintenance = 0;
 
     fleetData.forEach(bus => {
-        if (bus.status === 'Active') active++;
-        else if (bus.status === 'Inactive') inactive++;
-        else if (bus.status === 'Maintenance') maintenance++;
+        if (bus.status === 'active') active++;
+        else if (bus.status === 'inactive') inactive++;
+        else if (bus.status === 'maintenance') maintenance++;
     });
 
     const totalEl = document.getElementById('bm-stat-total');
@@ -218,7 +218,7 @@ async function handleBusSubmit(event) {
         driver_name: driver,
         capacity: parseInt(capacity),
         route_id: route === 'None' ? null : parseInt(route),
-        status: status.toLowerCase()
+        status: status  // Already lowercase from form
     };
 
     const isEdit = editId !== "";

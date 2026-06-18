@@ -183,4 +183,50 @@
             </div>
         </form>
     </div>
+
 </section>
+
+<!-- INLINE SCRIPT: License Expiry Warning Logic with Dynamic Threshold -->
+<script>
+    // Inject license warning threshold from PHP controller
+    const licenseWarningDays = {{ $licenseWarningDays }};
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const expiryInput = document.getElementById('df-expiry');
+        const warnDiv = document.getElementById('df-expiry-warn');
+        const warnText = document.getElementById('df-expiry-warn-text');
+
+        // Listen for date change events
+        expiryInput.addEventListener('change', () => {
+            checkLicenseExpiry();
+        });
+
+        // Also check on page load if form is visible
+        const checkLicenseExpiry = () => {
+            const expiryValue = expiryInput.value;
+            if (!expiryValue) {
+                warnDiv.classList.add('hidden');
+                return;
+            }
+
+            const selectedDate = new Date(expiryValue);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            // Calculate difference in days
+            const timeDiff = selectedDate - today;
+            const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+
+            // Show warning if expiring within threshold days or already expired
+            if (daysDiff <= licenseWarningDays && daysDiff > 0) {
+                warnDiv.classList.remove('hidden');
+                warnText.textContent = `License expiring in ${daysDiff} day(s)!`;
+            } else if (daysDiff <= 0) {
+                warnDiv.classList.remove('hidden');
+                warnText.textContent = 'License has already expired!';
+            } else {
+                warnDiv.classList.add('hidden');
+            }
+        };
+    });
+</script>

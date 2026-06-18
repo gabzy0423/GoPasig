@@ -24,7 +24,7 @@ class GoPasigScenariosTest extends TestCase
         $dispatcher = User::factory()->create(['role' => 'dispatcher']);
 
         $route = Route::create([
-            'name' => 'Route 1',
+            'name' => 'Route A',
             'description' => 'Pasig City Hall to Megamall',
             'polyline_coordinates' => [[14.5593, 121.0805]],
             'status' => 'Active',
@@ -84,7 +84,7 @@ class GoPasigScenariosTest extends TestCase
     public function test_breakdown_and_maintenance_alerts_commuter(): void
     {
         $route = Route::create([
-            'name' => 'Route 1',
+            'name' => 'Route A',
             'description' => 'Pasig Route',
             'polyline_coordinates' => [[14.5593, 121.0805]],
             'status' => 'Active',

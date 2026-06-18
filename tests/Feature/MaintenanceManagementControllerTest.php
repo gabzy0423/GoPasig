@@ -18,7 +18,7 @@ class MaintenanceManagementControllerTest extends TestCase
 
         $route = Route::create([
             'id' => 1,
-            'name' => 'Route 1',
+            'name' => 'Route A',
             'description' => 'SPED to Pasig City Hall',
             'polyline_coordinates' => [[14.5593, 121.0805]],
             'status' => 'Active',

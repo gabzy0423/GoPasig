@@ -337,6 +337,7 @@ function initAnalyticsDashboard() {
 
     const ctxTimeline = document.getElementById('pax-load-timeline-chart').getContext('2d');
     if (charts['timeline']) charts['timeline'].destroy();
+    const dynamicCapacity = typeof busCapacityLimit !== 'undefined' ? busCapacityLimit : 45;
     charts['timeline'] = new Chart(ctxTimeline, {
         type: 'line',
         data: {
@@ -364,14 +365,14 @@ function initAnalyticsDashboard() {
                     annotations: {
                         maxCap: {
                             type: 'line',
-                            yMin: 45,
-                            yMax: 45,
+                            yMin: dynamicCapacity,
+                            yMax: dynamicCapacity,
                             borderColor: '#E24B4A',
                             borderWidth: 1.5,
                             borderDash: [4, 4],
                             label: {
                                 display: true,
-                                content: 'Max capacity (45)',
+                                content: `Max capacity (${dynamicCapacity})`,
                                 position: 'end',
                                 font: { size: 9, weight: 'bold', family: 'Plus Jakarta Sans' },
                                 color: '#E24B4A',

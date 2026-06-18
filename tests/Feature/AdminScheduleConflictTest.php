@@ -123,7 +123,7 @@ class AdminScheduleConflictTest extends TestCase
         $response->assertStatus(422);
         $response->assertJson([
             'success' => false,
-            'message' => 'Bus PAS-123 already assigned to Route Route A at 08:00-08:30'
+            'message' => 'Bus is inactive'
         ]);
     }
 

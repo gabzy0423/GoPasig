@@ -218,7 +218,7 @@
 
     // Setup segmented button controls and pill selection checkmarks at start
     function bindAnalyticsInteractiveEvents() {
-        // Date range segmented buttons toggle active class
+        // Date range segmented buttons toggle active class + AJAX request
         const dateSegment = document.getElementById('date-range-segment');
         if (dateSegment) {
             dateSegment.querySelectorAll('button').forEach(btn => {
@@ -228,6 +228,57 @@
                         b.className = "px-3 py-1 flex-1 transition hover:text-slate-800 cursor-pointer";
                     });
                     this.className = "bg-white text-[#003F87] rounded-md px-3 py-1 flex-1 transition shadow-sm cursor-pointer";
+                    
+                    // Determine date range based on button text
+                    const buttonText = this.textContent.trim();
+                    let startDate, endDate;
+                    const today = new Date();
+                    
+                    if (buttonText === 'Today') {
+                        startDate = today.toISOString().split('T')[0];
+                        endDate = today.toISOString().split('T')[0];
+                    } else if (buttonText === 'Yesterday') {
+                        const yesterday = new Date(today);
+                        yesterday.setDate(yesterday.getDate() - 1);
+                        startDate = yesterday.toISOString().split('T')[0];
+                        endDate = yesterday.toISOString().split('T')[0];
+                    } else if (buttonText === 'Weekly') {
+                        const weekAgo = new Date(today);
+                        weekAgo.setDate(weekAgo.getDate() - 7);
+                        startDate = weekAgo.toISOString().split('T')[0];
+                        endDate = today.toISOString().split('T')[0];
+                    } else if (buttonText === 'Monthly') {
+                        const monthAgo = new Date(today);
+                        monthAgo.setDate(monthAgo.getDate() - 30);
+                        startDate = monthAgo.toISOString().split('T')[0];
+                        endDate = today.toISOString().split('T')[0];
+                    }
+                    
+                    // Send AJAX request to fetch filtered analytics data
+                    if (startDate && endDate) {
+                        fetch(`/admin/api/analytics?start=${startDate}&end=${endDate}`)
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    // Update global window variables with new data
+                                    window.kpisData = data.kpis;
+                                    window.hourlyRidershipData = data.hourlyRidership;
+                                    window.routeComparisonData = data.routeComparison;
+                                    window.heatmapData = data.heatmap;
+                                    window.stopBoardingData = data.stopBoarding;
+                                    window.tripData = data.tripPaxTable || [];
+                                    window.busSummaryCardsData = data.busSummaryCards;
+                                    window.forecastData = data.forecastTable;
+                                    window.driverPerformanceData = data.driverPerformance;
+                                    window.historicalTrendData = data.historicalTrend;
+                                    window.busCapacityLimit = data.busCapacityLimit || 45;
+                                    
+                                    // Re-initialize all charts with new data
+                                    initAnalyticsDashboard();
+                                }
+                            })
+                            .catch(error => console.error('Analytics data fetch error:', error));
+                    }
                 });
             });
         }

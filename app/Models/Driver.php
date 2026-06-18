@@ -26,11 +26,9 @@ class Driver extends Model
         'emergency_contact',
         'performance_score',
         'incidents_30',
-        'trip_history',
     ];
 
     protected $casts = [
-        'trip_history' => 'array',
         'license_expiry' => 'date',
         'performance_score' => 'integer',
         'incidents_30' => 'integer',
@@ -62,5 +60,34 @@ class Driver extends Model
     public function incidents()
     {
         return $this->hasMany(Incident::class);
+    }
+
+    /**
+     * Get the trip logs for this driver.
+     */
+    public function tripLogs()
+    {
+        return $this->hasMany(TripLog::class);
+    }
+
+    /**
+     * Get the route certifications for this driver
+     */
+    public function routeCertifications()
+    {
+        return $this->hasMany(DriverRouteCertification::class);
+    }
+
+    /**
+     * Get active route certifications
+     */
+    public function activeRouteCertifications()
+    {
+        return $this->routeCertifications()
+            ->where('status', 'active')
+            ->where(function ($query) {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            });
     }
 }

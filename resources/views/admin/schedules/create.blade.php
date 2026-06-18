@@ -184,10 +184,13 @@
     // Route duration mapping to calculate estimated arrival times
     window.ROUTE_DURATIONS = window.ROUTE_DURATIONS || {
         @foreach($routes as $route)
-            "{{ $route->id }}": {{ $route->travel_time_minutes ?? 30 }},
+            "{{ $route->id }}": {{ $route->travel_time_minutes ?? $defaultTravelTime ?? 30 }},
         @endforeach
     };
     var ROUTE_DURATIONS = window.ROUTE_DURATIONS;
+
+    // Schedule conflict buffer (driver fatigue protection) in minutes
+    const scheduleBuffer = {{ $scheduleBuffer ?? 15 }};
 
     // Store raw schedules for conflict checks
     window.schedulesData = window.schedulesData || [];
@@ -376,7 +379,7 @@
                 const sDuration = ROUTE_DURATIONS[s.routeId] || 30;
                 const sEnd = sStart + sDuration;
 
-                const buffer = isSameDriver ? 15 : 0;
+                const buffer = isSameDriver ? scheduleBuffer : 0;
                 return (startMin < (sEnd + buffer)) && (sStart < (endMin + buffer));
             }
             return false;

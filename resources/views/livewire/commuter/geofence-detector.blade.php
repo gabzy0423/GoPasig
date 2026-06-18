@@ -320,18 +320,12 @@
 
                 <!-- DESTINATION INPUT & CHECK-IN FORM -->
                 @if($activeStop)
-                    @php
-                        $destStops = \App\Models\Stop::where('route_id', $activeStop['route_id'])
-                            ->where('sequence', '>', $activeStop['sequence'])
-                            ->orderBy('sequence')
-                            ->get();
-                    @endphp
-                    @if($destStops->isNotEmpty())
+                    @if($destinationStops->isNotEmpty())
                         <div class="flex flex-col gap-2.5 mt-4 pt-4 border-t border-slate-100">
                             <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider pl-0.5">Saan ang iyong destinasyon?</span>
                             <select wire:model.live="selectedDestinationId" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-[#003F87] cursor-pointer">
                                 <option value="">Pumili ng destinasyon...</option>
-                                @foreach($destStops as $ds)
+                                @foreach($destinationStops as $ds)
                                     <option value="{{ $ds->id }}">{{ $ds->name }}</option>
                                 @endforeach
                             </select>

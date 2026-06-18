@@ -50,6 +50,11 @@ class Route extends Model
         return $this->hasMany(Bus::class);
     }
 
+    public function schedules()
+    {
+        return $this->hasMany(Schedule::class)->orderBy('departure_time');
+    }
+
     public function durations()
     {
         return $this->hasMany(RouteDuration::class);

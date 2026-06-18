@@ -24,7 +24,8 @@ class AdminDriverCreateEditShowTest extends TestCase
 
         $response = $this->get('/admin/drivers/create');
 
-        $response->assertRedirect('/admin/dashboard#drivers-create');
+        $response->assertStatus(200);
+        $response->assertViewHas('licenseWarningDays', 30);
     }
 
     public function test_unauthorized_users_cannot_access_driver_create_page(): void
@@ -55,7 +56,6 @@ class AdminDriverCreateEditShowTest extends TestCase
             'pax_today' => 90,
             'performance_score' => 98,
             'incidents_30' => 0,
-            'trip_history' => [],
         ]);
 
         $response = $this->get("/admin/drivers/{$driver->id}");
@@ -81,7 +81,6 @@ class AdminDriverCreateEditShowTest extends TestCase
             'pax_today' => 0,
             'performance_score' => 100,
             'incidents_30' => 0,
-            'trip_history' => [],
         ]);
 
         $response = $this->get("/admin/drivers/{$driver->id}/edit");
@@ -135,7 +134,6 @@ class AdminDriverCreateEditShowTest extends TestCase
             'pax_today' => 0,
             'performance_score' => 100,
             'incidents_30' => 0,
-            'trip_history' => [],
         ]);
 
         $response = $this->putJson("/admin/api/drivers/{$driver->id}", [
@@ -180,7 +178,6 @@ class AdminDriverCreateEditShowTest extends TestCase
             'pax_today' => 0,
             'performance_score' => 100,
             'incidents_30' => 0,
-            'trip_history' => [],
         ]);
 
         // Suspend

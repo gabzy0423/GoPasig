@@ -9,6 +9,7 @@ use App\Models\Bus;
 use App\Models\Route;
 use App\Models\ColorPalette;
 use App\Models\SystemSetting;
+use App\Services\MaintenanceService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -39,6 +40,7 @@ class MaintenanceManagementController extends Controller
 
     /**
      * Get JSON data for maintenance dashboard AJAX refreshing.
+     * Updated columns: Remove Route & Cost, Add Inspector Name
      */
     public function getMaintenanceData(Request $request)
     {
@@ -56,11 +58,10 @@ class MaintenanceManagementController extends Controller
                 'id' => $row->id,
                 'maintenance_date' => $row->scheduled_at->timezone('Asia/Manila')->format('M d, Y H:i'),
                 'bus_id' => $row->bus_id, // plate number through accessor
-                'assigned_route' => $row->assigned_route ?: '—',
                 'type' => $row->type,
                 'description' => $row->description,
                 'technician_name' => $row->technician_name ?: '—',
-                'cost_php' => number_format((float)$row->cost_php, 2),
+                'inspected_by' => $row->inspected_by ?: '—',
                 'status' => $row->status,
             ];
         });
@@ -112,6 +113,8 @@ class MaintenanceManagementController extends Controller
                 'cost_formatted' => number_format((float)$record->cost_php, 2),
                 'status' => $record->status,
                 'expected_duration_minutes' => $record->expected_duration_minutes,
+                'inspected_by' => $record->inspected_by ?: '',
+                'inspection_passed' => $record->inspection_passed,
             ]
         ]);
     }
@@ -201,11 +204,11 @@ class MaintenanceManagementController extends Controller
             $oldStatus = $record->status;
             $record->update($data);
 
-            $this->handleBusStatusSideEffects($record->getRawOriginal('bus_id'), $oldStatus, $validated['status'], $id);
+            MaintenanceService::handleBusStatusSideEffects($record->getRawOriginal('bus_id'), $oldStatus, $validated['status'], $id);
             $msg = 'Maintenance schedule updated successfully.';
         } else {
             $record = MaintenanceRecord::create($data);
-            $this->handleBusStatusSideEffects($record->getRawOriginal('bus_id'), null, $validated['status']);
+            MaintenanceService::handleBusStatusSideEffects($record->getRawOriginal('bus_id'), null, $validated['status']);
             $msg = 'Maintenance scheduled successfully.';
         }
 
@@ -230,7 +233,7 @@ class MaintenanceManagementController extends Controller
         $status = $validated['status'];
 
         $record->update(['status' => $status]);
-        $this->handleBusStatusSideEffects($record->getRawOriginal('bus_id'), $oldStatus, $status, $id);
+        MaintenanceService::handleBusStatusSideEffects($record->getRawOriginal('bus_id'), $oldStatus, $status, $id);
 
         return response()->json([
             'success' => true,
@@ -251,7 +254,7 @@ class MaintenanceManagementController extends Controller
 
         // Revert bus status if deleted record was in_progress
         if ($oldStatus === 'in_progress') {
-            $this->handleBusStatusSideEffects($busId, $oldStatus, 'cancelled', $id);
+            MaintenanceService::handleBusStatusSideEffects($busId, $oldStatus, 'cancelled', $id);
         }
 
         return response()->json([
@@ -270,7 +273,7 @@ class MaintenanceManagementController extends Controller
 
         $records = $this->getFilteredLogsQuery($logTypeFilter, $logStatusFilter)->get();
 
-        $csvHeader = ['Date', 'Bus Plate', 'Route', 'Type', 'Description', 'Technician', 'Cost (PHP)', 'Status'];
+        $csvHeader = ['Date', 'Bus Plate', 'Type', 'Description', 'Technician', 'Inspector', 'Status'];
         $csvData = [];
         $csvData[] = implode(',', $csvHeader);
 
@@ -278,11 +281,10 @@ class MaintenanceManagementController extends Controller
             $csvRow = [
                 $row->scheduled_at->timezone('Asia/Manila')->format('Y-m-d H:i'),
                 $row->bus_id, // plate number through accessor
-                $row->assigned_route ?: 'All Routes',
                 $row->type,
                 '"' . str_replace('"', '""', $row->description) . '"',
                 $row->technician_name ?: '—',
-                $row->cost_php,
+                $row->inspected_by ?: '—',
                 $row->status,
             ];
             $csvData[] = implode(',', $csvRow);
@@ -326,12 +328,25 @@ class MaintenanceManagementController extends Controller
 
     /**
      * Fetch all buses status and route assignment mapping.
+     * AUTO-SYNC: Checks if bus marked as "maintenance" actually has active records
      */
     public function getBusHealth()
     {
         $palette = ColorPalette::getColors('routes');
 
         return Bus::with('route')->get()->map(function ($bus) use ($palette) {
+            // AUTO-SYNC CHECK: If bus is maintenance but no active records, unlock it
+            if ($bus->status === 'maintenance') {
+                $hasActiveMaintenance = MaintenanceRecord::where('bus_id', $bus->id)
+                    ->whereIn('status', ['scheduled', 'in_progress'])
+                    ->exists();
+                
+                if (!$hasActiveMaintenance) {
+                    $restoreStatus = $bus->previous_status ?? 'active';
+                    $bus->update(['status' => $restoreStatus, 'previous_status' => null]);
+                }
+            }
+
             $routeColor = '#888780'; // default: unassigned
             if ($bus->route) {
                 $routeColor = $bus->route->color ?? ($palette[($bus->route->id - 1) % count($palette)] ?? '#003F87');
@@ -407,31 +422,5 @@ class MaintenanceManagementController extends Controller
         $query->orderByDesc('scheduled_at');
 
         return $query;
-    }
-
-    /**
-     * Handle transitions in bus status.
-     */
-    public function handleBusStatusSideEffects($busId, $oldStatus, $newStatus, $editingId = null)
-    {
-        $bus = Bus::find($busId);
-        if (!$bus) return;
-
-        if (in_array($newStatus, ['scheduled', 'in_progress'])) {
-            $bus->update(['status' => 'maintenance']);
-        } elseif ($newStatus === 'completed') {
-            $bus->update(['status' => 'active']);
-        } elseif ($newStatus === 'cancelled') {
-            $query = MaintenanceRecord::where('bus_id', $busId)
-                ->whereIn('status', ['scheduled', 'in_progress']);
-            if ($editingId) {
-                $query->where('id', '!=', $editingId);
-            }
-            $hasOtherActive = $query->exists();
-            
-            if (!$hasOtherActive) {
-                $bus->update(['status' => 'active']);
-            }
-        }
     }
 }

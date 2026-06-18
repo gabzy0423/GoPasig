@@ -53,11 +53,8 @@ class DashboardService
         // Idle buses: inactive status
         $idleBuses = Bus::where('status', 'inactive')->count();
 
-        // Trips completed today (fallback to all-time completed if none today)
+        // Trips completed today — no fallback; a real 0-trip day should show 0
         $tripsCompleted = Trip::where('status', 'completed')->whereDate('ended_at', $today)->count();
-        if ($tripsCompleted === 0) {
-            $tripsCompleted = Trip::where('status', 'completed')->count();
-        }
 
         // Total passengers: sum of passengers on active buses
         $totalPassengers = Bus::whereIn('id', $activeBusIds)->sum('passengers');
@@ -77,18 +74,25 @@ class DashboardService
             ->whereIn('status', ['reported', 'under_review'])
             ->count();
 
-        // Delta vs yesterday
-        $activeBusIdsYesterday = Trip::where('status', 'ongoing')
-            ->whereDate('started_at', Carbon::yesterday())
-            ->pluck('bus_id')->toArray();
-        $activeBusesYesterday = count($activeBusIdsYesterday);
-
+        // Delta vs yesterday — use completed trips (ended_at) for consistency on both days
         $tripsYesterday = Trip::where('status', 'completed')
             ->whereDate('ended_at', Carbon::yesterday())
             ->count();
 
-        $activeDelta    = $activeBuses - $activeBusesYesterday;
-        $tripsDelta     = $tripsCompleted - $tripsYesterday;
+        // Active buses yesterday: buses that had a completed or ongoing trip yesterday
+        $activeBusIdsYesterday = Trip::whereDate('ended_at', Carbon::yesterday())
+            ->whereIn('status', ['completed', 'ongoing'])
+            ->pluck('bus_id')->unique()->toArray();
+        $activeBusesYesterday = count($activeBusIdsYesterday);
+
+        // Delayed buses yesterday: active buses yesterday whose ETA met the delay threshold
+        $delayedBusesYesterday = Bus::whereIn('id', $activeBusIdsYesterday)
+            ->where('eta', '>=', $delayThreshold)
+            ->count();
+
+        $activeDelta  = $activeBuses - $activeBusesYesterday;
+        $tripsDelta   = $tripsCompleted - $tripsYesterday;
+        $delayedDelta = $delayedBuses - $delayedBusesYesterday;
 
         return [
             'active_buses'    => $activeBuses,
@@ -101,7 +105,7 @@ class DashboardService
             'open_incidents'  => $openIncidentCount,
             'deltas' => (object) [
                 'active_buses_yesterday'      => ($activeDelta >= 0 ? '+' : '') . $activeDelta . ' vs yesterday',
-                'delayed_buses_yesterday'     => '— today',
+                'delayed_buses_yesterday'     => ($delayedDelta >= 0 ? '+' : '') . $delayedDelta . ' vs yesterday',
                 'offline_buses_yesterday'     => '— in maintenance',
                 'idle_buses_yesterday'        => '— standby',
                 'trips_completed_yesterday'   => ($tripsDelta >= 0 ? '+' : '') . $tripsDelta . ' vs yesterday',

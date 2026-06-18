@@ -8,6 +8,7 @@ use App\Models\Route;
 use App\Models\Stop;
 use App\Models\SystemSetting;
 use App\Models\Terminal;
+use App\Services\BusinessLogicService;
 use Illuminate\Http\Request;
 
 class StopController extends Controller
@@ -17,6 +18,13 @@ class StopController extends Controller
      */
     public function store(Request $request)
     {
+        // Admin only
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins can create stops'
+            ], 403);
+        }
         $validated = $request->validate([
             'route_id' => 'required|exists:routes,id',
             'name' => 'sometimes|nullable|string|max:100',
@@ -49,8 +57,8 @@ class StopController extends Controller
             ->first();
 
         $route = Route::find($routeId);
-        $fallbackLat = $routeDefaults?->default_latitude ?? SystemSetting::get('default_route_start_lat', 14.5593);
-        $fallbackLng = $routeDefaults?->default_longitude ?? SystemSetting::get('default_route_start_lng', 121.0805);
+        $fallbackLat = $routeDefaults?->default_latitude ?? SystemSetting::get('map_default_latitude', 14.5593);
+        $fallbackLng = $routeDefaults?->default_longitude ?? SystemSetting::get('map_default_longitude', 121.0805);
 
         $routeStartLat = $route && is_array($route->polyline_coordinates) && count($route->polyline_coordinates)
             ? $route->polyline_coordinates[0][0]
@@ -59,8 +67,25 @@ class StopController extends Controller
             ? $route->polyline_coordinates[0][1]
             : $fallbackLng;
 
-        $lat = $prevStop ? $prevStop->lat + 0.002 : $routeStartLat;
-        $lng = $prevStop ? $prevStop->lng + 0.002 : $routeStartLng;
+        // Issue 3.2.1: Fixed coordinate generation - interpolate between previous and route start
+        if ($prevStop) {
+            $stepCount = $sequence + 1;
+            $lat = $prevStop->lat + (($routeStartLat - $prevStop->lat) / $stepCount);
+            $lng = $prevStop->lng + (($routeStartLng - $prevStop->lng) / $stepCount);
+        } else {
+            $lat = $routeStartLat;
+            $lng = $routeStartLng;
+        }
+
+        // NEW: Validate coordinates
+        // Issue 3.2.1: Route polyline not validated (also applies to stops)
+        $coordValidation = BusinessLogicService::validateCoordinates($lat, $lng);
+        if (!$coordValidation['valid']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid coordinates for stop: ' . $coordValidation['error']
+            ], 422);
+        }
 
         $stop = Stop::create([
             'route_id' => $routeId,
@@ -83,13 +108,31 @@ class StopController extends Controller
 
     /**
      * Reorder stops for a route.
+     * Issue 3.2.2: Stop sequence reordering not validated
      */
     public function reorder(Request $request, Route $route)
     {
+        // Admin only
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins can reorder stops'
+            ], 403);
+        }
         $validated = $request->validate([
             'stop_ids' => 'required|array',
             'stop_ids.*' => 'exists:stops,id'
         ]);
+
+        // NEW: Validate stop sequence maintains route continuity
+        // Issue 3.2.2: Stop sequence reordering not validated
+        $sequenceValidation = BusinessLogicService::validateStopSequence($route, $validated['stop_ids']);
+        if (!$sequenceValidation['valid']) {
+            return response()->json([
+                'success' => false,
+                'message' => $sequenceValidation['error']
+            ], 422);
+        }
 
         foreach ($validated['stop_ids'] as $index => $id) {
             Stop::where('id', $id)->where('route_id', $route->id)->update([
@@ -110,6 +153,13 @@ class StopController extends Controller
      */
     public function destroy(Stop $stop)
     {
+        // Admin only
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins can delete stops'
+            ], 403);
+        }
         $routeId = $stop->route_id;
         $stop->delete();
 

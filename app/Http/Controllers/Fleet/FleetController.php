@@ -107,7 +107,7 @@ class FleetController extends Controller
         // If the incident type is the configured breakdown type, flag bus for maintenance
         $breakdownType = SystemSetting::get('incident_breakdown_type', 'Breakdown');
         if ($type === $breakdownType && $trip->bus) {
-            $trip->bus->update(['status' => 'maintenance']);
+            $trip->bus->lockToMaintenance();
         }
 
         // Log recent activity
@@ -209,11 +209,11 @@ class FleetController extends Controller
         foreach ($offlineBusesCheck as $busCheck) {
             $ongoingTrip = Trip::where('bus_id', $busCheck->id)->where('status', 'ongoing')->first();
             if ($ongoingTrip) {
-                // Check if a signal lost incident already exists
+                // Check if a signal lost incident already exists (including resolved ones within last hour)
                 $alreadyLogged = Incident::where('trip_id', $ongoingTrip->id)
                     ->where('type', 'Delay')
                     ->where('description', 'like', '%signal lost%')
-                    ->whereIn('status', ['reported', 'under_review'])
+                    ->where('reported_at', '>=', now()->subHour())
                     ->exists();
 
                 if (!$alreadyLogged) {

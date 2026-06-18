@@ -84,7 +84,7 @@
                                         <i class="ti ti-steering-wheel text-base"></i>
                                     </span>
                                     <input id="edit-bus-driver" name="driver_name" type="text" placeholder="e.g. Cardo Dalisay" 
-                                           value="{{ $bus->driver_name === 'Unassigned' || $bus->driver_name === 'None' ? '' : $bus->driver_name }}" required
+                                           value="{{ $bus->driver_name === \App\Models\Bus::DEFAULT_DRIVER_NAME ? '' : $bus->driver_name }}" required
                                            class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87]">
                                 </div>
                                 <p class="text-[10px] text-slate-400 font-medium">Name of the primary operator driving this unit.</p>
@@ -99,7 +99,7 @@
                                     </span>
                                     <select id="edit-bus-route" name="route_id" required
                                             class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87] appearance-none cursor-pointer">
-                                        <option value="None" {{ is_null($bus->route_id) ? 'selected' : '' }}>None - Unassigned</option>
+                                        <option value="{{ \App\Models\Bus::DEFAULT_NEXT_STOP }}" {{ is_null($bus->route_id) ? 'selected' : '' }}>{{ \App\Models\Bus::DEFAULT_NEXT_STOP }} - Unassigned</option>
                                         @foreach($routes as $route)
                                             <option value="{{ $route->id }}" {{ $bus->route_id == $route->id ? 'selected' : '' }}>{{ $route->name }} - {{ $route->description }}</option>
                                         @endforeach
@@ -172,9 +172,9 @@
 
         const payload = {
             plate_number: plate,
-            driver_name: driver,
+            driver_name: driver || '{{ \App\Models\Bus::DEFAULT_DRIVER_NAME }}',
             capacity: parseInt(capacity),
-            route_id: route === 'None' ? null : parseInt(route),
+            route_id: route === '{{ \App\Models\Bus::DEFAULT_NEXT_STOP }}' ? null : parseInt(route),
             status: status.toLowerCase()
         };
 

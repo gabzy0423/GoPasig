@@ -29,7 +29,6 @@ class DriverSeeder extends Seeder
                 'emergency_contact' => 'Maria dela Cruz — 09181234567',
                 'performance_score' => 88,
                 'incidents_30' => 0,
-                'trip_history' => []
             ],
             [
                 'first_name' => 'Maria',
@@ -47,7 +46,6 @@ class DriverSeeder extends Seeder
                 'emergency_contact' => 'Pedro Santos — 09281239876',
                 'performance_score' => 91,
                 'incidents_30' => 1,
-                'trip_history' => []
             ],
             [
                 'first_name' => 'Ramon',
@@ -65,7 +63,6 @@ class DriverSeeder extends Seeder
                 'emergency_contact' => 'Clara Reyes — 09171239900',
                 'performance_score' => 67,
                 'incidents_30' => 2,
-                'trip_history' => []
             ],
             [
                 'first_name' => 'Ana',
@@ -83,7 +80,6 @@ class DriverSeeder extends Seeder
                 'emergency_contact' => 'Jose Flores — 09281230099',
                 'performance_score' => 94,
                 'incidents_30' => 0,
-                'trip_history' => []
             ],
             [
                 'first_name' => 'Pedro',
@@ -101,7 +97,6 @@ class DriverSeeder extends Seeder
                 'emergency_contact' => 'Lina Mendoza — 09171235599',
                 'performance_score' => 54,
                 'incidents_30' => 3,
-                'trip_history' => []
             ],
             [
                 'first_name' => 'Carlos',
@@ -119,7 +114,6 @@ class DriverSeeder extends Seeder
                 'emergency_contact' => 'Rosa Bautista — 09281238811',
                 'performance_score' => 89,
                 'incidents_30' => 0,
-                'trip_history' => []
             ],
             [
                 'first_name' => 'Liza',
@@ -137,7 +131,6 @@ class DriverSeeder extends Seeder
                 'emergency_contact' => 'Marco Garcia — 09171234400',
                 'performance_score' => 78,
                 'incidents_30' => 0,
-                'trip_history' => []
             ],
             [
                 'first_name' => 'Roberto',
@@ -155,7 +148,6 @@ class DriverSeeder extends Seeder
                 'emergency_contact' => 'Ana Santos — 09281235500',
                 'performance_score' => 92,
                 'incidents_30' => 0,
-                'trip_history' => []
             ]
         ];
 

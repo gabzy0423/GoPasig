@@ -31,7 +31,7 @@ class CommuterTrackingDashboardTest extends TestCase
 
         $this->route = Route::create([
             'id' => 1,
-            'name' => 'Route 1',
+            'name' => 'Route A',
             'status' => 'Active',
         ]);
 
