@@ -72,6 +72,7 @@ B. Business Logic Gaps
 🟠 BL-4.4	ScheduleController.php store()	Driver is looked up by initials (2 characters). Two drivers with the same initials (e.g., Juan Cruz and Jose Castro = "JC") will result in unpredictable assignment — whichever first() returns wins. The lookup should use driver ID, not initials.
 
 
+
 Module 5 — Schedule & Routes
 A. Hardcoded / Static Data
 #	Location	Issue
@@ -190,3 +191,310 @@ BL-5.4 — Conflict resolution modal is pure UI with no backend implementation
 HC-3.2 + SS-9.2 — Incident penalty (10 pts) should be configurable
 BL-3.3 / SS-9.3 — Performance rolling window (30 days) should be configurable
 BL-8.2 + BL-8.3 — Analytics filters wrong date column; on-time rate ignores date range
+
+
+______________________________________________________________________________________________
+
+the fix 
+
+
+Module 1 — Overview / Dashboard:
+
+HC-1.1: HTML Metric Placeholders
+The Fix: The hardcoded placeholders in 
+
+overview.blade.php
+ were replaced with 0. This ensures that cards start in a neutral state before live, accurate metrics are dynamically updated by the JavaScript visualizer.
+
+ HC-1.2: Hardcoded "Pasig Line 1" Label 
+ The Fix: The label in the visualizer card was modified to display {{ $primaryRouteName }}. In 
+DashboardController.php
+, the controller queries the first active route from the database (Route::getAllCached()) and falls back to the newly added system setting overview_default_route_name if the database is empty.
+
+ HC-1.3: Fallback for Average Passenger Count
+The Fix: A system setting default_route_avg_pax (defaulting to 0) was added to the database. The controller method getFleetData() was updated to call SystemSetting::get('default_route_avg_pax', 0) to make this fallback value fully customizable by administrators.
+
+ HC-1.4: Inflated "Trips Completed Today" Fallback
+The Fix: The fallback was removed. Today's completed trips are strictly calculated from completed trips ending on the current day (ended_at matching today). If no trips have completed today, the KPI correctly displays 0.
+
+ BL-1.1: Non-Functional Yesterday Delta
+The Fix: Refactored the dashboard metrics builder in DashboardService.php to calculate delayed buses yesterday (checking yesterday's active buses whose ETA met the delay threshold) and compared it with today's count to compute and return a functional yesterday-to-today delta.
+
+ BL-1.2: Inconsistent Active Bus Logic
+The Fix: Unified the counting strategy by creating a helper method activeTripBusIdsForDay() in DashboardService.php. This helper queries a day's active buses consistently based on unique bus IDs associated with trip logs within that specific 24-hour window, ensuring mathematical consistency.
+
+ BL-1.3: Static "Systems Nominal" Health Chip
+The Fix: Implemented dynamic health checking in DashboardController.php. The controller evaluates system status on index load: if active alerts, open incidents, or broken down buses exist, the badge updates to "System Critical" (red); if buses are under maintenance, it shifts to "System Degraded" (yellow); otherwise, it defaults to "Systems Nominal" (green).
+
+
+
+
+
+
+
+-------------------------------------------------------------------------------------------
+
+Module 2 — Bus Management:
+
+
+HC-2.1: Hardcoded 'Unassigned' Driver Name
+
+The Fix: Added the bus_default_driver_name settings key to the database, mapping it to a Bus::DEFAULT_DRIVER_NAME PHP constant. In 
+BusController.php
+Bus.php
+, the fallback is retrieved dynamically via Bus::getDefaultDriverName(), which references the database configuration key.
+
+
+HC-2.2: Hardcoded Initial Telemetry Values
+The Fix: Dynamized all initial values by introducing config keys in the settings database: bus_initial_speed, bus_initial_passengers, bus_default_next_stop (bound to constant DEFAULT_NEXT_STOP), and bus_initial_eta. The values are resolved using dynamic getter methods on the Bus model.
+
+BL-2.1: Non-Atomic Bus Updates
+The Fix: Wrapped the status transition and the field updates inside an atomic database transaction (DB::transaction) in BusController::update(). This ensures that if any part of the bus field updates fails, the entire operation (including the status transition) rolls back safely.
+
+ BL-2.2: Rigid Inactive-to-Maintenance Transition
+The Fix: Updated the status transition rule map VALID_TRANSITIONS inside BusStateService.php
+ to allow direct transitions from inactive to maintenance.
+
+BL-2.3: Deletion of Active/Live Buses
+The Fix: Added a safety check in BusController::destroy() that checks if the bus has any ongoing trips (Trip::where('bus_id', $bus->id)->where('status', 'ongoing')->exists()). The controller will block deletion and return a 422 error response if the bus is currently in use.
+
+
+BL-2.4: Status Excluded from Main Update Array
+The Fix: Maintained the separation of status updates via BusStateService::transition() but documented the transaction clearly, making sure that the flow between status validation and general field updates is explicit and protected inside a single transaction.
+
+______________________________________________________________________________________________
+
+
+
+Module 3 — Driver Management:
+
+ HC-3.1: Hardcoded Driver Starting Score
+ The Fix: Added the setting key driver_initial_performance_score (default: 80) to the database. Updated DriverController::store() to assign initial performance scores dynamically using SystemSetting::get('driver_initial_performance_score', 80).
+
+ HC-3.2: Hardcoded Incident Score Penalty
+ The Fix: Added the setting key driver_incident_score_penalty (default: 10) to the database. This value is now used in calculatePerformanceScore() in Driver.php, allowing the penalty for an incident to be adjusted via the Settings UI.
+
+  HC-3.3: Hardcoded Passenger Rating
+  The Fix: Introduced the setting key driver_passenger_rating_default (default: 80) in the database. Refactored calculatePassengerRating() to fetch the fallback rating dynamically via SystemSetting::get('driver_passenger_rating_default', 80).
+
+   HC-3.4: Hardcoded License Expiry Warning Thresholds
+   The Fix: Refactored the status calculations to pull from the settings database dynamically using SystemSetting::get('license_expiry_warning_threshold_days', 30) and SystemSetting::get('license_expiry_warn_critical_days', 7).
+
+   HC-3.5: Hardcoded Performance Rolling Window
+   The Fix: Seeded the settings key driver_performance_rolling_days (default: 30) and updated all query range windows inside DriverPerformanceService.php to fetch the rolling period duration dynamically using SystemSetting::get('driver_performance_rolling_days', 30).
+
+   HC-3.6: Hardcoded License Warning in UI
+   The Fix: Passed the backend system setting $licenseWarningDays directly to the blade template and bound it to a global JavaScript variable (const licenseWarningDays = {{ $licenseWarningDays }}), making the UI dynamic.
+   
+   BL-3.1: Reinstated Drivers Defaulted to Inactive
+   The Fix: Added a previous_status column to the drivers table via migration. When suspending a driver, their original status is preserved in this column; on unsuspend, their original status is automatically restored.
+   
+   BL-3.2: Expired License Direct Activation
+   The Fix: Added a validation check in DriverController::update() (and matched it in store()). If a request attempts to set a driver's status to 'active' while their license_expiry is past, the application blocks the update and returns a 422 validation error.
+
+    BL-3.3: Hardcoded Driver Score Reset
+    The Fix: Replaced the hardcoded score values in the reset action (e.g., 80, 0) with calls to the dynamic helper methods SystemSetting::getDriverInitialScore(), SystemSetting::getDriverPerformancePenalty(), and SystemSetting::getDriverPassengerRating(), making all reset values configurable via the Settings UI.
+
+    BL-3.4: License Expiry Calculation Inaccuracy
+    The Fix: Updated calculateExpiryStatus() in Driver.php to accurately check if the current date has passed the license_expiry date, correctly identifying expired licenses regardless of the time component.
+
+    BL-3.5: Hardcoded Days in Driver Performance UI
+   The Fix: Refactored all schedule scoping queries in DriverPerformanceService to filter schedules using their scheduled service_date boundaries, ensuring performance metrics are bound to actual trip service days.
+    
+    
+     __________________________________________________________________________________________
+
+
+    Module 4 — Dispatch Management:
+
+    HC-4.1: Hardcoded Schedule Buffer Fallback in JS
+    The Fix: The $scheduleBuffer variable is now explicitly resolved from SystemSetting::get('driver_schedule_buffer_minutes', 15) inside ScheduleController::create() before the view is returned, ensuring create.blade.php receives a guaranteed non-null value. The Blade template's {{ $scheduleBuffer ?? 15 }} fallback remains as a safety net for direct view invocations, but the primary route now always passes the setting-derived value so the JavaScript never receives a hardcoded fallback.
+
+    BL-4.1: Incomplete Validation on Schedule Update
+    The Fix: The update() method in ScheduleController was refactored to run the same validation pipeline as store(). The existing hasConflict() helper was replaced with a call to BusinessLogicService::checkScheduleConflict(), which performs the full suite of checks — bus availability, driver availability, driver daily hours, and driver status — ensuring that a schedule update cannot silently assign a suspended driver or an over-hours driver.
+
+    BL-4.2: No Buffer Applied for Bus Conflicts
+    The Fix: BusinessLogicService::checkScheduleConflict() was updated to accept and apply the schedule buffer for both driver and bus conflicts. The buffer minutes are now factored into the bus availability window calculation during conflict checks, preventing a bus from being rescheduled again within 1 second of its previous trip's projected end.
+
+    BL-4.3: Missing Dispatch Queue API Endpoint
+    The Fix: A new dedicated API endpoint was introduced (e.g., DispatchController@getActiveQueue()) that returns today's dispatch queue by filtering schedules with departure_time within the current service window and excluding cancelled or completed statuses. The Overview dashboard's getFleetData() now sources the "Today's Dispatch Queue" panel from this endpoint instead of the generic fleet data, ensuring only relevant active dispatch items are returned.
+
+    BL-4.4: Driver Lookup by Ambiguous Initials
+    The Fix: The driver lookup logic in ScheduleController::store() was changed from a query by initials (Driver::where('initials', $driverInitials)->first()) to a lookup by explicit driver ID (Driver::find($driverId)). The schedule creation form and API now require and transmit a driver_id parameter, eliminating the ambiguity where two drivers sharing the same initials (e.g., "JC") would unpredictably match the wrong record.
+
+
+    __________________________________________________________________________________________
+
+
+    Module 5 — Schedule & Routes:
+
+    HC-5.1: Hardcoded Route Minimum Capacity Fallback
+    The Fix: The fallback value 30 in ScheduleConflictService::checkRouteCapability() was replaced with SystemSetting::get('route_min_capacity_default', 30). If a route record lacks a min_capacity value, the system now consults the settings table instead of applying a hardcoded rule, making the capacity threshold configurable by administrators.
+
+    HC-5.2: Hardcoded Default Departure Time in Blade
+    The Fix: The hardcoded value="08:00" in create.blade.php was replaced with value="{{ $defaultDepartureTime }}". DashboardController now passes $defaultDepartureTime = SystemSetting::get('schedule_default_departure_time', '08:00') to the view, and the schedule_default_departure_time key was added to the settings UI so admins can change the default without editing code.
+
+    HC-5.3: Missing ROUTE_DURATIONS Binding
+    The Fix: The ROUTE_DURATIONS JavaScript object is now passed explicitly from the controller to the view via a dedicated helper that calculates average historical trip duration per route from the trips table, with a fallback to schedule_default_travel_time_minutes from SystemSetting. The blade template now receives $routeDurations as a JSON-encoded variable instead of relying on a global undefined constant.
+
+    HC-5.4: Hardcoded Stop Defaults in Route Form
+    The Fix: The avg_boarding=15, avg_alighting=10, and dwell_time=45 defaults in index.blade.php were replaced with dynamic values drawn from SystemSetting keys route_stop_default_avg_boarding, route_stop_default_avg_alighting, and route_stop_default_dwell_seconds, all of which are now passed from DashboardController to the view.
+
+    HC-5.5: Hardcoded Weekday Defaults
+    The Fix: The weekday checkboxes in create.blade.php now loop over a $defaultActiveDays array passed from DashboardController, which reads SystemSetting::get('schedule_default_active_days', 'M,T,W,Th,F') and explodes it into an array. Administrators can now extend service to Saturday or any other day simply by updating the comma-separated setting value.
+
+    BL-5.1: Cross-Day Rest Period Bypass
+    The Fix: checkDriverRestPeriod() in ScheduleConflictService was updated to compare the time difference between the previous trip's actual arrival_time and the new trip's departure_time across calendar days, rather than assuming compliance whenever the dates differ. A driver finishing at 10:00 PM and starting at 2:00 AM the next day now correctly triggers a rest violation if the gap falls below driver_min_rest_hours.
+
+    BL-5.2: Cross-Midnight Conflict Detection Gap
+    The Fix: checkTimeSlotConflict() was refactored to account for schedules that span midnight. If a schedule's start time is greater than its end time (e.g., 23:50 to 00:10), the method now treats the slot as wrapping into the next day and correctly detects overlaps against any other schedule on the same bus or driver during that wrap window.
+
+    BL-5.3: Missing 'cancelled' Status in updateStatus()
+    The Fix: The updateStatus() endpoint in ScheduleController now accepts 'cancelled' as a valid status alongside 'On time' and 'delayed'. The status transition validation was updated to permit cancellation, and a corresponding cancellation event is logged so that downstream filters (where('status', '!=', 'cancelled')) behave consistently with the available actions.
+
+    BL-5.4: Unimplemented Conflict Resolution Modal
+    The Fix: The applyConflictResolution() JavaScript function now makes a real POST call to a new ScheduleController endpoint (resolveConflict()) that accepts the conflict type and desired resolution action — either reassigning to an alternate driver (by ID) or adjusting the departure time by the configured buffer. The backend performs the same availability checks as store() before applying the change, and the modal placeholder text is populated dynamically from the detected conflict data rather than static strings.
+
+
+    __________________________________________________________________________________________
+
+
+    Module 6 — Maintenance Records:
+
+    HC-6.1: Hardcoded Minimum Duration Validation Rule
+    The Fix: The validation rule in MaintenanceController::store() was updated to read the minimum allowed duration from SystemSetting::get('maintenance_min_duration_minutes', 15) instead of the hardcoded 'min:15'. The setting is also exposed in the Settings UI so the minimum can be adjusted without a code change.
+
+    HC-6.2: Hardcoded 'active' Restore on Record Deletion
+    The Fix: A previous_bus_status column was added to the maintenance_records table to snapshot the bus's status when the record is created. When deleting an uncompleted maintenance record, MaintenanceController::destroy() now restores the bus to its previous_bus_status value (e.g., 'inactive') instead of forcing 'active', preserving the correct operational state.
+
+    HC-6.3: Hardcoded 'active' Restore on Cancellation
+    The Fix: MaintenanceService::handleBusStatusSideEffects() now retrieves the prior bus status from the maintenance record's previous_bus_status field when the record transitions to 'cancelled', restoring the bus to that state rather than unconditionally setting it to 'active'. This matches the fix in HC-6.2 and eliminates the same state-loss bug on the cancellation path.
+
+    HC-6.4: Hardcoded Maintenance Type Dropdown Options
+    The Fix: The maintenance type dropdown in index.blade.php now pulls its options from a new SystemSetting key called maintenance_type_options (a comma-separated string, e.g., "Preventive Maintenance,Corrective Maintenance,Inspection"). DashboardController passes $maintenanceTypes to the view, and the Settings UI provides a text field to manage the list, eliminating the hardcoded two-option limit.
+
+    BL-6.1: Locked Editing After Failed Inspection
+    The Fix: MaintenanceController::update() now permits editing when the record is in 'in_progress' and inspection_passed is false. Technician notes and other editable fields remain writable after a failed inspection, removing the previous restriction that locked admins out and forced them to create a duplicate record.
+
+    BL-6.2: Unlimited Failed Inspection Loophole
+    The Fix: A new SystemSetting key maintenance_max_failed_inspections (default: 3) was introduced. MaintenanceController::performInspection() now tracks failed inspection count; when it exceeds the configured maximum, the record is automatically escalated to a 'failed' terminal status and an alert is triggered instead of allowing infinite retry loops.
+
+    BL-6.3: Missing Status Indicator After Passing Inspection
+    The Fix: After inspection_passed is set to true, the inspection blade partial now renders a distinct amber "Awaiting Completion" badge on the maintenance record card. The Complete button is prominently displayed alongside it, giving admins clear visual guidance that a manual completion step is still required.
+
+    BL-6.4: In State Machine Side Effects
+    The Fix: The update() method in MaintenanceController was adjusted to allow transitions from 'in_progress' back to 'in_progress' when the only change is non-status fields (notes, costs, etc.), preventing the false block where handleBusStatusSideEffects() would see an 'in_progress' target and attempt to lock an already-locked bus.
+
+    BL-6.5: Bus Locked Mid-Trip on Maintenance Creation
+    The Fix: MaintenanceController::store() now performs a pre-check using BusinessLogicService::canBusEnterMaintenance($busId), which scans for ongoing Trip records linked to the bus. If an active trip exists, the controller aborts the maintenance creation with a 422 error and returns a message stating the bus must complete its current trip before maintenance can be scheduled. An optional notifyDriver flag can also trigger a push notification to the assigned driver.
+
+
+    __________________________________________________________________________________________
+
+
+    Module 7 — Service Alerts:
+
+    HC-7.1: Collapsed Severity Mapping
+    The Fix: The $severityMap was replaced with a dynamic lookup that reads from a new SystemSetting key called alert_severity_badge_map (a JSON object, e.g., '{"Low":"info","Medium":"info","High":"warning","Emergency":"critical"}'). The controller now injects $severityMap = json_decode(SystemSetting::get('alert_severity_badge_map', '{"Low":"info","Medium":"info","High":"warning","Emergency":"critical"}'), true), so admins can map any severity to any badge tier without touching code.
+
+    HC-7.2: Hardcoded Severity Validation List
+    The Fix: The validation rule for severity now reads from the same SystemSetting-backed source, parsing the keys of alert_severity_badge_map to build the allowed list. Admins can add, rename, or remove severity levels purely through the Settings UI and the validation automatically adapts.
+
+    HC-7.3: Hardcoded Alert Type Validation
+    The Fix: A new SystemSetting key alert_type_options was introduced, stored as a comma-separated string of allowed types (e.g., "Service Disruption,Route Change,Safety Notice,General"). The validation rule uses explode(',', SystemSetting::get('alert_type_options', 'Service Disruption,Route Change,Safety Notice,General')) to build the 'in' list at runtime, removing the hardcoded array and allowing new alert types without a code deploy.
+
+    HC-7.4: Hardcoded insufficient_route_data Flag
+    The Fix: The stats endpoint now computes insufficient_route_data dynamically. It checks whether the requesting user's viewport contains at least one route with stale or missing Stop and Trip data older than the configured analytics_staleness_threshold_minutes (default: 30). If no fresh route data exists for the user's area, the flag returns true; otherwise false.
+
+    BL-7.1: Scheduled Alerts Visible Immediately
+    The Fix: A new scheduled_at column was added to service_alerts. The store() method now records the intended publish time in scheduled_at while keeping created_at as the real creation timestamp. The index() query was updated to filter out alerts where scheduled_at is in the future (unless the requester is an admin viewing a scheduled-queue panel), so future-drafted alerts remain hidden from commuters and drivers until the scheduled_at moment arrives.
+
+    BL-7.2: Route Suspension Never Reversed on Resolution
+    The Fix: The resolve() method in ServiceAlertController now checks whether the alert carries a suspend_route flag and, if so, explicitly resets the associated route's status back to its pre-alert state ('Active') instead of leaving it suspended. An audit log entry is also written noting the automatic route restoration.
+
+    BL-7.3: No Resolution Notification
+    The Fix: After an alert is marked resolved, ServiceAlertController::resolve() now dispatches a SystemNotification event targeting all active drivers and subscribed commuters for the affected route(s). The notification payload includes the alert title, resolution message, and timestamp. A scheduled job also cleans up stale notifications after 24 hours.
+
+    BL-7.4: Invalid assigned_route Query on Driver Count
+    The Fix: The driver count query in index() was rewritten to count drivers through the schedule assignments table. It now uses Schedule::where('route_id', $route->id)->whereHas('driver')->distinct('driver_id')->count('driver_id'), which correctly retrieves the number of distinct drivers assigned to trips on that route, eliminating the dependency on a non-existent assigned_route column on the drivers table.
+
+
+    __________________________________________________________________________________________
+
+
+    Module 8 — Reports & Analytics:
+
+    HC-8.1: Hardcoded Peak Hour Fallback
+    The Fix: The $peakHourStr fallback was changed from the hardcoded '7–8 AM' to null, so the chart renders an empty state when no trip data exists. A new SystemSetting key analytics_default_peak_hour_label (default: null) was added, allowing admins to optionally set a generic peak-hour label without hardcoding it in the controller.
+
+    HC-8.2: Hardcoded Top-Stops Limit
+    The Fix: Stop::take(10) in AnalyticsController was replaced with Stop::take(SystemSetting::get('analytics_top_stops_limit', 10)). The new setting key is exposed in the Settings UI so the number of stops displayed in the Stop Boarding chart can be adjusted without a code change.
+
+    HC-8.3: Hardcoded Top-Driver Limit
+    The Fix: The hardcoded ->take(5) in the driver performance ranking was replaced with ->take(SystemSetting::get('analytics_top_drivers_limit', 5)). Administrators can now configure how many leading drivers appear in the Top Drivers table through the Settings page.
+
+    HC-8.4: Hardcoded Historical Trend Window
+    The Fix: DemandHistory::take(30) was replaced with a dynamic window that respects the selected date range. When a custom date range is provided, the query uses that range directly; otherwise it falls back to SystemSetting::get('analytics_historical_trend_days', 30). The controller now computes the date bounds from the request before building the trend query.
+
+    BL-8.1: Identical Boarding/Alighting/PeakLoad Values
+    The Fix: The tripPaxTable() method was separated into distinct aggregations. Boarded, alighted, and peakLoad are now computed independently — boarded sums passenger boarding events, alighted sums alighting events, and peakLoad captures the maximum concurrent occupancy per stop from the trips table. The three columns no longer mirror each other.
+
+    BL-8.2: Wrong Date Column for "Today" Filter
+    The Fix: The $todaySchedules query now filters on departure_time (Carbon::today()) instead of created_at. A schedule created last week for a trip running today is correctly included in today's analytics, while past schedules are excluded regardless of when they were created.
+
+    BL-8.3: On-Time Rate Ignores Selected Date Range
+    The Fix: The on_time_rate calculation now applies the same date-range filter used by the rest of the dashboard. The denominator (total applicable schedules) and numerator (on-time schedules) are both scoped to the selected start_date and end_date, so custom ranges produce an accurate rate instead of an all-time average.
+
+    BL-8.4: Double-Counted Weekly Passenger Total
+    The Fix: The weekly pax total logic was updated to use strictly non-overlapping buckets. When the selected range includes today, today's passenger count from Schedules is included and DemandHistory for the same day is excluded, preventing double-counting. The weekly total now sums either DemandHistory records or Schedule totals — never both for the same day.
+
+    BL-8.5: Stale Denormalized Driver Totals
+    The Fix: The driver performance table in AnalyticsController no longer relies on the cached trips_today and pax_today denormalized columns. Instead it runs a live subquery counting today's completed trips and summing peak_passengers per driver directly from the trips table. The result is always accurate regardless of whether background sync jobs are running.
+
+
+    __________________________________________________________________________________________
+
+
+    Module 9 — Settings:
+
+    SS-9.1: Missing driver_initial_performance_score Setting
+    The Fix: The SystemSetting::get('driver_initial_performance_score', 80) call in DriverController::store() was already using the standard fallback pattern, but the key itself was not present in the initial seeder. A migration seeder now inserts driver_initial_performance_score=80 into system_settings, and the Settings UI automatically lists it for editing.
+
+    SS-9.2: Missing incident_score_penalty_per_event Setting
+    The Fix: Seeded the key incident_score_penalty_per_event with a default of 10. DriverPerformanceService::calculateIncidentRate() now calls SystemSetting::get('incident_score_penalty_per_event', 10), turning the penalty into an editable field in the Settings table.
+
+    SS-9.3: Missing driver_performance_rolling_days Setting
+    The Fix: Added driver_performance_rolling_days=30 to the seeder. DriverPerformanceService::recalculate() and all related date-range queries now reference SystemSetting::get('driver_performance_rolling_days', 30) instead of the old hardcoded 30-day value.
+
+    SS-9.4: Missing analytics_top_stops_limit Setting
+    The Fix: Seeded analytics_top_stops_limit=10. AnalyticsController now uses Stop::take(SystemSetting::get('analytics_top_stops_limit', 10)), matching the fix in HC-8.2 and removing the last hardcoded reference.
+
+    SS-9.5: Missing analytics_top_drivers_limit Setting
+    The Fix: Seeded analytics_top_drivers_limit=5. AnalyticsController now uses ->take(SystemSetting::get('analytics_top_drivers_limit', 5)), matching the fix in HC-8.3.
+
+    SS-9.6: Missing analytics_historical_trend_days Setting
+    The Fix: Seeded analytics_historical_trend_days=30. DemandHistory::take(30) now reads from SystemSetting::get('analytics_historical_trend_days', 30), matching the fix in HC-8.4.
+
+    SS-9.7: Missing schedule_default_departure_time Setting
+    The Fix: Already implemented via DashboardController passing $defaultDepartureTime to create.blade.php (HC-5.2). The key schedule_default_departure_time is now confirmed in the seed file with value '08:00' and exposed in the Settings UI.
+
+    SS-9.8: Missing route_min_capacity_default Setting
+    The Fix: Seeded route_min_capacity_default=30. ScheduleConflictService::checkRouteCapability() now references SystemSetting::get('route_min_capacity_default', 30), matching the fix in HC-5.1.
+
+    SS-9.9: Missing license_expiry_warn_critical_days Setting
+    The Fix: Seeded license_expiry_warn_critical_days=7. DriverPerformanceService::getLicenseStatus() now uses SystemSetting::get('license_expiry_warn_critical_days', 7) for the critical threshold, matching the fix in HC-3.4.
+
+    SS-9.10: Missing maintenance_type_options Setting
+    The Fix: Seeded maintenance_type_options="Preventive Maintenance,Corrective Maintenance". The value is read in DashboardController and passed as $maintenanceTypes to maintenance/index.blade.php, matching the fix in HC-6.4.
+
+    BL-9.1: No Type Validation Per Setting Key
+    The Fix: saveSetting() in DashboardController was enhanced with a comprehensive per-key type validation map. Keys matching numeric, float, date-format, JSON, or bounded-range patterns now receive strict validation before the value is written. Attempts to save a non-integer into bus_capacity_default (or any other typed key) now return a 422 error with a descriptive message instead of silently corrupting the setting.
+
+    BL-9.2: Hardcoded Cache TTL
+    The Fix: A new SystemSetting key system_setting_cache_ttl_seconds (default: 30) was introduced and is now read inside SystemSetting::get()'s cache TTL builder. Administrators can adjust the cache lifetime from the Settings UI — reducing it for high-frequency operational checks or increasing it for rarely changed configuration values.
+
+    BL-9.3: No UI to Add New Settings
+    The Fix: The Settings page now includes an "Add New Setting" form that accepts key, value, type selector, and description. Inserted rows use the same system_settings table, so new configurable keys appear immediately in data-driven dropdowns, validation maps, and backend SystemSetting::get() calls without a seeder or migration.
+
+    BL-9.4: Missing Cache Invalidation Feedback
+    The Fix: saveSetting() now returns detailed invalidation feedback in the JSON response, listing each cache key that was flushed. The frontend Settings module displays a toast notification showing exactly which caches were cleared (e.g., "Cleared: routes_all, stops_all, commuter_dashboard_aggregate"), giving admins visibility into the side effects of their change.</newString>

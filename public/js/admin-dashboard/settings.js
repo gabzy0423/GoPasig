@@ -131,3 +131,53 @@ function showSettingsNotification(message, isError = false) {
         setTimeout(() => alertSuccess.classList.add('hidden'), 5000);
     }
 }
+
+function openAddSettingModal() {
+    const modal = document.getElementById('add-setting-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+    }
+}
+
+function closeAddSettingModal() {
+    const modal = document.getElementById('add-setting-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    const form = document.getElementById('add-setting-form');
+    if (form) {
+        form.reset();
+    }
+}
+
+async function handleAddSettingSubmit(event) {
+    event.preventDefault();
+
+    const type = document.querySelector('input[name="new_setting_type"]:checked').value;
+    const key = document.getElementById('new_setting_key').value;
+    const value = document.getElementById('new_setting_value').value;
+    const description = document.getElementById('new_setting_description').value;
+
+    try {
+        const response = await fetch(window.GoPasigSettingsConfig.saveUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': window.GoPasigSettingsConfig.csrfToken
+            },
+            body: JSON.stringify({ type, key, value, description })
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+            showSettingsNotification(data.message);
+            closeAddSettingModal();
+            initSettingsDashboard();
+        } else {
+            showSettingsNotification(data.message || 'Failed to create setting.', true);
+        }
+    } catch (error) {
+        console.error('Error creating setting:', error);
+        showSettingsNotification('Failed to create setting due to a network/server error.', true);
+    }
+}

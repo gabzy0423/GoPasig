@@ -37,7 +37,7 @@ class Tracker extends Component
     public function render()
     {
         // 1. Fetch active alerts   
-        $activeAlerts = ServiceAlert::where('status', 'active')
+        $activeAlerts = ServiceAlert::activeAlerts()
             ->orderBy('created_at', 'desc')
             ->get();
 

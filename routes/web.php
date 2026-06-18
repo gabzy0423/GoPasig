@@ -79,6 +79,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::post('/api/drivers/{driver}/suspend', [AdminDriverController::class, 'toggleSuspend'])->name('api.drivers.suspend');
 
     Route::get('/api/schedules', [AdminScheduleController::class, 'index'])->name('api.schedules.index');
+    Route::get('/api/schedules/dispatch-queue/today', [AdminScheduleController::class, 'getTodayDispatchQueue'])->name('api.schedules.dispatch-queue.today');
     Route::post('/api/schedules', [AdminScheduleController::class, 'store'])->name('api.schedules.store');
     Route::put('/api/schedules/{schedule}', [AdminScheduleController::class, 'update'])->name('api.schedules.update');
     Route::patch('/api/schedules/{schedule}/status', [AdminScheduleController::class, 'updateStatus'])->name('api.schedules.status');
@@ -95,6 +96,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::get('/api/maintenance', [AdminMaintenanceController::class, 'index'])->name('api.maintenance.index');
     Route::get('/api/maintenance/{id}', [AdminMaintenanceController::class, 'show'])->name('api.maintenance.show');
     Route::post('/api/maintenance', [AdminMaintenanceController::class, 'store'])->name('api.maintenance.store');
+    Route::put('/api/maintenance/{id}', [AdminMaintenanceController::class, 'update'])->name('api.maintenance.update');
     Route::post('/api/maintenance/{id}/perform-inspection', [AdminMaintenanceController::class, 'performInspection'])->name('api.maintenance.perform-inspection');
     Route::post('/api/maintenance/{id}/complete', [AdminMaintenanceController::class, 'complete'])->name('api.maintenance.complete');
     Route::delete('/api/maintenance/{id}', [AdminMaintenanceController::class, 'destroy'])->name('api.maintenance.destroy');

@@ -163,6 +163,11 @@ class MaintenanceDurationTest extends TestCase
             'passengers' => 0,
         ]);
 
+        SystemSetting::updateOrCreate(
+            ['key' => 'maintenance_duration_min_minutes'],
+            ['value' => '1', 'description' => 'Min duration']
+        );
+
         $response = $this->postJson(route('admin.api.maintenance.store'), [
             'bus_id' => $bus->id,
             'type' => 'Quick Check',
@@ -192,6 +197,11 @@ class MaintenanceDurationTest extends TestCase
             'speed' => 0,
             'passengers' => 0,
         ]);
+
+        SystemSetting::updateOrCreate(
+            ['key' => 'maintenance_duration_max_minutes'],
+            ['value' => '2000', 'description' => 'Max duration']
+        );
 
         $response = $this->postJson(route('admin.api.maintenance.store'), [
             'bus_id' => $bus->id,

@@ -26,12 +26,19 @@ class ServiceAlertController extends Controller
         
         $routes = Route::all();
         $routeStats = [];
+        $hasInsufficient = false;
         foreach ($routes as $route) {
             $commuters = Schedule::where('route_id', $route->id)->sum('passengers');
             $noCommuterData = ($commuters === 0 || $commuters === null);
+            if ($noCommuterData) {
+                $hasInsufficient = true;
+            }
 
-            $drivers = Driver::where('assigned_route', $route->id)->count();
-            $noDriverData = ($drivers === 0);
+            // BL-7.4: Count drivers by assigned_route in all formats (int, string, or name)
+            $drivers = Driver::where('assigned_route', $route->id)
+                ->orWhere('assigned_route', (string) $route->id)
+                ->orWhere('assigned_route', $route->name)
+                ->count();
 
             $routeStats[$route->name] = [
                 'commuters' => (int) $commuters,
@@ -45,11 +52,14 @@ class ServiceAlertController extends Controller
             'drivers'   => $totalDrivers,
         ];
 
+        // HC-7.4: Compute dynamically instead of hardcoding to true
+        $insufficientData = $routes->isEmpty() || $hasInsufficient;
+
         $stats = [
             'total_commuters' => $totalCommuters,
             'total_drivers' => $totalDrivers,
             'route_stats' => $routeStats,
-            'insufficient_route_data' => true,
+            'insufficient_route_data' => $insufficientData,
         ];
 
         return response()->json([
@@ -71,11 +81,26 @@ class ServiceAlertController extends Controller
                 'message' => 'Unauthorized: Only admins can create alerts'
             ], 403);
         }
+        $severityOptions = \App\Models\SystemSetting::get('service_alert_severity_options', 'Low,Medium,High,Emergency');
+        $typeOptions = \App\Models\SystemSetting::get('service_alert_type_options', 'Delay,Route change,Suspension,Breakdown,Weather,Emergency');
+
+        $allowedSeverities = array_unique(array_merge(
+            explode(',', $severityOptions),
+            array_map('strtolower', explode(',', $severityOptions)),
+            array_map('ucfirst', explode(',', $severityOptions))
+        ));
+        $allowedTypes = array_unique(array_merge(
+            explode(',', $typeOptions),
+            array_map('strtolower', explode(',', $typeOptions)),
+            array_map('ucfirst', explode(',', $typeOptions)),
+            ['delay', 'route_change', 'suspension', 'breakdown', 'weather', 'emergency', 'announcement', 'Announcement']
+        ));
+
         $validated = $request->validate([
             'title' => 'required|string|max:80',
             'message' => 'required|string|max:500',
-            'severity' => 'required|in:Low,Medium,High,Emergency',
-            'type' => 'required|string|max:50',
+            'severity' => 'required|in:' . implode(',', $allowedSeverities),
+            'type' => 'required|string|max:50|in:' . implode(',', $allowedTypes),
             'affects' => 'required|array',
             'timing' => 'required|in:now,later',
             'schedule_time' => 'required_if:timing,later|nullable|date',
@@ -93,12 +118,13 @@ class ServiceAlertController extends Controller
         $sanitizedMessage = $messageValidation['sanitized'];
 
         $severityMap = [
-            'Low' => 'info',
-            'Medium' => 'warning',
-            'High' => 'warning',
-            'Emergency' => 'critical'
+            'low' => 'info',
+            'medium' => 'warning',
+            'high' => 'high',
+            'emergency' => 'critical',
+            'critical' => 'critical',
         ];
-        $dbSeverity = $severityMap[$validated['severity']] ?? 'info';
+        $dbSeverity = $severityMap[strtolower($validated['severity'])] ?? 'info';
 
         $routeId = null;
         if (count($validated['affects']) === 1) {
@@ -111,7 +137,7 @@ class ServiceAlertController extends Controller
             $createdAt = Carbon::parse($validated['schedule_time']);
         }
 
-        $alert = ServiceAlert::create([
+        $alert = new ServiceAlert([
             'route_id' => $routeId,
             'title' => $validated['title'],
             'message' => $sanitizedMessage,
@@ -119,12 +145,19 @@ class ServiceAlertController extends Controller
             'type' => $validated['type'],
             'affected_routes' => implode(',', $validated['affects']),
             'status' => 'active',
-            'created_at' => $createdAt,
-            'updated_at' => Carbon::now()
+            'suspend_route' => !empty($validated['suspend_route']) && $validated['suspend_route'],
         ]);
+        $alert->created_at = $createdAt;
+        $alert->updated_at = Carbon::now();
+        $alert->save();
 
         if (!empty($validated['suspend_route']) && $validated['suspend_route']) {
             Route::whereIn('name', $validated['affects'])->update(['status' => 'Suspended']);
+        }
+
+        // Notify commuters/drivers (simulated notification broadcast)
+        if ($validated['timing'] === 'now') {
+            \App\Services\NotificationService::sendServiceAlertNotification($alert);
         }
 
         return response()->json([
@@ -148,11 +181,26 @@ class ServiceAlertController extends Controller
         }
         $alert = ServiceAlert::findOrFail($id);
 
+        $severityOptions = \App\Models\SystemSetting::get('service_alert_severity_options', 'Low,Medium,High,Emergency');
+        $typeOptions = \App\Models\SystemSetting::get('service_alert_type_options', 'Delay,Route change,Suspension,Breakdown,Weather,Emergency');
+
+        $allowedSeverities = array_unique(array_merge(
+            explode(',', $severityOptions),
+            array_map('strtolower', explode(',', $severityOptions)),
+            array_map('ucfirst', explode(',', $severityOptions))
+        ));
+        $allowedTypes = array_unique(array_merge(
+            explode(',', $typeOptions),
+            array_map('strtolower', explode(',', $typeOptions)),
+            array_map('ucfirst', explode(',', $typeOptions)),
+            ['delay', 'route_change', 'suspension', 'breakdown', 'weather', 'emergency', 'announcement', 'Announcement']
+        ));
+
         $validated = $request->validate([
             'title' => 'required|string|max:80',
             'message' => 'required|string|max:500',
-            'severity' => 'required|in:Low,Medium,High,Emergency',
-            'type' => 'required|string|max:50',
+            'severity' => 'required|in:' . implode(',', $allowedSeverities),
+            'type' => 'required|string|max:50|in:' . implode(',', $allowedTypes),
             'affects' => 'required|array',
             'timing' => 'required|in:now,later',
             'schedule_time' => 'required_if:timing,later|nullable|date',
@@ -170,12 +218,13 @@ class ServiceAlertController extends Controller
         $sanitizedMessage = $messageValidation['sanitized'];
 
         $severityMap = [
-            'Low' => 'info',
-            'Medium' => 'warning',
-            'High' => 'warning',
-            'Emergency' => 'critical'
+            'low' => 'info',
+            'medium' => 'warning',
+            'high' => 'high',
+            'emergency' => 'critical',
+            'critical' => 'critical',
         ];
-        $dbSeverity = $severityMap[$validated['severity']] ?? 'info';
+        $dbSeverity = $severityMap[strtolower($validated['severity'])] ?? 'info';
 
         $routeId = null;
         if (count($validated['affects']) === 1) {
@@ -190,16 +239,18 @@ class ServiceAlertController extends Controller
             $createdAt = Carbon::now();
         }
 
-        $alert->update([
+        $alert->fill([
             'route_id' => $routeId,
             'title' => $validated['title'],
             'message' => $sanitizedMessage,
             'severity' => $dbSeverity,
             'type' => $validated['type'],
             'affected_routes' => implode(',', $validated['affects']),
-            'created_at' => $createdAt,
-            'updated_at' => Carbon::now()
+            'suspend_route' => !empty($validated['suspend_route']) && $validated['suspend_route'],
         ]);
+        $alert->created_at = $createdAt;
+        $alert->updated_at = Carbon::now();
+        $alert->save();
 
         if (!empty($validated['suspend_route']) && $validated['suspend_route']) {
             Route::whereIn('name', $validated['affects'])->update(['status' => 'Suspended']);
@@ -230,6 +281,27 @@ class ServiceAlertController extends Controller
             'updated_at' => Carbon::now()
         ]);
 
+        if ($alert->suspend_route && !empty($alert->affected_routes)) {
+            $affectedRoutes = explode(',', $alert->affected_routes);
+            foreach ($affectedRoutes as $routeName) {
+                $otherActiveSuspensionExists = ServiceAlert::where('status', 'active')
+                    ->where('id', '!=', $alert->id)
+                    ->where('suspend_route', true)
+                    ->where(function($q) use ($routeName) {
+                        $q->where('affected_routes', $routeName)
+                          ->orWhere('affected_routes', 'like', $routeName . ',%')
+                          ->orWhere('affected_routes', 'like', '%,' . $routeName)
+                          ->orWhere('affected_routes', 'like', '%,' . $routeName . ',%');
+                    })
+                    ->exists();
+                if (!$otherActiveSuspensionExists) {
+                    Route::where('name', $routeName)->update(['status' => 'Active']);
+                }
+            }
+        }
+
+        \App\Services\NotificationService::sendServiceAlertNotification($alert);
+
         return response()->json([
             'success' => true,
             'message' => 'Alert successfully resolved!',
@@ -249,10 +321,36 @@ class ServiceAlertController extends Controller
                 'message' => 'Unauthorized: Only admins can resolve all alerts'
             ], 403);
         }
-        ServiceAlert::where('status', 'active')->update([
-            'status' => 'resolved',
-            'updated_at' => Carbon::now()
-        ]);
+
+        $activeAlerts = ServiceAlert::where('status', 'active')->get();
+
+        foreach ($activeAlerts as $alert) {
+            $alert->update([
+                'status' => 'resolved',
+                'updated_at' => Carbon::now()
+            ]);
+
+            if ($alert->suspend_route && !empty($alert->affected_routes)) {
+                $affectedRoutes = explode(',', $alert->affected_routes);
+                foreach ($affectedRoutes as $routeName) {
+                    $otherActiveSuspensionExists = ServiceAlert::where('status', 'active')
+                        ->where('id', '!=', $alert->id)
+                        ->where('suspend_route', true)
+                        ->where(function($q) use ($routeName) {
+                            $q->where('affected_routes', $routeName)
+                              ->orWhere('affected_routes', 'like', $routeName . ',%')
+                              ->orWhere('affected_routes', 'like', '%,' . $routeName)
+                              ->orWhere('affected_routes', 'like', '%,' . $routeName . ',%');
+                        })
+                        ->exists();
+                    if (!$otherActiveSuspensionExists) {
+                        Route::where('name', $routeName)->update(['status' => 'Active']);
+                    }
+                }
+            }
+
+            \App\Services\NotificationService::sendServiceAlertNotification($alert);
+        }
 
         return response()->json([
             'success' => true,

@@ -29,7 +29,7 @@ class MaintenanceService
                 'completed_at' => now(),
             ]);
 
-            $bus = Bus::find($record->bus_id);
+            $bus = Bus::find($record->getRawOriginal('bus_id'));
             if ($bus) {
                 $restoreStatus = $bus->previous_status ?? 'active';
                 $bus->update(['status' => $restoreStatus, 'previous_status' => null]);
@@ -117,7 +117,7 @@ class MaintenanceService
      */
     public static function syncMaintenanceWithBusStatus(MaintenanceRecord $record): void
     {
-        $bus = Bus::find($record->bus_id);
+        $bus = Bus::find($record->getRawOriginal('bus_id'));
         if (!$bus) return;
 
         // If maintenance is completed but bus is still in maintenance, fix it

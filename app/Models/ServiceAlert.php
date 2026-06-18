@@ -20,7 +20,16 @@ class ServiceAlert extends Model
         'type',
         'affected_routes',
         'estimated_resumption',
+        'suspend_route',
     ];
+
+    /**
+     * Scope to return active and currently visible alerts (excluding future scheduled alerts)
+     */
+    public function scopeActiveAlerts($query)
+    {
+        return $query->where('status', 'active')->where('created_at', '<=', now());
+    }
 
     public function route()
     {

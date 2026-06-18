@@ -96,6 +96,7 @@ async function loadDatabaseAlertsData() {
                 let severityStr = 'Medium';
                 if (alert.severity === 'info') severityStr = 'Low';
                 else if (alert.severity === 'warning') severityStr = 'Medium';
+                else if (alert.severity === 'high') severityStr = 'High';
                 else if (alert.severity === 'critical') severityStr = 'Emergency';
 
                 // Parse date/time

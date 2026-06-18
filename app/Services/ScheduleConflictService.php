@@ -207,17 +207,18 @@ class ScheduleConflictService
     ): array
     {
         $minRestHours = (int) SystemSetting::get('driver_min_rest_hours', 8);
+        $minRestMinutes = $minRestHours * 60;
+        $newStartTime = self::parseScheduleDateTime($departureTime);
 
-        // Get driver's last completed schedule of the day
-        $lastSchedule = Schedule::where('driver_id', $driverId)
+        // Check every prior schedule with real dates so overnight trips still enforce rest.
+        $schedules = Schedule::where('driver_id', $driverId)
             ->where('status', '!=', 'cancelled')
             ->when($excludeScheduleId, function ($q) use ($excludeScheduleId) {
                 return $q->where('id', '!=', $excludeScheduleId);
             })
-            ->orderBy('departure_time', 'desc')
-            ->first();
+            ->get();
 
-        if (!$lastSchedule) {
+        if ($schedules->isEmpty()) {
             // No previous schedule, rest period OK
             return [
                 'compliant' => true,
@@ -225,32 +226,42 @@ class ScheduleConflictService
             ];
         }
 
-        // Calculate time between end of last schedule and start of new one
-        $lastEndTime = Carbon::parse($lastSchedule->arrival_time);
-        $newStartTime = Carbon::parse($departureTime);
+        // Estimate new schedule end time using route travel time for cross-day support
+        $newDuration = (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
+        $newEndTime = $newStartTime->copy()->addMinutes($newDuration);
 
-        // If times are different days, assume overnight rest is OK
-        if ($lastEndTime->isToday() === false || $newStartTime->isToday() === false) {
-            // Different days - rest period assumed OK
-            return [
-                'compliant' => true,
-                'message' => 'Different days - overnight rest assumed'
-            ];
-        }
+        foreach ($schedules as $schedule) {
+            $existingStart = self::scheduleStartDateTime($schedule);
+            $existingEnd = self::scheduleEndDateTime($schedule, $existingStart);
 
-        // Same day - check minimum rest hours
-        $restHours = $lastEndTime->diffInHours($newStartTime);
+            // Case A: new trip starts AFTER existing trip ends — enforce rest after existing
+            if ($newStartTime->greaterThanOrEqualTo($existingEnd)) {
+                $restMinutes = $existingEnd->diffInMinutes($newStartTime);
+                if ($restMinutes < $minRestMinutes) {
+                    $restHours = round($restMinutes / 60, 1);
+                    return [
+                        'compliant' => false,
+                        'message' => "Driver needs {$minRestHours}h rest after previous trip (currently: {$restHours}h)"
+                    ];
+                }
+            }
 
-        if ($restHours < $minRestHours) {
-            return [
-                'compliant' => false,
-                'message' => "Driver needs {$minRestHours} hours rest between trips (currently: {$restHours} hours)"
-            ];
+            // Case B: new trip ends BEFORE existing trip starts — enforce rest before existing
+            if ($newEndTime->lessThanOrEqualTo($existingStart)) {
+                $restMinutes = $newEndTime->diffInMinutes($existingStart);
+                if ($restMinutes < $minRestMinutes) {
+                    $restHours = round($restMinutes / 60, 1);
+                    return [
+                        'compliant' => false,
+                        'message' => "Driver needs {$minRestHours}h rest before next scheduled trip (currently: {$restHours}h)"
+                    ];
+                }
+            }
         }
 
         return [
             'compliant' => true,
-            'message' => "Rest period OK ({$restHours} hours available)"
+            'message' => 'Rest period OK'
         ];
     }
 
@@ -318,10 +329,8 @@ class ScheduleConflictService
     {
         $bufferMinutes = (int) SystemSetting::get('schedule_buffer_minutes', 15);
 
-        // Parse new schedule times
-        $newDepParts = explode(':', $departureTime);
-        $newDepMinutes = intval($newDepParts[0]) * 60 + intval($newDepParts[1]);
-        $newArrMinutes = $newDepMinutes + $durationMinutes;
+        $newStart = self::parseScheduleDateTime($departureTime);
+        $newEnd = $newStart->copy()->addMinutes($durationMinutes);
 
         // Find conflicting schedules
         $query = Schedule::query();
@@ -332,7 +341,7 @@ class ScheduleConflictService
             $query->where('driver_id', $entityId);
         }
 
-        $query->where('status', '!=', 'cancelled')
+        $query->whereNotIn('status', ['cancelled', Schedule::STATUS_CANCELLED])
             ->when($excludeScheduleId, function ($q) use ($excludeScheduleId) {
                 return $q->where('id', '!=', $excludeScheduleId);
             });
@@ -340,15 +349,12 @@ class ScheduleConflictService
         $existingSchedules = $query->get();
 
         foreach ($existingSchedules as $existing) {
-            $existingDepParts = explode(':', $existing->departure_time);
-            $existingDepMinutes = intval($existingDepParts[0]) * 60 + intval($existingDepParts[1]);
-
-            $existingArrParts = explode(':', $existing->arrival_time);
-            $existingArrMinutes = intval($existingArrParts[0]) * 60 + intval($existingArrParts[1]);
+            $existingStart = self::scheduleStartDateTime($existing);
+            $existingEnd = self::scheduleEndDateTime($existing, $existingStart);
 
             // Check for overlap with buffer
-            if (($newDepMinutes < ($existingArrMinutes + $bufferMinutes)) &&
-                ($existingDepMinutes < ($newArrMinutes + $bufferMinutes))) {
+            if ($newStart->lessThan($existingEnd->copy()->addMinutes($bufferMinutes)) &&
+                $existingStart->lessThan($newEnd->copy()->addMinutes($bufferMinutes))) {
                 
                 $routeName = $existing->route->name ?? $existing->route_id;
                 return [
@@ -370,10 +376,11 @@ class ScheduleConflictService
     protected static function checkRouteCapability(Route $route, Bus $bus, Driver $driver): array
     {
         // Check 1: Bus capacity vs route requirements
-        if ($bus->capacity < ($route->min_capacity ?? 30)) {
+        $minimumCapacity = (int) ($route->min_capacity ?? SystemSetting::get('route_min_capacity_default', 30));
+        if ($bus->capacity < $minimumCapacity) {
             return [
                 'capable' => false,
-                'message' => "Bus capacity ({$bus->capacity}) below route minimum ({$route->min_capacity})"
+                'message' => "Bus capacity ({$bus->capacity}) below route minimum ({$minimumCapacity})"
             ];
         }
 
@@ -384,6 +391,36 @@ class ScheduleConflictService
             'capable' => true,
             'message' => 'Bus and driver are suitable for this route'
         ];
+    }
+
+    protected static function parseScheduleDateTime(string $time): Carbon
+    {
+        if (preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $time)) {
+            return Carbon::today()->setTimeFromTimeString($time);
+        }
+
+        return Carbon::parse($time);
+    }
+
+    protected static function scheduleStartDateTime(Schedule $schedule): Carbon
+    {
+        $date = $schedule->service_date
+            ? Carbon::parse($schedule->service_date)->toDateString()
+            : Carbon::today()->toDateString();
+
+        return Carbon::parse($date . ' ' . substr($schedule->departure_time, 0, 8));
+    }
+
+    protected static function scheduleEndDateTime(Schedule $schedule, ?Carbon $start = null): Carbon
+    {
+        $start = $start ?: self::scheduleStartDateTime($schedule);
+        $end = Carbon::parse($start->toDateString() . ' ' . substr($schedule->arrival_time, 0, 8));
+
+        if ($end->lessThanOrEqualTo($start)) {
+            $end->addDay();
+        }
+
+        return $end;
     }
 
     /**

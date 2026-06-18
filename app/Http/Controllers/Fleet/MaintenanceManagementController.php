@@ -188,6 +188,20 @@ class MaintenanceManagementController extends Controller
 
         $validated = $request->validate($rules);
 
+        // Block scheduling maintenance if the bus is mid-trip
+        if (in_array($validated['status'], ['scheduled', 'in_progress'])) {
+            $bus = Bus::find($validated['bus_id']);
+            if ($bus && $bus->status !== 'maintenance') {
+                $ongoingTrip = \App\Models\Trip::where('bus_id', $validated['bus_id'])->where('status', 'ongoing')->exists();
+                if ($ongoingTrip) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Cannot schedule maintenance: The bus currently has an ongoing trip.'
+                    ], 422);
+                }
+            }
+        }
+
         $data = [
             'bus_id' => $validated['bus_id'],
             'type' => $validated['type'],

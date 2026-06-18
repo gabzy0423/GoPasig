@@ -212,8 +212,16 @@
                             </span>
                             <select id="maintenance-type" name="type" required
                                     class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87] appearance-none cursor-pointer">
-                                <option value="Preventive Maintenance">Preventive Maintenance (Routine inspection / oil change / checkups)</option>
-                                <option value="Corrective Maintenance">Corrective Maintenance (Repairs for mechanical or electrical issues)</option>
+                                @foreach($maintenanceTypes as $typeOption)
+                                    <option value="{{ $typeOption }}">
+                                        {{ $typeOption }}
+                                        @if($typeOption === 'Preventive Maintenance')
+                                            (Routine inspection / oil change / checkups)
+                                        @elseif($typeOption === 'Corrective Maintenance')
+                                            (Repairs for mechanical or electrical issues)
+                                        @endif
+                                    </option>
+                                @endforeach
                             </select>
                             <span class="absolute inset-y-0 right-3 flex items-center pointer-events-none text-slate-400">
                                 <i class="ti ti-chevron-down text-sm"></i>

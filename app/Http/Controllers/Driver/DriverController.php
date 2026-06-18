@@ -162,7 +162,7 @@ class DriverController extends Controller
         $user = Auth::user();
         $driver = Driver::where('user_id', $user->id)->first();
         
-        $alerts = ServiceAlert::where('status', 'active')
+        $alerts = ServiceAlert::activeAlerts()
             ->latest()
             ->get();
 

@@ -70,7 +70,7 @@ class ServiceAlertsPage extends Component
         $routeColors = \App\Models\Route::pluck('color', 'name')->toArray();
 
         // 1. Fetch active alerts from database
-        $activeQuery = ServiceAlert::where('status', 'active');
+        $activeQuery = ServiceAlert::activeAlerts();
 
         if ($this->filter !== 'all') {
             // Map filter types from pills to seeder values
@@ -128,7 +128,7 @@ class ServiceAlertsPage extends Component
         $this->alertCount = $activeAlertsMapped->count();
 
         // Unread badge count (global count of unread active alerts)
-        $unreadCount = ServiceAlert::where('status', 'active')->get()->filter(function ($alert) {
+        $unreadCount = ServiceAlert::activeAlerts()->get()->filter(function ($alert) {
             return !in_array($alert->id, $this->readAlerts);
         })->count();
 
