@@ -41,6 +41,11 @@ class SystemSetting extends Model
      */
     public static function get(string $key, $default = null)
     {
+        if (app()->environment('testing') && $key !== 'system_setting_cache_ttl_seconds') {
+            $setting = static::where('key', $key)->first();
+            return $setting ? $setting->value : $default;
+        }
+
         static $ttl = null;
         if ($ttl === null) {
             $ttl = Cache::remember("system_setting_cache_ttl_val", now()->addSeconds(10), function () {

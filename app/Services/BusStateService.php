@@ -14,7 +14,7 @@ class BusStateService
      */
     private const VALID_TRANSITIONS = [
         'active'      => ['inactive', 'maintenance'],
-        'inactive'    => ['active'],
+        'inactive'    => ['active', 'maintenance'],
         'maintenance' => ['active', 'inactive'],
     ];
 

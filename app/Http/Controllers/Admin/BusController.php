@@ -79,8 +79,8 @@ class BusController extends Controller
 
         $bus = Bus::create([
             'plate_number' => $validated['plate_number'],
-            'route_id' => $validated['route_id'] ?: null,
-            'driver_name' => $validated['driver_name'] ?: Bus::DEFAULT_DRIVER_NAME,
+            'route_id' => isset($validated['route_id']) ? ($validated['route_id'] ?: null) : null,
+            'driver_name' => isset($validated['driver_name']) ? ($validated['driver_name'] ?: Bus::getDefaultDriverName()) : Bus::getDefaultDriverName(),
             'capacity' => $validated['capacity'],
             'status' => $validated['status'],
             'speed' => Bus::getInitialSpeed(),
@@ -139,9 +139,9 @@ class BusController extends Controller
 
                 $bus->update([
                     'plate_number' => $validated['plate_number'],
-                    'route_id' => $validated['route_id'] ?: null,
-                    'driver_name' => $validated['driver_name'] ?: Bus::DEFAULT_DRIVER_NAME,
-                    'capacity' => $validated['capacity'],
+                    'route_id'     => array_key_exists('route_id', $validated) ? ($validated['route_id'] ?: null) : $bus->route_id,
+                    'driver_name'  => array_key_exists('driver_name', $validated) ? ($validated['driver_name'] ?: Bus::getDefaultDriverName()) : $bus->driver_name,
+                    'capacity'     => $validated['capacity'],
                 ]);
             });
         } catch (InvalidStatusTransitionException $e) {

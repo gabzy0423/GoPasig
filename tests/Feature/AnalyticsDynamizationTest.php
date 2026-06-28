@@ -222,7 +222,7 @@ class AnalyticsDynamizationTest extends TestCase
         $this->assertEquals(45, $response1->json('busCapacityLimit'));
         
         // Update the setting to 100
-        SystemSetting::where('key', 'bus_capacity_default')
+        SystemSetting::where('key', 'default_bus_capacity')
             ->update(['value' => '100']);
         
         // Clear cache to ensure fresh value is fetched
