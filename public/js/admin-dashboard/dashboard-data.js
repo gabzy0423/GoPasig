@@ -38,10 +38,10 @@ async function loadDatabaseFleetData() {
         const url = (window.GoPasigConfig && window.GoPasigConfig.fleetDataUrl) ? window.GoPasigConfig.fleetDataUrl : '/admin/api/fleet-data';
         const response = await fetch(url);
         const data = await response.json();
-        
+
         console.log("API RAW RESPONSE routes:", data.routes ? data.routes.length : 'undefined');
         console.log("API RAW RESPONSE buses:", data.buses ? data.buses.length : 'undefined');
-        
+
         // 1. Populate Fleet data
         fleetData.length = 0; // clear existing
         data.buses.forEach(bus => {
@@ -69,12 +69,9 @@ async function loadDatabaseFleetData() {
         data.routes.forEach(route => {
             routesDataDb.push(route);
             routeNames[route.id.toString()] = `${route.name} | ${route.description}`;
-            
-            // Assign hex colors based on Route ID
-            if (route.id == 1) routeColors[route.id.toString()] = '#378ADD';
-            else if (route.id == 2) routeColors[route.id.toString()] = '#639922';
-            else if (route.id == 3) routeColors[route.id.toString()] = '#BA7517';
-            else routeColors[route.id.toString()] = '#E24B4A';
+
+
+            routeColors[route.id.toString()] = route.color || '#003F87';
         });
 
         // 3. Populate Trips logs dynamically
@@ -84,7 +81,7 @@ async function loadDatabaseFleetData() {
                 const logTime = new Date(trip.created_at || trip.started_at);
                 const timeString = logTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
                 const routeShort = trip.route ? trip.route.name : 'Route 1';
-                
+
                 let driverShort = 'Unassigned';
                 if (trip.driver) {
                     driverShort = `${trip.driver.first_name.charAt(0)}. ${trip.driver.last_name}`;

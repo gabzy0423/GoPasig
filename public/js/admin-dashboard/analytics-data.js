@@ -55,11 +55,16 @@ async function loadDatabaseAnalyticsData() {
             // Build predictionRouteData
             const topStopAll = stopBoardingData[0]?.name || 'Pasig City Hall';
 
+
+            const topStopBoardingCount = stopBoardingData[0]?.boarding ?? stopBoardingData[0]?.boarding_count ?? null;
+            const topStopPeakHour = kpisData.peak_hour || 'N/A';
+            const topStopPaxLabel = topStopBoardingCount !== null ? `~${topStopBoardingCount} passengers` : 'No data';
+
             predictionRouteData = {
                 all: {
                     vol: `${kpisData.total_pax_today || '0'} pax / day`,
                     rec: `${kpisData.trips_scheduled || '0'} recommended`,
-                    busiest: `Expected highest boarding: ${topStopAll} · 7–8 AM · ~67 passengers`
+                    busiest: `Expected highest boarding: ${topStopAll} · ${topStopPeakHour} · ${topStopPaxLabel}`
                 }
             };
 

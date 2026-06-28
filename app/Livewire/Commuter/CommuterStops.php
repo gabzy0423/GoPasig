@@ -11,7 +11,7 @@ class CommuterStops extends Component
 {
     public $search = '';
     public $selectedStopId = null;
-    
+
     // Commuter Geolocation coordinates
     public $lat = null;
     public $lng = null;
@@ -20,8 +20,8 @@ class CommuterStops extends Component
 
     public function updateLocation($lat, $lng)
     {
-        $this->lat = (float)$lat;
-        $this->lng = (float)$lng;
+        $this->lat = (float) $lat;
+        $this->lng = (float) $lng;
     }
 
     public function selectStop($stopId)
@@ -42,38 +42,32 @@ class CommuterStops extends Component
         // Apply search filter if specified
         if (!empty(trim($this->search))) {
             $s = '%' . trim($this->search) . '%';
-            $stopsQuery->where(function($q) use ($s) {
+            $stopsQuery->where(function ($q) use ($s) {
                 $q->where('name', 'like', $s)
-                  ->orWhereHas('route', function($rq) use ($s) {
-                      $rq->where('name', 'like', $s);
-                  });
+                    ->orWhereHas('route', function ($rq) use ($s) {
+                        $rq->where('name', 'like', $s);
+                    });
             });
         }
 
         $stops = $stopsQuery->get();
 
-        // Compute Proximity Distance using Haversine Formula
         if ($this->lat && $this->lng) {
-            $stops = $stops->map(function($stop) {
-                $earthRadius = 6371; // Earth radius in Kilometers
-                
-                $dLat = deg2rad($stop->lat - $this->lat);
-                $dLng = deg2rad($stop->lng - $this->lng);
-                
-                $a = sin($dLat / 2) * sin($dLat / 2) +
-                     cos(deg2rad($this->lat)) * cos(deg2rad($stop->lat)) *
-                     sin($dLng / 2) * sin($dLng / 2);
-                     
-                $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
-                
-                $stop->distance = round($earthRadius * $c, 2); // rounded to 2 decimal places
+            $stops = $stops->map(function ($stop) {
+                $distMeters = \App\Services\GPSKalmanFilter::calculateDistance(
+                    $this->lat,
+                    $this->lng,
+                    $stop->lat,
+                    $stop->lng
+                );
+                $stop->distance = round($distMeters / 1000, 2); // rounded to km
                 return $stop;
             });
 
             // Sort by proximity distance in ascending order (closest stops first)
             $stops = $stops->sortBy('distance')->values();
         } else {
-            $stops = $stops->map(function($stop) {
+            $stops = $stops->map(function ($stop) {
                 $stop->distance = null;
                 return $stop;
             });
@@ -88,39 +82,58 @@ class CommuterStops extends Component
 
         if ($this->selectedStopId) {
             $selectedStop = Stop::with('route')->find($this->selectedStopId);
-            
+
             if ($selectedStop) {
-                // Proximity distance check
+                // Proximity distance check using centralized Haversine helper (ISSUE-052)
                 if ($this->lat && $this->lng) {
-                    $earthRadius = 6371;
-                    $dLat = deg2rad($selectedStop->lat - $this->lat);
-                    $dLng = deg2rad($selectedStop->lng - $this->lng);
-                    $a = sin($dLat / 2) * sin($dLat / 2) +
-                         cos(deg2rad($this->lat)) * cos(deg2rad($selectedStop->lat)) *
-                         sin($dLng / 2) * sin($dLng / 2);
-                    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
-                    $selectedStop->distance = round($earthRadius * $c, 2);
+                    $distMeters = \App\Services\GPSKalmanFilter::calculateDistance(
+                        $this->lat,
+                        $this->lng,
+                        $selectedStop->lat,
+                        $selectedStop->lng
+                    );
+                    $selectedStop->distance = round($distMeters / 1000, 2);
                 } else {
                     $selectedStop->distance = null;
                 }
 
                 // Servicing routes: in this capstone, find routes passing this stop landmark.
                 // We'll show the direct parent route and look for routes with the same stop name for a unified view.
-                $servicingRoutes = Route::whereHas('stops', function($q) use ($selectedStop) {
+                $servicingRoutes = Route::whereHas('stops', function ($q) use ($selectedStop) {
                     $q->where('name', $selectedStop->name);
                 })->get();
 
-                // Find next arriving bus for this route
-                $nextBus = Bus::where('route_id', $selectedStop->route_id)
+                // Find next arriving bus for this route (ISSUE-052: Sort active buses by physical proximity/distance to the stop)
+                $buses = Bus::where('route_id', $selectedStop->route_id)
                     ->where('status', 'active')
-                    ->first();
-                
+                    ->get();
+
+                $nextBus = $buses->map(function ($bus) use ($selectedStop) {
+                    $bus->distance_to_stop = \App\Services\GPSKalmanFilter::calculateDistance(
+                        $bus->lat,
+                        $bus->lng,
+                        $selectedStop->lat,
+                        $selectedStop->lng
+                    );
+                    return $bus;
+                })->sortBy('distance_to_stop')->first();
+
                 if (!$nextBus) {
-                    // Fallback to active bus on any servicing route if primary is empty
+                    // Fallback to active bus on any servicing route if primary is empty (ISSUE-052: Sort active fallback buses by physical proximity/distance to the stop)
                     $routeIds = $servicingRoutes->pluck('id')->toArray();
-                    $nextBus = Bus::whereIn('route_id', $routeIds)
+                    $busesFallback = Bus::whereIn('route_id', $routeIds)
                         ->where('status', 'active')
-                        ->first();
+                        ->get();
+
+                    $nextBus = $busesFallback->map(function ($bus) use ($selectedStop) {
+                        $bus->distance_to_stop = \App\Services\GPSKalmanFilter::calculateDistance(
+                            $bus->lat,
+                            $bus->lng,
+                            $selectedStop->lat,
+                            $selectedStop->lng
+                        );
+                        return $bus;
+                    })->sortBy('distance_to_stop')->first();
                 }
             }
         }

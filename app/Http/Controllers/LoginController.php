@@ -49,6 +49,11 @@ class LoginController extends Controller
 
     public function autoLoginDispatcher()
     {
+        // ISSUE-051 FIX: Guard auto-login backdoor from production environments.
+        if (app()->environment('production')) {
+            abort(404);
+        }
+
         $user = User::where('role', 'dispatcher')->first();
         if ($user) {
             Auth::login($user);

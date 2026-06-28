@@ -99,32 +99,11 @@
             recEl.textContent = data.rec;
             busiestEl.textContent = data.busiest;
         } else {
-            // Fallback mock static values
-            if (routeName === 'all') {
-                volEl.textContent = '1,284 pax / day';
-                recEl.textContent = '29 recommended';
-                busiestEl.textContent = 'Expected highest boarding: Pasig City Hall · 7–8 AM · ~67 passengers';
-            } else {
-                // If dynamic key wasn't found in predictionRouteData but is Route A/B/C, use fallback
-                const fallbackKey = routeName.replace('Route ', '');
-                if (fallbackKey === 'A') {
-                    volEl.textContent = '532 pax / day';
-                    recEl.textContent = '11 recommended';
-                    busiestEl.textContent = 'Expected highest boarding: Pasig City Hall · 7–8 AM · ~45 passengers';
-                } else if (fallbackKey === 'B') {
-                    volEl.textContent = '421 pax / day';
-                    recEl.textContent = '10 recommended';
-                    busiestEl.textContent = 'Expected highest boarding: Ortigas Center · 7–8 AM · ~38 passengers';
-                } else if (fallbackKey === 'C') {
-                    volEl.textContent = '331 pax / day';
-                    recEl.textContent = '8 recommended';
-                    busiestEl.textContent = 'Expected highest boarding: Shaw Blvd · 5–6 PM · ~31 passengers';
-                } else {
-                    volEl.textContent = '0 pax / day';
-                    recEl.textContent = '0 recommended';
-                    busiestEl.textContent = 'Expected highest boarding: N/A';
-                }
-            }
+            // ISSUE-047 FIX: Removed hardcoded static text fallbacks for specific routes (Route A, B, C).
+            // Now shows clear 'N/A' if prediction data is not available.
+            volEl.textContent = 'N/A';
+            recEl.textContent = 'N/A';
+            busiestEl.textContent = 'No prediction data available';
         }
     }
 

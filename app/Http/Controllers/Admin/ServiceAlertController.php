@@ -214,7 +214,7 @@ class ServiceAlertController extends Controller
 
     /**
      * Resolve the specified service alert and notify affected parties.
-     * Issue 3.2.3: Notify commuters/drivers on suspension
+     * Issue 3.2.3: Notify commuters/drivers on suspension/resolution
      */
     public function resolve($id)
     {
@@ -230,6 +230,17 @@ class ServiceAlertController extends Controller
             'updated_at' => Carbon::now()
         ]);
 
+        // ISSUE-050 FIX: Notify affected drivers and admins upon resolution
+        $recipientIds = User::where('role', 'admin')->pluck('id')->toArray();
+        if ($alert->route_id) {
+            $driverUserIds = Driver::where('assigned_route', $alert->route_id)
+                ->whereNotNull('user_id')
+                ->pluck('user_id')
+                ->toArray();
+            $recipientIds = array_unique(array_merge($recipientIds, $driverUserIds));
+        }
+        \App\Services\NotificationService::sendServiceAlertNotification($alert, $recipientIds);
+
         return response()->json([
             'success' => true,
             'message' => 'Alert successfully resolved!',
@@ -239,7 +250,7 @@ class ServiceAlertController extends Controller
 
     /**
      * Resolve all active service alerts and notify users.
-     * Issue 3.2.3: Notify commuters/drivers on suspension
+     * Issue 3.2.3: Notify commuters/drivers on suspension/resolution
      */
     public function resolveAll()
     {
@@ -249,10 +260,25 @@ class ServiceAlertController extends Controller
                 'message' => 'Unauthorized: Only admins can resolve all alerts'
             ], 403);
         }
-        ServiceAlert::where('status', 'active')->update([
-            'status' => 'resolved',
-            'updated_at' => Carbon::now()
-        ]);
+
+        // ISSUE-050 FIX: Notify affected drivers and admins upon resolving all active alerts
+        $activeAlerts = ServiceAlert::where('status', 'active')->get();
+        foreach ($activeAlerts as $alert) {
+            $alert->update([
+                'status' => 'resolved',
+                'updated_at' => Carbon::now()
+            ]);
+
+            $recipientIds = User::where('role', 'admin')->pluck('id')->toArray();
+            if ($alert->route_id) {
+                $driverUserIds = Driver::where('assigned_route', $alert->route_id)
+                    ->whereNotNull('user_id')
+                    ->pluck('user_id')
+                    ->toArray();
+                $recipientIds = array_unique(array_merge($recipientIds, $driverUserIds));
+            }
+            \App\Services\NotificationService::sendServiceAlertNotification($alert, $recipientIds);
+        }
 
         return response()->json([
             'success' => true,

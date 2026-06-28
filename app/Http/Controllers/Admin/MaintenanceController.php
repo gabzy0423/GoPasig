@@ -55,12 +55,15 @@ class MaintenanceController extends Controller
             ], 403);
         }
 
+        $minDuration = (int) SystemSetting::get('maintenance_duration_min_minutes', 15);
+        $maxDuration = (int) SystemSetting::get('maintenance_duration_max_minutes', 480);
+
         $validated = $request->validate([
             'bus_id' => 'required|exists:buses,id',
             'type' => 'required|string|max:100',
             'description' => 'nullable|string',
             'scheduled_at' => 'required|date',
-            'expected_duration_minutes' => 'nullable|integer|min:15|max:480',
+            'expected_duration_minutes' => "nullable|integer|min:{$minDuration}|max:{$maxDuration}",
         ]);
 
         $duration = $validated['expected_duration_minutes'] 

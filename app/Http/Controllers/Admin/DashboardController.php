@@ -18,8 +18,8 @@ class DashboardController extends Controller
             $missingThresholdKey = !\App\Models\DispatchSimulationDefault::where('key', 'default_demand_threshold')->exists();
         }
         $routes = Route::getAllCached();
-        $primaryRouteName = $routes->first()->name ?? 'Pasig Line 1';
-        $busCapacityLimit = (int) \App\Models\SystemSetting::get('bus_capacity_default', 45);
+        $primaryRouteName = $routes->first()->name ?? \App\Models\SystemSetting::get('default_route_name', 'Route 1');
+        $busCapacityLimit = (int) \App\Models\SystemSetting::get('default_bus_capacity', 45);
         $licenseWarningDays = (int) \App\Models\SystemSetting::get('license_expiry_warning_threshold_days', 30);
         $mapCenterLat = (float) \App\Models\SystemSetting::get('map_default_latitude', 14.5690);
         $mapCenterLng = (float) \App\Models\SystemSetting::get('map_default_longitude', 121.0680);

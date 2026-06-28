@@ -13,7 +13,7 @@ class BusFactory extends Factory
     public function definition(): array
     {
         return [
-            'plate_number' => 'PAS-' . $this->faker->numerify('###'),
+            'plate_number' => $this->faker->unique()->numerify('PAS-####'),
             'route_id' => null,
             'driver_name' => null,
             'capacity' => 45,

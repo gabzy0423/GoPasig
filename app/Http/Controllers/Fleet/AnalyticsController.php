@@ -271,7 +271,9 @@ class AnalyticsController extends Controller
             $busStatus = match (strtolower((string) $bus->status)) {
                 'active' => 'Active',
                 'idle' => 'Idle',
-                'maintenance' => 'Breakdown',
+                'maintenance' => 'Maintenance',
+                'breakdown' => 'Breakdown',
+                'inactive' => 'Inactive',
                 default => ucfirst((string) $bus->status),
             };
 
@@ -312,7 +314,7 @@ class AnalyticsController extends Controller
             // The old approach (joining schedules) incorrectly counted buses from past
             // schedules that may now be active on a different route.
             $activeBusesOnRoute = Bus::where('route_id', $route->id)->where('status', 'active')->count();
-            $totalBusesOnRoute  = Bus::where('route_id', $route->id)->count();
+            $totalBusesOnRoute = Bus::where('route_id', $route->id)->count();
 
             $cap = Bus::getDefaultCapacity();
             $recBuses = max(1, (int) ceil($peakPassengers / $cap));

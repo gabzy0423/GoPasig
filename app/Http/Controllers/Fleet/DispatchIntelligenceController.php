@@ -106,13 +106,15 @@ class DispatchIntelligenceController extends Controller
             ->take(6)
             ->get()->map(function ($log) {
                 return [
-                    'id' => $log->id,
-                    'route_id' => $log->trip ? $log->trip->route_id : null,
-                    'route_name' => ($log->trip && $log->trip->route) ? $log->trip->route->name : 'Route',
-                    'bus_plate' => ($log->trip && $log->trip->bus) ? $log->trip->bus->plate_number : '—',
+                    'id'          => $log->id,
+                    'route_id'    => $log->trip ? $log->trip->route_id : null,
+                    'route_name'  => ($log->trip && $log->trip->route) ? $log->trip->route->name : 'Route',
+                    // ISSUE-035 FIX: Include the DB route color so the JS doesn't need a hardcoded palette.
+                    'route_color' => ($log->trip && $log->trip->route) ? ($log->trip->route->color ?: '#003F87') : '#003F87',
+                    'bus_plate'   => ($log->trip && $log->trip->bus) ? $log->trip->bus->plate_number : '—',
                     'driver_name' => ($log->trip && $log->trip->driver) ? "{$log->trip->driver->first_name} {$log->trip->driver->last_name}" : '—',
-                    'notes' => $log->notes,
-                    'time_diff' => Carbon::parse($log->dispatched_at)->diffForHumans()
+                    'notes'       => $log->notes,
+                    'time_diff'   => Carbon::parse($log->dispatched_at)->diffForHumans()
                 ];
             });
 

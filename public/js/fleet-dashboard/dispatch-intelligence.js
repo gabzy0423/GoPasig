@@ -237,15 +237,10 @@ function updateRecentDispatchesDOM(recentDispatches) {
         return;
     }
 
-    const routeColors = {
-        1: '#003F87',
-        2: '#BA7517',
-        3: '#639922',
-        4: '#E24B4A'
-    };
-
+    // ISSUE-035 FIX: Use the DB-sourced route_color from the API response instead of
+    // a hardcoded local palette. Color is now set in the controller (DispatchIntelligenceController).
     recentDispatches.forEach(log => {
-        const routeColor = routeColors[log.route_id] || '#888780';
+        const routeColor = log.route_color || '#888780';
         const div = document.createElement('div');
         div.className = 'relative py-1 group flex flex-col gap-1 transition-all rounded hover:bg-slate-50 p-2 border border-transparent hover:border-slate-100';
         div.innerHTML = `
@@ -268,48 +263,29 @@ function updateMlAccuracyTrackerDOM(patterns) {
     if (!container) return;
 
     if (selectedPhase == 3) {
+        // ISSUE-034 FIX: The previous implementation used Math.random() to fabricate ML accuracy
+        // data and showed a hardcoded '96.4% Acc' badge — all fake. Until a real ML model is
+        // integrated, show an honest empty state instead of misleading mock data.
         container.innerHTML = `
             <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-4">
                 <div class="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div class="flex items-center gap-2">
                         <i class="ti ti-chart-bar text-lg text-[#003F87]"></i>
-                        <h3 class="text-sm font-bold text-slate-800 uppercase tracking-tight">Self-Improving ML Model Accuracy</h3>
+                        <h3 class="text-sm font-bold text-slate-800 uppercase tracking-tight">ML Model Accuracy Tracker</h3>
                     </div>
-                    <span class="rounded-full px-2 py-0.5 text-[9px] font-black uppercase bg-[#EAF3DE] text-[#3B6D11]">96.4% Acc</span>
+                    <span class="rounded-full px-2 py-0.5 text-[9px] font-black uppercase bg-slate-100 text-slate-500">Not Available</span>
                 </div>
-                <div class="space-y-3.5">
-                    <div class="grid grid-cols-3 text-[11px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-50 pb-2">
-                        <span>Day / Route</span>
-                        <span class="text-center">Expected Load</span>
-                        <span class="text-right">Actual Recorded</span>
+                <div class="py-10 flex flex-col items-center justify-center text-center space-y-3">
+                    <div class="h-12 w-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center">
+                        <i class="ti ti-brain text-2xl"></i>
                     </div>
-                    <div class="divide-y divide-slate-50 text-xs font-semibold text-slate-700" id="ml-accuracy-rows"></div>
+                    <div>
+                        <p class="text-xs font-bold text-slate-700">ML Model Not Yet Integrated</p>
+                        <p class="text-[11px] text-slate-400 font-semibold mt-1 max-w-xs">Real-time accuracy tracking will appear here once a trained model is connected to the dispatch pipeline.</p>
+                    </div>
                 </div>
             </div>
         `;
-
-        const rowsContainer = document.getElementById('ml-accuracy-rows');
-        patterns.forEach(p => {
-            // Fake offset accuracy fluctuation
-            const variance = Math.floor(Math.random() * 5) - 2;
-            const actual = Math.max(2, p.total_commuters + variance);
-            const errorPct = Math.round((Math.abs(variance) / p.total_commuters) * 100) || 0;
-
-            const div = document.createElement('div');
-            div.className = 'grid grid-cols-3 py-2.5 items-center';
-            div.innerHTML = `
-                <div class="flex items-center gap-1.5 min-w-0">
-                    <span class="h-2 w-2 rounded-full shrink-0 bg-[#003F87]"></span>
-                    <span class="truncate">${p.day_of_week} — Route ${p.route_id}</span>
-                </div>
-                <div class="text-center font-mono font-bold">${p.total_commuters} pax</div>
-                <div class="text-right font-mono font-bold text-emerald-600 flex items-center justify-end gap-1">
-                    <span>${actual}</span>
-                    <span class="text-[9px] font-bold opacity-80 text-emerald-500">(±${errorPct}%)</span>
-                </div>
-            `;
-            rowsContainer.appendChild(div);
-        });
     } else {
         container.innerHTML = `
             <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-4">

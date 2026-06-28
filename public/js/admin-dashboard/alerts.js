@@ -10,13 +10,17 @@ let scheduledAlerts = [];
 let historyAlerts = [];
 
 // ── COMPOSER STATE ───────────────────────────────────────────
+// ISSUE-045 FIX: Available routes are loaded dynamically from the DB.
+// 'Route A/B/C' hardcoding is removed throughout this file.
+let availableRoutes = []; // Populated by loadRoutesIntoComposer()
+
 let composerState = {
     editingId: null,
     type: 'Delay',
     severity: 'Medium',
     title: '',
     message: '',
-    affects: ['Route A'],
+    affects: [],       // Will be set to the first DB route after loadRoutesIntoComposer()
     notifyCommuters: true,
     notifyDrivers: true,
     notifyAdminOnly: false,
@@ -24,6 +28,70 @@ let composerState = {
     scheduleTime: '',
     suspendRoute: false
 };
+
+/**
+ * ISSUE-045 FIX: Fetch real route names from the DB API and render dynamic
+ * pills in the composer. Replaces the old hardcoded Route A / B / C buttons.
+ */
+async function loadRoutesIntoComposer() {
+    const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.routesBaseUrl)
+        ? window.GoPasigConfig.routesBaseUrl
+        : '/admin/api/routes';
+
+    try {
+        const resp = await fetch(baseUrl, {
+            headers: { 'Accept': 'application/json' }
+        });
+        if (!resp.ok) throw new Error('Routes fetch failed');
+        const data = await resp.json();
+
+        // Support both {routes: [...]} and direct array responses
+        const routes = Array.isArray(data) ? data : (data.routes || []);
+        availableRoutes = routes.map(r => r.name || r).filter(Boolean);
+    } catch (e) {
+        console.warn('Could not load routes for composer, falling back to empty list.', e);
+        availableRoutes = [];
+    }
+
+    // Inject dynamic pills before the "All routes" button
+    const pillRow = document.getElementById('composer-route-pills-row');
+    if (pillRow) {
+        // Remove any previously injected dynamic pills
+        pillRow.querySelectorAll('.am-route-pill[data-dynamic]').forEach(b => b.remove());
+
+        const allBtn = pillRow.querySelector('[data-route="All routes"]');
+        availableRoutes.forEach(name => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'am-route-pill';
+            btn.setAttribute('data-route', name);
+            btn.setAttribute('data-dynamic', '1');
+            btn.textContent = name;
+            btn.onclick = () => toggleComposerRoute(name);
+            if (allBtn) {
+                pillRow.insertBefore(btn, allBtn);
+            } else {
+                pillRow.appendChild(btn);
+            }
+        });
+    }
+
+    // Default selection: first available route (or empty)
+    if (composerState.affects.length === 0 && availableRoutes.length > 0) {
+        composerState.affects = [availableRoutes[0]];
+    }
+    syncComposerUI();
+}
+
+/**
+ * Get route pill style class based on index-based color cycling.
+ */
+function getRoutePillClass(route) {
+    if (route === 'All routes') return 'selected-all';
+    const idx = availableRoutes.indexOf(route);
+    const colors = ['selected-a', 'selected-b', 'selected-c'];
+    return colors[idx % colors.length] || 'selected-a';
+}
 
 // ── FILTER FEED STATE ─────────────────────────────────────────
 let currentFeedStatusTab = 'All'; // 'All', 'Active', 'Resolved', 'Scheduled'
@@ -83,14 +151,12 @@ async function loadDatabaseAlertsData() {
             const now = new Date();
 
             data.alerts.forEach(alert => {
-                // Parse affected routes
-                let affectsArr = alert.affected_routes ? alert.affected_routes.split(',').map(r => r.trim()) : [];
-                affectsArr = affectsArr.map(r => {
-                    if (r === 'Route 1') return 'Route A';
-                    if (r === 'Route 2') return 'Route B';
-                    if (r === 'Route 3') return 'Route C';
-                    return r;
-                });
+                // ISSUE-045 FIX: No longer remap Route 1/2/3 to Route A/B/C.
+                // The DB now stores real route names (e.g. 'Route 1') which are
+                // displayed directly without aliasing.
+                let affectsArr = alert.affected_routes
+                    ? alert.affected_routes.split(',').map(r => r.trim())
+                    : [];
 
                 // Parse severity
                 let severityStr = 'Medium';
@@ -187,6 +253,7 @@ async function loadDatabaseAlertsData() {
 
 // ── INITIALIZER ──────────────────────────────────────────────
 async function initAlertsDashboard() {
+    await loadRoutesIntoComposer();
     await loadDatabaseAlertsData();
     renderAlertsFeed();
     renderResolvedAlerts();
@@ -290,9 +357,9 @@ function toggleComposerRoute(route) {
             composerState.affects.push(route);
         }
         
-        // If nothing is selected, fall back to default Route A
+        // If nothing is selected, fall back to first available DB route (not hardcoded 'Route A')
         if (composerState.affects.length === 0) {
-            composerState.affects = ['Route A'];
+            composerState.affects = availableRoutes.length > 0 ? [availableRoutes[0]] : [];
         }
     }
     syncComposerUI();
@@ -382,7 +449,7 @@ function clearComposerForm() {
         severity: 'Medium',
         title: '',
         message: '',
-        affects: ['Route A'],
+        affects: availableRoutes.length > 0 ? [availableRoutes[0]] : [],
         notifyCommuters: true,
         notifyDrivers: true,
         notifyAdminOnly: false,
@@ -458,16 +525,14 @@ function syncComposerUI() {
         }
     }
 
-    // 4. Affected routes pills
+    // 4. Affected routes pills — highlight using index-based color cycling
+    // (selected-a/b/c/all are cycle colors, not tied to specific route names)
     const routePills = document.querySelectorAll('.am-route-pill');
     routePills.forEach(pill => {
         const route = pill.getAttribute('data-route');
         pill.className = 'am-route-pill';
         if (composerState.affects.includes(route)) {
-            if (route === 'Route A') pill.classList.add('selected-a');
-            else if (route === 'Route B') pill.classList.add('selected-b');
-            else if (route === 'Route C') pill.classList.add('selected-c');
-            else if (route === 'All routes') pill.classList.add('selected-all');
+            pill.classList.add(getRoutePillClass(route));
         }
     });
 
@@ -632,11 +697,7 @@ function renderAlertsFeed() {
             const routePillsHtml = alert.affects.includes('All routes')
                 ? `<span class="am-route-pill-display selected-all">All routes</span>`
                 : alert.affects.map(route => {
-                    let pillClass = '';
-                    if (route === 'Route A') pillClass = 'selected-a';
-                    else if (route === 'Route B') pillClass = 'selected-b';
-                    else if (route === 'Route C') pillClass = 'selected-c';
-                    return `<span class="am-route-pill-display ${pillClass}">${route}</span>`;
+                    return `<span class="am-route-pill-display ${getRoutePillClass(route)}">${route}</span>`;
                   }).join('');
 
             let sevIcon = 'ti-info-circle';
@@ -809,11 +870,7 @@ function renderScheduledList() {
         const routePillsHtml = alert.affects.includes('All routes')
             ? `<span class="am-route-pill-display selected-all">All routes</span>`
             : alert.affects.map(route => {
-                let pillClass = '';
-                if (route === 'Route A') pillClass = 'selected-a';
-                else if (route === 'Route B') pillClass = 'selected-b';
-                else if (route === 'Route C') pillClass = 'selected-c';
-                return `<span class="am-route-pill-display ${pillClass}">${route}</span>`;
+                return `<span class="am-route-pill-display ${getRoutePillClass(route)}">${route}</span>`;
               }).join('');
 
         return `
@@ -968,11 +1025,7 @@ function showBroadcastConfirmation() {
             sumRoutes.innerHTML = '<span class="am-route-pill-display selected-all">All routes</span>';
         } else {
             sumRoutes.innerHTML = composerState.affects.map(route => {
-                let pillClass = '';
-                if (route === 'Route A') pillClass = 'selected-a';
-                else if (route === 'Route B') pillClass = 'selected-b';
-                else if (route === 'Route C') pillClass = 'selected-c';
-                return `<span class="am-route-pill-display ${pillClass}">${route}</span>`;
+                return `<span class="am-route-pill-display ${getRoutePillClass(route)}">${route}</span>`;
             }).join('');
         }
     }
@@ -1443,11 +1496,7 @@ function renderHistoryTable() {
             const routePillsHtml = row.affects.includes('All routes')
                 ? `<span class="am-route-pill-display selected-all">All routes</span>`
                 : row.affects.map(route => {
-                    let pillClass = '';
-                    if (route === 'Route A') pillClass = 'selected-a';
-                    else if (route === 'Route B') pillClass = 'selected-b';
-                    else if (route === 'Route C') pillClass = 'selected-c';
-                    return `<span class="am-route-pill-display ${pillClass}">${route}</span>`;
+                    return `<span class="am-route-pill-display ${getRoutePillClass(route)}">${route}</span>`;
                   }).join('');
 
             const statusClass = row.status === 'Active' ? 'badge-emergency' : 'badge-low';

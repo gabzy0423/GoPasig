@@ -28,11 +28,11 @@ class AnalyticsController extends Controller
         // Parse date range parameters
         $startDate = $request->query('start') ? Carbon::parse($request->query('start')) : Carbon::today();
         $endDate = $request->query('end') ? Carbon::parse($request->query('end')) : Carbon::today();
-        
+
         // If no explicit date range, default based on system setting
         if (!$request->has('start') && !$request->has('end')) {
             $dateRange = SystemSetting::get('analytics_default_date_range', 'today');
-            
+
             switch ($dateRange) {
                 case 'yesterday':
                     $rangeStart = Carbon::yesterday();
@@ -59,7 +59,7 @@ class AnalyticsController extends Controller
         }
 
         // Fetch bus capacity limit from SystemSetting (not hardcoded)
-        $busCapacityLimit = (int) SystemSetting::get('bus_capacity_default', 45);
+        $busCapacityLimit = (int) SystemSetting::get('default_bus_capacity', 45);
 
         // 1. KPI Metrics
         $todaySchedules = Schedule::whereBetween('created_at', [$rangeStart->toDateString(), $rangeEnd->toDateString()]);
@@ -164,7 +164,7 @@ class AnalyticsController extends Controller
             // Find peak hour today
             $driverName = DB::getDriverName();
             $hourExpr = $driverName === 'sqlite' ? "strftime('%H', departure_time)" : "HOUR(departure_time)";
-            
+
             $peakHourRecord = Schedule::where('route_id', $route->id)
                 ->selectRaw("{$hourExpr} as hr, SUM(passengers) as total")
                 ->groupBy('hr')
@@ -244,23 +244,32 @@ class AnalyticsController extends Controller
             $heatmap[$dayName] = $dayRow;
         }
 
-        // 5. Stop Boarding Horizontal Bars (Top Stops Flow)
-        $stopBoarding = [];
-        $allStops = Stop::take(10)->get();
-        foreach ($allStops as $stop) {
-            $boarding = CommuterTrip::where('origin_stop_id', $stop->id)->count();
-            $alighting = CommuterTrip::where('destination_stop_id', $stop->id)->count();
 
-            $stopBoarding[] = [
-                'name' => $stop->name,
-                'boarding' => $boarding,
-                'alighting' => $alighting,
-                'net' => $boarding - $alighting,
-            ];
-        }
+        $topStopsLimit = (int) SystemSetting::get('analytics_top_stops_count', 10);
 
-        // Sort descending by boarding
-        usort($stopBoarding, fn($a, $b) => $b['boarding'] <=> $a['boarding']);
+        $boardingCounts = CommuterTrip::selectRaw('origin_stop_id as stop_id, COUNT(*) as total')
+            ->groupBy('origin_stop_id')
+            ->pluck('total', 'stop_id');
+
+        $alightingCounts = CommuterTrip::selectRaw('destination_stop_id as stop_id, COUNT(*) as total')
+            ->groupBy('destination_stop_id')
+            ->pluck('total', 'stop_id');
+
+        $stopBoarding = Stop::all()
+            ->map(function ($stop) use ($boardingCounts, $alightingCounts) {
+                $boarding = $boardingCounts->get($stop->id, 0);
+                $alighting = $alightingCounts->get($stop->id, 0);
+                return [
+                    'name' => $stop->name,
+                    'boarding' => $boarding,
+                    'alighting' => $alighting,
+                    'net' => $boarding - $alighting,
+                ];
+            })
+            ->sortByDesc('boarding')
+            ->take($topStopsLimit)
+            ->values()
+            ->toArray();
 
         // 6. Trip Pax Table Details (Schedules today)
         $tripPaxTable = [];

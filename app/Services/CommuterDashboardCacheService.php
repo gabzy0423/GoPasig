@@ -125,12 +125,12 @@ class CommuterDashboardCacheService
             return [
                 'quickStats' => [
                     'active_buses' => $activeBuses->count(),
-                    'delayed_buses' => $activeBuses->filter(fn ($bus) => $bus->eta >= ($bus->route?->delay_threshold_minutes ?: $defaultDelayThreshold))->count(),
-                    'passengers_today' => $schedules->sum('passengers'),
+                    'delayed_buses' => $activeBuses->filter(fn($bus) => $bus->eta >= ($bus->route?->delay_threshold_minutes ?: $defaultDelayThreshold))->count(),
+                    'passengers_today' => Schedule::whereDate('created_at', Carbon::today('Asia/Manila'))->sum('passengers'),
                     'open_alerts' => $activeAlerts->count(),
                 ],
                 'activeRoutes' => $activeRoutes,
-                'latestAlerts' => $activeAlerts->take(3)->map(fn ($alert) => (object) [
+                'latestAlerts' => $activeAlerts->take(3)->map(fn($alert) => (object) [
                     'type' => $alert->type,
                     'title' => $alert->title,
                     'message' => $alert->message,
@@ -139,7 +139,7 @@ class CommuterDashboardCacheService
                 ]),
                 'schedulePeek' => $schedulePeek,
                 'nearestBuses' => $nearestBuses,
-                'routesData' => $routes->map(fn ($route) => [
+                'routesData' => $routes->map(fn($route) => [
                     'name' => $route->name,
                     'color' => $route->color ?: $defaultRouteColor,
                     'coords' => $route->polyline_coordinates,
@@ -152,11 +152,11 @@ class CommuterDashboardCacheService
     {
         return Cache::remember('commuter_route_stops_aggregate', now()->addSeconds(self::CACHE_TTL_SECONDS), function () {
             return Stop::with([
-                    'route.stops',
-                    'route.schedules',
-                    'route.durations',
-                    'route.buses' => fn ($query) => $query->where('status', 'active'),
-                ])
+                'route.stops',
+                'route.schedules',
+                'route.durations',
+                'route.buses' => fn($query) => $query->where('status', 'active'),
+            ])
                 ->orderBy('route_id')
                 ->orderBy('sequence')
                 ->get();
@@ -174,12 +174,12 @@ class CommuterDashboardCacheService
                 || ($alert->affected_routes && stripos($alert->affected_routes, $route->name) !== false);
         });
 
-        if ($routeAlerts->contains(fn ($alert) => $alert->type === 'suspension')) {
+        if ($routeAlerts->contains(fn($alert) => $alert->type === 'suspension')) {
             return 'Disrupted';
         }
 
-        $hasDelayAlert = $routeAlerts->contains(fn ($alert) => in_array($alert->type, ['delay', 'maintenance'], true));
-        $hasDelayedBus = $routeBuses->contains(fn ($bus) => $bus->eta >= ($bus->route?->delay_threshold_minutes ?: $defaultDelayThreshold));
+        $hasDelayAlert = $routeAlerts->contains(fn($alert) => in_array($alert->type, ['delay', 'maintenance'], true));
+        $hasDelayedBus = $routeBuses->contains(fn($bus) => $bus->eta >= ($bus->route?->delay_threshold_minutes ?: $defaultDelayThreshold));
 
         return $hasDelayAlert || $hasDelayedBus ? 'Minor Delay' : 'On Track';
     }

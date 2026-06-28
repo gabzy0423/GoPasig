@@ -36,4 +36,32 @@ class SystemSetting extends Model
             return $setting ? $setting->value : $default;
         });
     }
+
+    /**
+     * Get a system setting value decoded as a PHP array.
+     * The stored value should be a JSON-encoded array string (e.g. '["Preventive","Corrective"]').
+     * Falls back to $default if the key does not exist or JSON decoding fails.
+     *
+     * @param string $key
+     * @param array  $default
+     * @return array
+     */
+    public static function getArray(string $key, array $default = []): array
+    {
+        $raw = static::get($key);
+
+        if ($raw === null) {
+            return $default;
+        }
+
+        if (is_array($raw)) {
+            return $raw;
+        }
+
+        $decoded = json_decode((string) $raw, true);
+
+        return (is_array($decoded) && json_last_error() === JSON_ERROR_NONE)
+            ? $decoded
+            : $default;
+    }
 }

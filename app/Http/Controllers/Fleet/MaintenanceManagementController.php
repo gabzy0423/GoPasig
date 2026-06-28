@@ -12,6 +12,7 @@ use App\Models\SystemSetting;
 use App\Services\MaintenanceService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class MaintenanceManagementController extends Controller
 {
@@ -175,15 +176,20 @@ class MaintenanceManagementController extends Controller
         $id = $request->input('id');
         $isEditing = !empty($id);
 
+        // ISSUE-029 FIX: Maintenance types are now read from SystemSetting so admins
+        // can add/remove types (e.g. 'Safety Check') without editing source code.
+        // Store a JSON array in system_settings with key 'maintenance_types'.
+        $allowedTypes = SystemSetting::getArray('maintenance_types', ['Preventive', 'Corrective', 'Inspection']);
+
         $rules = [
-            'bus_id' => 'required|exists:buses,id',
-            'type' => 'required|in:Preventive,Corrective,Inspection',
-            'description' => 'required|string|min:5',
-            'scheduled_at' => 'required|date',
-            'technician_name' => 'nullable|string|max:100',
-            'cost_php' => 'nullable|numeric|min:0',
-            'status' => 'required|in:scheduled,in_progress,completed,cancelled',
-            'expected_duration_minutes' => 'nullable|integer|min:1',
+            'bus_id'                     => 'required|exists:buses,id',
+            'type'                       => ['required', Rule::in($allowedTypes)],
+            'description'                => 'required|string|min:5',
+            'scheduled_at'               => 'required|date',
+            'technician_name'            => 'nullable|string|max:100',
+            'cost_php'                   => 'nullable|numeric|min:0',
+            'status'                     => 'required|in:scheduled,in_progress,completed,cancelled',
+            'expected_duration_minutes'  => 'nullable|integer|min:1',
         ];
 
         $validated = $request->validate($rules);
@@ -196,7 +202,11 @@ class MaintenanceManagementController extends Controller
             'technician_name' => $validated['technician_name'] ?: null,
             'cost_php' => $validated['cost_php'] !== null ? floatval($validated['cost_php']) : 0.00,
             'status' => $validated['status'],
-            'expected_duration_minutes' => $validated['expected_duration_minutes'] !== null ? intval($validated['expected_duration_minutes']) : 120,
+            // ISSUE-028 FIX: Fallback duration is now configurable via SystemSetting
+            // instead of the hardcoded 120. Set key 'maintenance_default_duration_minutes'.
+            'expected_duration_minutes' => $validated['expected_duration_minutes'] !== null
+                ? intval($validated['expected_duration_minutes'])
+                : (int) SystemSetting::get('maintenance_default_duration_minutes', 120),
         ];
 
         if ($isEditing) {

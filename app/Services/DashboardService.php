@@ -24,7 +24,7 @@ class DashboardService
             'delayed_buses' => Bus::with('route')->where('status', 'active')->get()->filter(function ($bus) {
                 return $bus->eta >= $bus->getRouteDelayThreshold();
             })->count(),
-            'passengers_today' => Schedule::sum('passengers'),
+            'passengers_today' => Schedule::whereDate('created_at', Carbon::today('Asia/Manila'))->sum('passengers'),
             'open_alerts' => ServiceAlert::where('status', 'active')->count(),
         ];
     }
@@ -40,7 +40,7 @@ class DashboardService
 
         // Active buses: ongoing trips
         $activeBusIds = Trip::where('status', 'ongoing')->pluck('bus_id')->toArray();
-        $activeBuses  = count($activeBusIds);
+        $activeBuses = count($activeBusIds);
 
         // Delayed buses: active buses whose ETA meets the configurable delay threshold.
         // Threshold is read from system_settings (key: delay_threshold, default: 10 min).
@@ -90,28 +90,28 @@ class DashboardService
             ->where('eta', '>=', $delayThreshold)
             ->count();
 
-        $activeDelta  = $activeBuses - $activeBusesYesterday;
-        $tripsDelta   = $tripsCompleted - $tripsYesterday;
+        $activeDelta = $activeBuses - $activeBusesYesterday;
+        $tripsDelta = $tripsCompleted - $tripsYesterday;
         $delayedDelta = $delayedBuses - $delayedBusesYesterday;
 
         return [
-            'active_buses'    => $activeBuses,
-            'delayed_buses'   => $delayedBuses,
-            'offline_buses'   => $offlineBuses,
-            'idle_buses'      => $idleBuses,
+            'active_buses' => $activeBuses,
+            'delayed_buses' => $delayedBuses,
+            'offline_buses' => $offlineBuses,
+            'idle_buses' => $idleBuses,
             'trips_completed' => $tripsCompleted,
-            'total_passengers'=> $totalPassengers,
+            'total_passengers' => $totalPassengers,
             'avg_utilization' => $avgUtilization,
-            'open_incidents'  => $openIncidentCount,
+            'open_incidents' => $openIncidentCount,
             'deltas' => (object) [
-                'active_buses_yesterday'      => ($activeDelta >= 0 ? '+' : '') . $activeDelta . ' vs yesterday',
-                'delayed_buses_yesterday'     => ($delayedDelta >= 0 ? '+' : '') . $delayedDelta . ' vs yesterday',
-                'offline_buses_yesterday'     => '— in maintenance',
-                'idle_buses_yesterday'        => '— standby',
-                'trips_completed_yesterday'   => ($tripsDelta >= 0 ? '+' : '') . $tripsDelta . ' vs yesterday',
-                'total_passengers_yesterday'  => $activeBuses > 0 ? 'on active buses' : 'no active buses',
-                'avg_utilization_yesterday'   => $activeBuses > 0 ? 'of capacity used' : '—',
-                'open_incidents_yesterday'    => $openIncidentCount > 0 ? 'needs attention' : 'all clear',
+                'active_buses_yesterday' => ($activeDelta >= 0 ? '+' : '') . $activeDelta . ' vs yesterday',
+                'delayed_buses_yesterday' => ($delayedDelta >= 0 ? '+' : '') . $delayedDelta . ' vs yesterday',
+                'offline_buses_yesterday' => '— in maintenance',
+                'idle_buses_yesterday' => '— standby',
+                'trips_completed_yesterday' => ($tripsDelta >= 0 ? '+' : '') . $tripsDelta . ' vs yesterday',
+                'total_passengers_yesterday' => $activeBuses > 0 ? 'on active buses' : 'no active buses',
+                'avg_utilization_yesterday' => $activeBuses > 0 ? 'of capacity used' : '—',
+                'open_incidents_yesterday' => $openIncidentCount > 0 ? 'needs attention' : 'all clear',
             ],
         ];
     }
@@ -138,11 +138,11 @@ class DashboardService
                 ->where('driver_id', $driver->id)
                 ->where('created_at', '>=', now()->subDays(30))
                 ->count();
-            $incidents30 = max((int)($driver->incidents_30 ?? 0), $dbIncidents30);
+            $incidents30 = max((int) ($driver->incidents_30 ?? 0), $dbIncidents30);
 
             // Delegate to the shared scoring service (last 30 days)
             $start30 = Carbon::now()->subDays(30)->startOfDay();
-            $end30   = Carbon::now()->endOfDay();
+            $end30 = Carbon::now()->endOfDay();
             $performanceScore = DriverPerformanceService::calculateScore(
                 $driver->id,
                 $start30,
@@ -151,7 +151,7 @@ class DashboardService
             );
         }
 
-        return (object)[
+        return (object) [
             'trips_today' => $tripsToday,
             'pax_today' => $paxToday,
             'performance_score' => $performanceScore,

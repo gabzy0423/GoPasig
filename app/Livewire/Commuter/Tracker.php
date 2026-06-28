@@ -45,8 +45,9 @@ class Tracker extends Component
         $routes = Route::getAllCached();
 
         // 3. Fetch active buses
+
         $busesQuery = Bus::with(['route', 'route.stops'])
-            ->whereIn('status', ['active', 'breakdown', 'maintenance']);
+            ->where('status', 'active');
 
         if ($this->selectedRouteId) {
             $busesQuery->where('route_id', $this->selectedRouteId);
@@ -56,14 +57,15 @@ class Tracker extends Component
             // Route color: read from the database column
             $color = $bus->route?->color ?: config('brand.route_color_unassigned', '#888780');
 
-            // Determine status
-            $status = $bus->status;
-            if ($status === 'active') {
-                if ($bus->eta >= $bus->getRouteDelayThreshold() && $bus->speed > 0) {
-                    $status = 'delayed';
-                } elseif ($bus->speed == 0 && $bus->passengers == 0) {
-                    $status = 'idle';
-                }
+            // Determine commuter-visible status (bus DB status is always 'active' here)
+            $status = 'active';
+            if ($bus->eta >= $bus->getRouteDelayThreshold() && $bus->speed > 0) {
+                $status = 'delayed';
+            } elseif ($bus->speed == 0 && $bus->passengers == 0) {
+                // ISSUE-040 FIX: 'idle' only assigned to active buses stopped with no passengers.
+                // Terminal-waiting buses also match this condition but are now excluded by
+                // the 'active'-only query above (inactive/maintenance buses never reach here).
+                $status = 'idle';
             }
 
             // Driver name: prefer bus->driver_name, then look up Driver model by plate
@@ -74,21 +76,21 @@ class Tracker extends Component
             }
 
             return (object) [
-                'bus_id'         => $bus->id,
-                'plate_number'   => $bus->plate_number,
-                'route_name'     => $bus->route?->name ?? 'Unassigned',
-                'route_color'    => $color,
-                'status'         => $status,
+                'bus_id' => $bus->id,
+                'plate_number' => $bus->plate_number,
+                'route_name' => $bus->route?->name ?? 'Unassigned',
+                'route_color' => $color,
+                'status' => $status,
                 'next_stop_name' => $bus->next_stop ?: 'Terminal',
-                'eta_minutes'    => $bus->eta,
-                'passenger_count'=> $bus->passengers,
-                'capacity'       => $bus->capacity,
-                'lat'            => (float) $bus->lat,
-                'lng'            => (float) $bus->lng,
-                'driver_name'    => $driverName,
-                'speed'          => $bus->speed ?: 0,
-                'is_simulated'   => (bool) $bus->is_simulated,
-                'updated_at'     => $bus->updated_at ? $bus->updated_at->toIso8601String() : now()->toIso8601String(),
+                'eta_minutes' => $bus->eta,
+                'passenger_count' => $bus->passengers,
+                'capacity' => $bus->capacity,
+                'lat' => (float) $bus->lat,
+                'lng' => (float) $bus->lng,
+                'driver_name' => $driverName,
+                'speed' => $bus->speed ?: 0,
+                'is_simulated' => (bool) $bus->is_simulated,
+                'updated_at' => $bus->updated_at ? $bus->updated_at->toIso8601String() : now()->toIso8601String(),
             ];
         });
 

@@ -420,7 +420,7 @@
                 </div>
 
                 <!-- Horizontal Chart canvas container (380px wrapper) -->
-                <div class="flex-1 min-h-0 mt-4">
+                <div class="flex-1 min-h-0 mt-4 relative">
                     <canvas id="stop-boarding-chart" class="w-full h-full"></canvas>
                 </div>
             </div>

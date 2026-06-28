@@ -6,6 +6,7 @@ use Livewire\Component;
 use Carbon\Carbon;
 use App\Services\GPSKalmanFilter;
 use App\Services\CommuterDashboardCacheService;
+use App\Models\SystemSetting;
 
 class GeofenceDetector extends Component
 {
@@ -123,7 +124,10 @@ class GeofenceDetector extends Component
 
                 foreach ($activeBuses as $bus) {
                     $dist = $this->calculateDistance($this->lat, $this->lng, $bus->lat, $bus->lng);
-                    if ($dist <= 15) { // 15 meters boarding threshold
+                    // ISSUE-036 FIX: Geofence boarding radius is now read from SystemSetting
+                    // instead of the hardcoded 15 meters. Adjust via 'boarding_geofence_radius_meters'.
+                    $boardingRadius = (int) SystemSetting::get('boarding_geofence_radius_meters', 15);
+                    if ($dist <= $boardingRadius) {
                         $trip->update([
                             'status' => 'ON_BUS',
                             'boarded_at' => now(),
@@ -158,7 +162,8 @@ class GeofenceDetector extends Component
             'origin_stop_name' => $trip->originStop?->name ?? 'Unknown',
             'destination_stop_name' => $trip->destinationStop?->name ?? 'Unknown',
             'route_name' => $trip->route?->name ?? 'Unknown',
-            'route_color' => $trip->route?->color ?? '#003F87',
+            // ISSUE-037 FIX: Route color fallback sourced from brand config instead of hardcoded literal.
+            'route_color' => $trip->route?->color ?? config('brand.route_color_default', '#003F87'),
         ];
     }
 
@@ -182,7 +187,7 @@ class GeofenceDetector extends Component
                 'origin_stop_name' => $trip->originStop?->name ?? 'Unknown',
                 'destination_stop_name' => $trip->destinationStop?->name ?? 'Unknown',
                 'route_name' => $trip->route?->name ?? 'Unknown',
-                'route_color' => $trip->route?->color ?? '#003F87',
+                'route_color' => $trip->route?->color ?? config('brand.route_color_default', '#003F87'),
             ];
         } else {
             $this->activeTrip = null;

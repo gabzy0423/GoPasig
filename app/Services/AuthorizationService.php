@@ -6,12 +6,15 @@ use App\Models\User;
 
 class AuthorizationService
 {
+    const ROLE_ADMIN = 'admin';
+    const ROLE_DISPATCHER = 'dispatcher';
+
     /**
      * Check if user can delete a resource (admin only)
      */
     public static function canDelete(User $user): bool
     {
-        return $user->role === 'admin';
+        return $user->role === self::ROLE_ADMIN;
     }
 
     /**
@@ -19,7 +22,7 @@ class AuthorizationService
      */
     public static function canCreate(User $user): bool
     {
-        return $user->role === 'admin';
+        return $user->role === self::ROLE_ADMIN;
     }
 
     /**
@@ -27,7 +30,7 @@ class AuthorizationService
      */
     public static function canUpdate(User $user): bool
     {
-        return $user->role === 'admin';
+        return $user->role === self::ROLE_ADMIN;
     }
 
     /**
@@ -35,7 +38,7 @@ class AuthorizationService
      */
     public static function canView(User $user): bool
     {
-        return in_array($user->role, ['admin', 'dispatcher']);
+        return in_array($user->role, [self::ROLE_ADMIN, self::ROLE_DISPATCHER]);
     }
 
     /**
@@ -43,7 +46,7 @@ class AuthorizationService
      */
     public static function canManageSchedules(User $user): bool
     {
-        return in_array($user->role, ['admin', 'dispatcher']);
+        return in_array($user->role, [self::ROLE_ADMIN, self::ROLE_DISPATCHER]);
     }
 
     /**
@@ -51,7 +54,7 @@ class AuthorizationService
      */
     public static function canManageMaintenance(User $user): bool
     {
-        return in_array($user->role, ['admin', 'dispatcher']);
+        return in_array($user->role, [self::ROLE_ADMIN, self::ROLE_DISPATCHER]);
     }
 
     /**
@@ -59,7 +62,7 @@ class AuthorizationService
      */
     public static function canSuspendDriver(User $user): bool
     {
-        return in_array($user->role, ['admin', 'dispatcher']);
+        return in_array($user->role, [self::ROLE_ADMIN, self::ROLE_DISPATCHER]);
     }
 
     /**

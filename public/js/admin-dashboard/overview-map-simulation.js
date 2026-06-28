@@ -48,9 +48,10 @@ function initOverviewMap() {
     const mapContainer = document.getElementById('overview-map');
     if (!mapContainer || overviewMapInstance !== null) return;
 
-    const centerLat = (typeof mapCenterLat !== 'undefined') ? mapCenterLat : 14.5690;
-    const centerLng = (typeof mapCenterLng !== 'undefined') ? mapCenterLng : 121.0680;
-    const zoomLevel = (typeof mapZoom !== 'undefined') ? mapZoom : 13.5;
+
+    const centerLat = (typeof mapCenterLat !== 'undefined' && mapCenterLat !== null) ? mapCenterLat : 14.5690;
+    const centerLng = (typeof mapCenterLng !== 'undefined' && mapCenterLng !== null) ? mapCenterLng : 121.0680;
+    const zoomLevel = (typeof mapZoom !== 'undefined' && mapZoom !== null) ? mapZoom : 13.5;
 
     // Initialize Map centered on Pasig coords with restricted zoom/pan for visual layout polish
     overviewMapInstance = L.map('overview-map', {

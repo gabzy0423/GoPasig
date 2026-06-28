@@ -22,7 +22,9 @@ class BusinessLogicService
 
         // Get all schedules for this driver today
         $today = \Carbon\Carbon::today()->toDateString();
-        $schedules = Schedule::where('driver_id', $driverId)->get();
+        $schedules = Schedule::where('driver_id', $driverId)
+            ->whereDate('created_at', $today)
+            ->get();
 
         $totalMinutesScheduled = 0;
         foreach ($schedules as $schedule) {

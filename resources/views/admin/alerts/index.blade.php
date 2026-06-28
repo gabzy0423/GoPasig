@@ -211,11 +211,10 @@
                     {{-- FIELD 5: AFFECTED ROUTES --}}
                     <div class="am-field">
                         <label class="am-label">Affected routes</label>
-                        <div class="am-route-pill-row">
-                            <button type="button" class="am-route-pill selected-a" data-route="Route A" onclick="toggleComposerRoute('Route A')">Route A</button>
-                            <button type="button" class="am-route-pill" data-route="Route B" onclick="toggleComposerRoute('Route B')">Route B</button>
-                            <button type="button" class="am-route-pill" data-route="Route C" onclick="toggleComposerRoute('Route C')">Route C</button>
+                        {{-- ISSUE-045 FIX: Route pills are now rendered dynamically from the DB by alerts.js --}}
+                        <div class="am-route-pill-row" id="composer-route-pills-row">
                             <button type="button" class="am-route-pill" data-route="All routes" onclick="toggleComposerRoute('All routes')">All routes</button>
+                            {{-- Dynamic per-route pills injected here by loadRoutesIntoComposer() --}}
                         </div>
                     </div>
 

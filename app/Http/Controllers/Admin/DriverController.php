@@ -102,13 +102,14 @@ class DriverController extends Controller
         }
 
         // Create corresponding user account
+        $domain = \App\Models\SystemSetting::get('driver_email_domain', 'gopasig.com');
         $firstNameClean = \Illuminate\Support\Str::slug($request->first_name, '');
-        $email = $firstNameClean . '@gopasig.com';
+        $email = $firstNameClean . '@' . $domain;
 
         // Ensure email uniqueness
         $counter = 1;
         while (\App\Models\User::where('email', $email)->exists()) {
-            $email = $firstNameClean . $counter . '@gopasig.com';
+            $email = $firstNameClean . $counter . '@' . $domain;
             $counter++;
         }
 

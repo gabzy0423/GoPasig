@@ -8,6 +8,7 @@ use App\Models\Route;
 use App\Models\Stop;
 use App\Models\Alert;
 use App\Models\SystemSetting;
+use App\Models\CommuterTrip;
 use Carbon\Carbon;
 
 class CommuterSchedule extends Component
@@ -66,19 +67,44 @@ class CommuterSchedule extends Component
         // Group & sequence timeline stops (maximum 6 stops)
         $stops = [];
         if ($schedule->route && $schedule->route->stops) {
-            $allRouteStops   = $schedule->route->stops->sortBy('sequence')->values();
+            $allRouteStops = $schedule->route->stops->sortBy('sequence')->values();
             // Distance-weighted cumulative offsets: offset[i] = minutes to reach stop i from departure
-            $offsets         = \App\Models\Stop::getDistanceWeightedOffsets($allRouteStops, $duration);
+            $offsets = \App\Models\Stop::getDistanceWeightedOffsets($allRouteStops, $duration);
 
-            $routeStops      = $allRouteStops->take(6);
+            $routeStops = $allRouteStops->take(6);
             $totalStopsCount = $routeStops->count();
+
+
+            $busNextStopName = null;
+            if ($schedule->bus) {
+                // Re-fetch bus with fresh GPS state (not cached on the schedule relation)
+                $liveBus = \App\Models\Bus::find($schedule->bus->id);
+                $busNextStopName = $liveBus?->next_stop;
+            }
+
+            // Find the sequence index of the bus's next stop in this route
+            $busNextSequence = null;
+            if ($busNextStopName) {
+                $matchedStop = $allRouteStops->first(fn($s) => $s->name === $busNextStopName);
+                $busNextSequence = $matchedStop?->sequence;
+            }
 
             foreach ($routeStops as $index => $stop) {
                 // Determine stop_status: departed, current, upcoming
                 $stopStatus = 'upcoming';
                 if ($status === 'cancelled') {
                     $stopStatus = 'upcoming';
+                } elseif ($busNextSequence !== null) {
+                    // GPS-derived: bus is heading TO next_stop, so everything before it is 'departed'
+                    if ($stop->sequence < $busNextSequence) {
+                        $stopStatus = 'departed';
+                    } elseif ($stop->sequence === $busNextSequence) {
+                        $stopStatus = 'current';
+                    } else {
+                        $stopStatus = 'upcoming';
+                    }
                 } else {
+                    // Fallback: position-only approximation when no GPS next_stop data
                     if ($index === 0) {
                         $stopStatus = 'departed';
                     } elseif ($index === 1 && $totalStopsCount > 1) {
@@ -89,15 +115,15 @@ class CommuterSchedule extends Component
                 }
 
                 // Estimate arrival time using the distance-weighted offset for this stop's index
-                $offsetMins    = $offsets[$index] ?? 0;
+                $offsetMins = $offsets[$index] ?? 0;
                 $estimatedTime = \Carbon\Carbon::parse($schedule->departure_time)
                     ->addMinutes(round($offsetMins))
                     ->format('g:i A');
 
                 $stops[] = [
-                    'stop_name'      => $stop->name,
+                    'stop_name' => $stop->name,
                     'estimated_time' => $estimatedTime,
-                    'stop_status'    => $stopStatus,
+                    'stop_status' => $stopStatus,
                 ];
             }
         }
@@ -119,17 +145,37 @@ class CommuterSchedule extends Component
     public function setAlert($tripId)
     {
         $schedule = Schedule::with(['route', 'route.stops'])->find($tripId);
-        if ($schedule && $schedule->route) {
-            $firstStop = $schedule->route->stops->first();
-            if ($firstStop) {
-                // Create the alert in alerts table
-                $minutesBefore = (int) SystemSetting::get('default_alert_warning_minutes', 5);
-                Alert::create([
-                    'stop_id' => $firstStop->id,
-                    'minutes_before' => $minutesBefore,
-                    'status' => 'active',
-                ]);
+        if (!$schedule || !$schedule->route) {
+            return;
+        }
+
+        $minutesBefore = (int) SystemSetting::get('default_alert_warning_minutes', 5);
+
+
+        $alertStop = null;
+        $sessionToken = request()->cookie('commuter_session_token');
+        if ($sessionToken) {
+            $activeTrip = CommuterTrip::with('originStop')
+                ->where('session_token', $sessionToken)
+                ->whereIn('status', ['WAITING', 'ON_BUS'])
+                ->latest()
+                ->first();
+            if ($activeTrip?->originStop) {
+                $alertStop = $activeTrip->originStop;
             }
+        }
+
+        // Fallback: use the route's first stop (sorted by sequence)
+        if (!$alertStop && $schedule->route->stops->isNotEmpty()) {
+            $alertStop = $schedule->route->stops->sortBy('sequence')->first();
+        }
+
+        if ($alertStop) {
+            Alert::create([
+                'stop_id' => $alertStop->id,
+                'minutes_before' => $minutesBefore,
+                'status' => 'active',
+            ]);
         }
 
         // Register the alert in our session state
@@ -137,7 +183,7 @@ class CommuterSchedule extends Component
 
         // Dispatch browser alert feedback
         $this->dispatch('alert-created', [
-            'stop_name' => ($schedule && $schedule->route && $schedule->route->stops->first()) ? $schedule->route->stops->first()->name : 'Terminal',
+            'stop_name' => $alertStop?->name ?? 'Your stop',
             'minutes' => $minutesBefore,
         ]);
     }

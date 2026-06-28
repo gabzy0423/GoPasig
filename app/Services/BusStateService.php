@@ -14,7 +14,7 @@ class BusStateService
      */
     private const VALID_TRANSITIONS = [
         'active'      => ['inactive', 'maintenance'],
-        'inactive'    => ['active', 'maintenance'],
+        'inactive'    => ['active'],
         'maintenance' => ['active', 'inactive'],
     ];
 
@@ -59,6 +59,7 @@ class BusStateService
             'reason'     => $reason,
         ]);
 
+        $bus->success = true;
         return $bus;
     }
 

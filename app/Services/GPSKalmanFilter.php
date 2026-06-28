@@ -2,17 +2,32 @@
 
 namespace App\Services;
 
+use App\Models\SystemSetting;
 use Illuminate\Support\Facades\Cache;
 
 class GPSKalmanFilter
 {
-    // Process variance (Q): Represents how much the bus's true position drifts.
-    // Small values give smoother lines but react slightly slower.
-    private static $Q = 0.00002;
 
-    // Measurement variance (R): Expected noise in the raw GPS receiver.
-    // Larger values trust measurements less (more smoothing).
-    private static $R = 0.00015;
+    private static ?float $Q = null;
+
+
+    private static ?float $R = null;
+
+    private static function getQ(): float
+    {
+        if (self::$Q === null) {
+            self::$Q = (float) SystemSetting::get('kalman_process_variance', 0.00002);
+        }
+        return self::$Q;
+    }
+
+    private static function getR(): float
+    {
+        if (self::$R === null) {
+            self::$R = (float) SystemSetting::get('kalman_measurement_variance', 0.00015);
+        }
+        return self::$R;
+    }
 
     /**
      * Smooth raw coordinates using a 1D Kalman Filter.
@@ -28,7 +43,7 @@ class GPSKalmanFilter
         $lng = (float) $lng;
 
         $cacheKey = "bus_kalman_state_{$busId}";
-        
+
         // Retrieve state from cache. If it doesn't exist, initialize with current measurements.
         $state = Cache::get($cacheKey, [
             'lat' => $lat,
@@ -37,23 +52,26 @@ class GPSKalmanFilter
             'P_lng' => 1.0,
         ]);
 
+        $Q = self::getQ();
+        $R = self::getR();
+
         // --- Latitude Filter ---
         // 1. Predict
         $pred_lat = $state['lat'];
-        $pred_P_lat = $state['P_lat'] + self::$Q;
-        
+        $pred_P_lat = $state['P_lat'] + $Q;
+
         // 2. Update
-        $K_lat = $pred_P_lat / ($pred_P_lat + self::$R);
+        $K_lat = $pred_P_lat / ($pred_P_lat + $R);
         $new_lat = $pred_lat + $K_lat * ($lat - $pred_lat);
         $new_P_lat = (1 - $K_lat) * $pred_P_lat;
 
         // --- Longitude Filter ---
         // 1. Predict
         $pred_lng = $state['lng'];
-        $pred_P_lng = $state['P_lng'] + self::$Q;
-        
+        $pred_P_lng = $state['P_lng'] + $Q;
+
         // 2. Update
-        $K_lng = $pred_P_lng / ($pred_P_lng + self::$R);
+        $K_lng = $pred_P_lng / ($pred_P_lng + $R);
         $new_lng = $pred_lng + $K_lng * ($lng - $pred_lng);
         $new_P_lng = (1 - $K_lng) * $pred_P_lng;
 
@@ -89,8 +107,8 @@ class GPSKalmanFilter
         $dLng = deg2rad($lng2 - $lng1);
 
         $a = sin($dLat / 2) * sin($dLat / 2) +
-             cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
-             sin($dLng / 2) * sin($dLng / 2);
+            cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
+            sin($dLng / 2) * sin($dLng / 2);
 
         $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
 

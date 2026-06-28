@@ -648,10 +648,6 @@
 
 ---
 
-#### ISSUE-044
-| Field | Detail |
-|---|---|
----
 
 #### ISSUE-044
 | Field | Detail |
@@ -715,7 +711,7 @@
 
 ---
 
-#### ISSUE-048
+#### ISSUE-048 
 | Field | Detail |
 |---|---|
 | **File & Line** | [`DashboardController.php`](file:///c:/xampp/htdocs/GoPasig/app/Http/Controllers/Admin/DashboardController.php#L21) — Line 21 |
