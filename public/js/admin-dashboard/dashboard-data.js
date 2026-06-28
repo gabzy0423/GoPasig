@@ -3,6 +3,7 @@
 // Globals with fallback placeholders (populated dynamically from MySQL)
 const fleetData = [];
 const tripsData = [];
+const dispatchQueueData = [];
 
 const statusColors = {
     Active: '#003F87',
@@ -101,6 +102,8 @@ async function loadDatabaseFleetData() {
             });
         }
 
+        await loadTodayDispatchQueue();
+
         isDatabaseDataLoaded = true;
         console.log("MySQL Database fleet records loaded dynamically!");
 
@@ -140,6 +143,20 @@ async function loadDatabaseFleetData() {
         }
     } catch (error) {
         console.error("Failed to load dynamic database fleet data:", error);
+    }
+}
+
+async function loadTodayDispatchQueue() {
+    const url = window.GoPasigConfig && window.GoPasigConfig.dispatchQueueTodayUrl
+        ? window.GoPasigConfig.dispatchQueueTodayUrl
+        : '/admin/api/schedules/dispatch-queue/today';
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    dispatchQueueData.length = 0;
+    if (response.ok && data.success) {
+        data.dispatches.forEach(dispatch => dispatchQueueData.push(dispatch));
     }
 }
 

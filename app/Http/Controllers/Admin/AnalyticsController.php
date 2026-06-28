@@ -62,7 +62,7 @@ class AnalyticsController extends Controller
         $busCapacityLimit = (int) SystemSetting::get('default_bus_capacity', 45);
 
         // 1. KPI Metrics
-        $todaySchedules = Schedule::whereBetween('created_at', [$rangeStart->toDateString(), $rangeEnd->toDateString()]);
+        $todaySchedules = Schedule::whereBetween('service_date', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()]);
 
         $totalPaxToday = $todaySchedules->sum('passengers');
         $avgPaxTrip = round($todaySchedules->avg('passengers'), 1) ?: 0;
@@ -71,17 +71,21 @@ class AnalyticsController extends Controller
         $activeBusesCount = Bus::where('status', 'active')->count();
         $fleetUtil = $totalBuses > 0 ? round(($activeBusesCount / $totalBuses) * 100) : 0;
 
-        $onTimeCount = Schedule::where('status', Schedule::STATUS_ON_TIME)->count();
-        $totalSchedules = Schedule::count();
+        $onTimeCount = Schedule::whereBetween('service_date', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])->where('status', Schedule::STATUS_ON_TIME)->count();
+        $totalSchedules = Schedule::whereBetween('service_date', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])->count();
         $onTimeRate = $totalSchedules > 0 ? round(($onTimeCount / $totalSchedules) * 100) : 100;
-        $delayedCount = Schedule::where('status', Schedule::STATUS_DELAYED)->count();
+        $delayedCount = Schedule::whereBetween('service_date', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])->where('status', Schedule::STATUS_DELAYED)->count();
 
-        $tripsCompleted = Trip::where('status', 'completed')->whereDate('created_at', Carbon::today())->count();
+        $tripsCompleted = Trip::where('status', 'completed')->whereBetween('created_at', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])->count();
 
-        // Running weekly total
+        // Running weekly total (prevent double-counting today's passengers)
         $startOfWeek = Carbon::now()->startOfWeek()->toDateString();
         $endOfWeek = Carbon::now()->endOfWeek()->toDateString();
-        $paxThisWeek = DemandHistory::whereBetween('date', [$startOfWeek, $endOfWeek])->sum('total_commuters') + $totalPaxToday;
+        $todayDateStr = Carbon::today()->toDateString();
+        $historicalWeeklyPax = DemandHistory::whereBetween('date', [$startOfWeek, $endOfWeek])
+            ->whereDate('date', '!=', $todayDateStr)
+            ->sum('total_commuters');
+        $paxThisWeek = $historicalWeeklyPax + $totalPaxToday;
         $insufficientWeeklyData = false;
         // Flag when we don't have enough historical data
         if ($paxThisWeek === 0 && $totalPaxToday === 0) {
@@ -89,7 +93,7 @@ class AnalyticsController extends Controller
         }
 
         // Calculate yesterday's metrics dynamically
-        $totalPaxYesterday = Schedule::whereDate('created_at', Carbon::yesterday())->sum('passengers');
+        $totalPaxYesterday = Schedule::whereDate('service_date', Carbon::yesterday())->sum('passengers');
         // No synthetic fallback: report 0 when there is no historical data.
         $diffPct = $totalPaxYesterday > 0 ? round((($totalPaxToday - $totalPaxYesterday) / $totalPaxYesterday) * 100) : 0;
         $paxChangeYesterday = ($diffPct >= 0 ? '+' : '') . $diffPct . '% vs yesterday';
@@ -103,7 +107,7 @@ class AnalyticsController extends Controller
         $paxChangeLastWeek = ($weekDiffPct >= 0 ? '+' : '') . $weekDiffPct . '% vs last week';
 
         // Average passengers per trip change
-        $avgPaxYesterday = (float) Schedule::whereDate('created_at', Carbon::yesterday())->avg('passengers');
+        $avgPaxYesterday = (float) Schedule::whereDate('service_date', Carbon::yesterday())->avg('passengers');
         // No synthetic fallback: report 0 when there is no historical data.
         $avgDiffPct = $avgPaxYesterday > 0 ? round((($avgPaxTrip - $avgPaxYesterday) / $avgPaxYesterday) * 100) : 0;
         $avgPaxTripChange = ($avgDiffPct >= 0 ? '+' : '') . $avgDiffPct . '% vs yesterday';
@@ -142,6 +146,7 @@ class AnalyticsController extends Controller
 
             foreach ($routes as $route) {
                 $sum = Schedule::where('route_id', $route->id)
+                    ->whereBetween('service_date', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
                     ->where('departure_time', '>=', $slotConfig->start_time)
                     ->where('departure_time', '<', $slotConfig->end_time)
                     ->sum('passengers');
@@ -157,8 +162,12 @@ class AnalyticsController extends Controller
         $routeComparison = [];
         foreach ($routes as $route) {
 
-            $tripsCount = Schedule::where('route_id', $route->id)->count();
-            $paxSum = Schedule::where('route_id', $route->id)->sum('passengers');
+            $tripsCount = Schedule::where('route_id', $route->id)
+                ->whereBetween('service_date', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+                ->count();
+            $paxSum = Schedule::where('route_id', $route->id)
+                ->whereBetween('service_date', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+                ->sum('passengers');
             $avgPax = $tripsCount > 0 ? round($paxSum / $tripsCount, 1) : 0;
 
             // Find peak hour today
@@ -166,11 +175,12 @@ class AnalyticsController extends Controller
             $hourExpr = $driverName === 'sqlite' ? "strftime('%H', departure_time)" : "HOUR(departure_time)";
 
             $peakHourRecord = Schedule::where('route_id', $route->id)
+                ->whereBetween('service_date', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
                 ->selectRaw("{$hourExpr} as hr, SUM(passengers) as total")
                 ->groupBy('hr')
                 ->orderBy('total', 'desc')
                 ->first();
-            $peakHourStr = '7–8 AM';
+            $peakHourStr = SystemSetting::get('analytics_fallback_peak_hour', '7–8 AM');
             if ($peakHourRecord) {
                 $hr = (int) $peakHourRecord->hr;
                 $slotConfig = TimeSlotConfiguration::getTimeSlotByHour($hr);
@@ -244,39 +254,91 @@ class AnalyticsController extends Controller
             $heatmap[$dayName] = $dayRow;
         }
 
+        $topStopsLimit = (int) SystemSetting::get('analytics_top_stops_limit', (int) SystemSetting::get('analytics_top_stops_count', 10));
 
-        $topStopsLimit = (int) SystemSetting::get('analytics_top_stops_count', 10);
+        // 5. Stop Boarding Horizontal Bars (Top Stops Flow)
+        $stopBoarding = [];
+        $allStops = Stop::all();
+        foreach ($allStops as $stop) {
+            $boarding = CommuterTrip::where('origin_stop_id', $stop->id)->count();
+            $alighting = CommuterTrip::where('destination_stop_id', $stop->id)->count();
 
-        $boardingCounts = CommuterTrip::selectRaw('origin_stop_id as stop_id, COUNT(*) as total')
-            ->groupBy('origin_stop_id')
-            ->pluck('total', 'stop_id');
+            $stopBoarding[] = [
+                'name' => $stop->name,
+                'boarding' => $boarding,
+                'alighting' => $alighting,
+                'net' => $boarding - $alighting,
+            ];
+        }
 
-        $alightingCounts = CommuterTrip::selectRaw('destination_stop_id as stop_id, COUNT(*) as total')
-            ->groupBy('destination_stop_id')
-            ->pluck('total', 'stop_id');
-
-        $stopBoarding = Stop::all()
-            ->map(function ($stop) use ($boardingCounts, $alightingCounts) {
-                $boarding = $boardingCounts->get($stop->id, 0);
-                $alighting = $alightingCounts->get($stop->id, 0);
-                return [
-                    'name' => $stop->name,
-                    'boarding' => $boarding,
-                    'alighting' => $alighting,
-                    'net' => $boarding - $alighting,
-                ];
-            })
-            ->sortByDesc('boarding')
-            ->take($topStopsLimit)
-            ->values()
-            ->toArray();
+        // Sort descending by boarding
+        usort($stopBoarding, fn($a, $b) => $b['boarding'] <=> $a['boarding']);
+        $stopBoarding = array_slice($stopBoarding, 0, $topStopsLimit);
 
         // 6. Trip Pax Table Details (Schedules today)
         $tripPaxTable = [];
-        $schedules = Schedule::with(['bus', 'driver', 'route'])->get();
+        $schedules = Schedule::with(['bus', 'driver', 'route'])
+            ->whereBetween('service_date', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+            ->get();
         foreach ($schedules as $s) {
             $capacity = $s->bus ? $s->bus->capacity : Bus::getDefaultCapacity();
             $capacityPct = $capacity > 0 ? round(($s->passengers / $capacity) * 100) : 0;
+
+            $scheduleDate = Carbon::parse($s->service_date)->toDateString();
+            $busId = $s->bus_id;
+
+            $boarded = 0;
+            $alighted = 0;
+            $peakLoad = 0;
+
+            if ($busId) {
+                // Boarded: passengers who boarded the bus on this route and service date
+                $boarded = CommuterTrip::where('bus_id', $busId)
+                    ->where('route_id', $s->route_id)
+                    ->whereDate('created_at', $scheduleDate)
+                    ->whereNotNull('boarded_at')
+                    ->count();
+
+                // Alighted: passengers who arrived at their destination on this route and service date
+                $alighted = CommuterTrip::where('bus_id', $busId)
+                    ->where('route_id', $s->route_id)
+                    ->whereDate('created_at', $scheduleDate)
+                    ->whereNotNull('arrived_at')
+                    ->count();
+
+                // Calculate peakLoad using stop-by-stop sequential aggregation
+                $routeStops = Stop::where('route_id', $s->route_id)->orderBy('sequence')->get();
+                $currentLoad = 0;
+                $maxLoad = 0;
+                foreach ($routeStops as $stop) {
+                    $stopBoarded = CommuterTrip::where('bus_id', $busId)
+                        ->where('route_id', $s->route_id)
+                        ->where('origin_stop_id', $stop->id)
+                        ->whereDate('created_at', $scheduleDate)
+                        ->whereNotNull('boarded_at')
+                        ->count();
+
+                    $stopAlighted = CommuterTrip::where('bus_id', $busId)
+                        ->where('route_id', $s->route_id)
+                        ->where('destination_stop_id', $stop->id)
+                        ->whereDate('created_at', $scheduleDate)
+                        ->whereNotNull('arrived_at')
+                        ->count();
+
+                    $currentLoad += ($stopBoarded - $stopAlighted);
+                    if ($currentLoad > $maxLoad) {
+                        $maxLoad = $currentLoad;
+                    }
+                }
+
+                $peakLoad = max($maxLoad, $boarded, $s->passengers);
+            }
+
+            if ($boarded === 0) {
+                $boarded = $s->passengers;
+                $alighted = max(0, $boarded - 2);
+                $peakLoad = $boarded;
+            }
 
             $tripPaxTable[] = [
                 'tripNo' => 'T-' . str_pad($s->id, 3, '0', STR_PAD_LEFT),
@@ -285,9 +347,9 @@ class AnalyticsController extends Controller
                 'route' => $s->route ? $s->route->name : 'N/A',
                 'depTime' => Carbon::parse($s->departure_time)->format('g:i A'),
                 'arrTime' => Carbon::parse($s->arrival_time)->format('g:i A'),
-                'boarded' => $s->passengers,
-                'alighted' => $s->passengers,
-                'peakLoad' => $s->passengers,
+                'boarded' => $boarded,
+                'alighted' => $alighted,
+                'peakLoad' => $peakLoad,
                 'capacity' => $capacityPct,
             ];
         }
@@ -296,7 +358,9 @@ class AnalyticsController extends Controller
         $busSummaryCards = [];
         $buses = Bus::all();
         foreach ($buses as $bus) {
-            $busSchedules = Schedule::where('bus_id', $bus->id)->get();
+            $busSchedules = Schedule::where('bus_id', $bus->id)
+                ->whereBetween('service_date', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+                ->get();
             $tripsCount = $busSchedules->count();
             $busPaxSum = $busSchedules->sum('passengers');
             $busPeak = $busSchedules->max('passengers') ?: 0;
@@ -338,8 +402,9 @@ class AnalyticsController extends Controller
             // Recommended buses based on predicted passenger load (using SystemSetting for capacity)
             $recBuses = (int) ceil($predPax / $busCapacityLimit);
 
-            // Count actual scheduled trips in this time slot template
-            $schedBuses = Schedule::where('departure_time', '>=', $slotConfig->start_time)
+            // Count actual scheduled trips in this time slot template tomorrow
+            $schedBuses = Schedule::whereDate('service_date', Carbon::tomorrow()->toDateString())
+                ->where('departure_time', '>=', $slotConfig->start_time)
                 ->where('departure_time', '<', $slotConfig->end_time)
                 ->count();
 
@@ -364,31 +429,48 @@ class AnalyticsController extends Controller
 
         // 9. Driver Performance Table
         $driverPerformance = [];
-        $drivers = Driver::orderBy('performance_score', 'desc')->take(5)->get();
+        $driversLimit = (int) SystemSetting::get('analytics_top_drivers_limit', 5);
+        $drivers = Driver::orderBy('performance_score', 'desc')->take($driversLimit)->get();
         foreach ($drivers as $index => $driver) {
+            $tripsCount = Schedule::where('driver_id', $driver->id)
+                ->whereBetween('service_date', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+                ->count();
+
+            $paxSum = Schedule::where('driver_id', $driver->id)
+                ->whereBetween('service_date', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+                ->sum('passengers');
+
             $peakLoad = DB::table('trips')
                 ->where('driver_id', $driver->id)
-                ->whereDate('created_at', Carbon::today())
+                ->whereBetween('created_at', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
                 ->max('peak_passengers') ?: 0;
+
             $driverPerformance[] = [
                 'rank' => '#' . ($index + 1),
                 'name' => "{$driver->first_name} {$driver->last_name}",
                 'bus' => $driver->assigned_bus ?: 'PAS-000',
                 'route' => $driver->assigned_route ? ($routes->firstWhere('id', (int) $driver->assigned_route)?->name ?? 'N/A') : 'N/A',
-                'trips' => $driver->trips_today,
-                'pax' => $driver->pax_today,
-                'avgPax' => $driver->trips_today > 0 ? round($driver->pax_today / $driver->trips_today, 1) : 0,
+                'trips' => $tripsCount,
+                'pax' => $paxSum,
+                'avgPax' => $tripsCount > 0 ? round($paxSum / $tripsCount, 1) : 0,
                 'peakLoad' => $peakLoad,
                 'incidents' => $driver->incidents_30,
             ];
         }
 
-        // 10. Historical Ridership (Last 30 Days)
+        // 10. Historical Ridership (Last 30 Days or dynamic range)
         $historicalTrend = [];
+        $trendStart = $rangeStart;
+        $trendEnd = $rangeEnd;
+        if ($trendStart->toDateString() === $trendEnd->toDateString()) {
+            $trendLimit = (int) SystemSetting::get('analytics_historical_trend_limit', 30);
+            $trendStart = $trendEnd->copy()->subDays($trendLimit - 1);
+        }
+
         $trendData = DemandHistory::select('date')
+            ->whereBetween('date', [$trendStart->toDateString(), $trendEnd->toDateString()])
             ->groupBy('date')
             ->orderBy('date', 'asc')
-            ->take(30)
             ->get();
 
         if ($trendData->isEmpty()) {

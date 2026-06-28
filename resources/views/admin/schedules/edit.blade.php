@@ -95,7 +95,7 @@
                         <span class="absolute inset-y-0 left-3 flex items-center text-slate-400">
                             <i class="ti ti-id text-base"></i>
                         </span>
-                        <select id="sf-edit-driver" name="driver_initials" required onchange="checkEditPageFormConflicts()"
+                        <select id="sf-edit-driver" name="driver_id" required onchange="checkEditPageFormConflicts()"
                                 class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87] appearance-none cursor-pointer">
                             <!-- Will be dynamically populated by JS -->
                         </select>
@@ -192,6 +192,10 @@
 <script>
     var editPageDriversList = [];
     var editPageBusesList = [];
+    const editScheduleBuffer = {{ $scheduleBuffer }};
+    const editBusScheduleBuffer = {{ $busScheduleBuffer }};
+    const editLicenseWarningDays = {{ $licenseWarningDays }};
+    const editDefaultTravelTime = {{ $defaultTravelTime }};
 
     // Expose openEditScheduleForm helper globally to allow prefilling dynamically in the SPA page
     async function openEditScheduleForm(scheduleId) {
@@ -216,7 +220,7 @@
         syncEditPageDropdownAvailability();
         
         document.getElementById('sf-edit-bus').value = schedule.bus;
-        document.getElementById('sf-edit-driver').value = schedule.driver;
+        document.getElementById('sf-edit-driver').value = schedule.driverId;
         document.getElementById('sf-edit-repeat').value = 'Weekly'; // default
 
         // Precheck days
@@ -286,7 +290,7 @@
         });
 
         const busyBuses = conflictingSchedules.map(s => s.bus);
-        const busyDrivers = conflictingSchedules.map(s => s.driver);
+        const busyDrivers = conflictingSchedules.map(s => String(s.driverId));
 
         // Repopulate Bus Select
         busSelect.innerHTML = editPageBusesList.map(bus => {
@@ -299,7 +303,7 @@
 
         // Repopulate Driver Select
         driverSelect.innerHTML = editPageDriversList.map(driver => {
-            const isBusy = busyDrivers.includes(driver.initials);
+            const isBusy = busyDrivers.includes(String(driver.id));
             const isSuspended = driver.status === 'suspended';
             
             let disabledAttr = '';
@@ -312,8 +316,8 @@
                 disabledAttr = 'disabled style="color:var(--color-text-secondary);cursor:not-allowed;"';
                 suffix = ` (Scheduled ${timeVal} ✗)`;
             }
-            const selected = driver.initials === currentSelectedDriver ? 'selected' : '';
-            return `<option value="${driver.initials}" ${disabledAttr} ${selected}>${driver.first_name} ${driver.last_name} (${driver.initials})${suffix}</option>`;
+            const selected = String(driver.id) === String(currentSelectedDriver) ? 'selected' : '';
+            return `<option value="${driver.id}" ${disabledAttr} ${selected}>${driver.first_name} ${driver.last_name} (${driver.initials})${suffix}</option>`;
         }).join('');
 
         checkEditPageFormConflicts();
@@ -324,7 +328,7 @@
         const timeVal = document.getElementById('sf-edit-departure').value;
         
         // Update estimated arrival time
-        const duration = window.ROUTE_DURATIONS[routeVal] || 30;
+        const duration = window.ROUTE_DURATIONS[routeVal] || editDefaultTravelTime;
         const helperText = document.getElementById('sf-edit-arrival-helper');
         if (helperText) {
             helperText.textContent = `Based on Route ${routeVal} average duration: ${duration} minutes.`;
@@ -369,29 +373,29 @@
 
         // Perform time overlap scan
         const hour = parseInt(timeVal.split(':')[0]);
-        const duration = window.ROUTE_DURATIONS[routeVal] || 30;
+        const duration = window.ROUTE_DURATIONS[routeVal] || editDefaultTravelTime;
         const startMin = hour * 60 + parseInt(timeVal.split(':')[1]);
         const endMin = startMin + duration;
 
         const conflict = window.schedulesData.find(s => {
             if (s.id === scheduleId) return false;
-            const isSameDriver = s.driver === driverVal;
+            const isSameDriver = String(s.driverId) === String(driverVal);
             const isSameBus = s.bus === busVal;
 
             if (isSameDriver || isSameBus) {
                 const sParts = s.time.split(':').map(Number);
                 const sStart = sParts[0] * 60 + sParts[1];
-                const sDuration = window.ROUTE_DURATIONS[s.routeId] || 30;
+                const sDuration = window.ROUTE_DURATIONS[s.routeId] || editDefaultTravelTime;
                 const sEnd = sStart + sDuration;
 
-                const buffer = isSameDriver ? 15 : 0;
+                const buffer = isSameDriver ? editScheduleBuffer : editBusScheduleBuffer;
                 return (startMin < (sEnd + buffer)) && (sStart < (endMin + buffer));
             }
             return false;
         });
 
         if (conflict) {
-            const isDriver = conflict.driver === driverVal;
+            const isDriver = String(conflict.driverId) === String(driverVal);
             const entityName = isDriver ? `Driver ${conflict.driverName}` : `Bus ${conflict.bus}`;
             const relation = isDriver ? 'is already assigned to' : 'is already scheduled on';
             
@@ -406,9 +410,9 @@
         checkEditPageDriverLicenseExpiry(driverVal);
     }
 
-    function checkEditPageDriverLicenseExpiry(driverInitials) {
+    function checkEditPageDriverLicenseExpiry(driverId) {
         const warningLabel = document.getElementById('sf-edit-driver-expiry-warning');
-        const driver = editPageDriversList.find(d => d.initials === driverInitials);
+        const driver = editPageDriversList.find(d => String(d.id) === String(driverId));
         
         if (driver && driver.license_expiry) {
             const exp = new Date(driver.license_expiry);
@@ -416,7 +420,7 @@
             today.setHours(0,0,0,0);
             const diff = Math.floor((exp - today) / 86400000);
             
-            if (diff <= 30) {
+            if (diff <= editLicenseWarningDays) {
                 const labelText = document.getElementById('sf-edit-driver-expiry-warning-text');
                 labelText.textContent = diff < 0 
                     ? `Driver license has EXPIRED! Please suspend operations.` 
@@ -448,7 +452,7 @@
         const payload = {
             route_id: routeVal,
             bus_plate: busVal,
-            driver_initials: driverVal,
+            driver_id: driverVal,
             departure_time: timeVal
         };
 

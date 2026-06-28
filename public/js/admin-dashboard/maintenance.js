@@ -292,6 +292,11 @@ async function fetchMaintenanceLogs() {
                 bulletColorClass = 'bg-slate-400';
             }
 
+            let displayStatus = record.status;
+            if (record.status === 'in_progress' && record.inspection_passed === true) {
+                displayStatus = 'Awaiting Completion';
+            }
+
             const itemDiv = document.createElement('div');
             itemDiv.className = 'relative pl-6 border-l border-slate-200 pb-4';
 
@@ -301,7 +306,7 @@ async function fetchMaintenanceLogs() {
                 // Show inspection status if available
                 let inspectionStatusHtml = '';
                 if (record.inspection_passed === true) {
-                    inspectionStatusHtml = '<span class="text-[10px] font-bold text-[#639922]"><i class="ti ti-check-circle"></i> Inspection PASSED</span>';
+                    inspectionStatusHtml = '<span class="text-[10px] font-bold text-[#639922]"><i class="ti ti-check-circle"></i> Inspection PASSED (Awaiting Completion)</span>';
                 } else if (record.inspection_passed === false) {
                     inspectionStatusHtml = '<span class="text-[10px] font-bold text-[#E24B4A]"><i class="ti ti-circle-x"></i> Inspection FAILED</span>';
                 } else if (record.status === 'in_progress') {
@@ -354,7 +359,7 @@ async function fetchMaintenanceLogs() {
                         <span class="text-xs font-extrabold text-[#003F87]">${busLabel}</span>
                         <div class="flex gap-2">
                             <span class="inline-flex rounded-full ${badgeBgClass} ${badgeTextClass} px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">${record.type}</span>
-                            <span class="inline-flex rounded-full ${statusBadgeClass} px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">${record.status}</span>
+                            <span class="inline-flex rounded-full ${statusBadgeClass} px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">${displayStatus}</span>
                         </div>
                     </div>
                     <div class="mt-2.5 grid grid-cols-2 gap-y-2 text-[11px] text-slate-500 font-semibold">

@@ -16,6 +16,7 @@ class Schedule extends Model
 
     protected $fillable = [
         'route_id',
+        'service_date',
         'bus_id',
         'driver_id',
         'departure_time',
@@ -25,6 +26,10 @@ class Schedule extends Model
         'delay_minutes',
         'actual_departure_time',
         'actual_arrival_time',
+    ];
+
+    protected $casts = [
+        'service_date' => 'date',
     ];
 
     public function route()

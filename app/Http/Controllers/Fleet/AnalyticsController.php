@@ -139,10 +139,10 @@ class AnalyticsController extends Controller
         }
         $routes = $routeQuery->get();
 
-        $baseQuery = fn() => Schedule::whereBetween('created_at', [$start, $end]);
+        $baseQuery = fn() => Schedule::whereBetween('service_date', [$start->toDateString(), $end->toDateString()]);
         $countInRange = $baseQuery()->count();
         $useAllTime = $countInRange === 0;
-        $effectiveQuery = fn() => $useAllTime ? Schedule::query() : Schedule::whereBetween('created_at', [$start, $end]);
+        $effectiveQuery = fn() => $useAllTime ? Schedule::query() : Schedule::whereBetween('service_date', [$start->toDateString(), $end->toDateString()]);
 
         $routeFilteredQuery = fn() => $selectedRoute !== 'all'
             ? $effectiveQuery()->where('route_id', $selectedRoute)

@@ -35,7 +35,7 @@ class AdminMaintenanceCreateTest extends TestCase
 
         $response = $this->get('/admin/maintenance/create');
 
-        $response->assertRedirect('/admin/dashboard#maintenance');
+        $response->assertStatus(200);
     }
 
     public function test_unauthorized_users_cannot_access_maintenance_create_page(): void

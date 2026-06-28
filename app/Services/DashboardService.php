@@ -25,7 +25,7 @@ class DashboardService
                 return $bus->eta >= $bus->getRouteDelayThreshold();
             })->count(),
             'passengers_today' => Schedule::whereDate('created_at', Carbon::today('Asia/Manila'))->sum('passengers'),
-            'open_alerts' => ServiceAlert::where('status', 'active')->count(),
+            'open_alerts' => ServiceAlert::activeAlerts()->count(),
         ];
     }
 
@@ -37,29 +37,29 @@ class DashboardService
     public function getFleetOverviewKpi(): array
     {
         $today = Carbon::today('Asia/Manila');
+        $yesterday = $today->copy()->subDay();
 
-        // Active buses: ongoing trips
-        $activeBusIds = Trip::where('status', 'ongoing')->pluck('bus_id')->toArray();
+        // Active buses: buses with trip activity during the Manila service day.
+        $activeBusIds = $this->activeTripBusIdsForDay($today);
         $activeBuses = count($activeBusIds);
 
         // Delayed buses: active buses whose ETA meets the configurable delay threshold.
-        // Threshold is read from system_settings (key: delay_threshold, default: 10 min).
         $delayThreshold = Bus::getDelayThreshold();
         $delayedBuses = Bus::whereIn('id', $activeBusIds)->where('eta', '>=', $delayThreshold)->count();
 
-        // Offline buses: in maintenance status
+        // Offline buses: in maintenance status.
         $offlineBuses = Bus::where('status', 'maintenance')->count();
 
-        // Idle buses: inactive status
+        // Idle buses: inactive status.
         $idleBuses = Bus::where('status', 'inactive')->count();
 
-        // Trips completed today — no fallback; a real 0-trip day should show 0
+        // Trips completed today - no fallback; a real 0-trip day should show 0.
         $tripsCompleted = Trip::where('status', 'completed')->whereDate('ended_at', $today)->count();
 
-        // Total passengers: sum of passengers on active buses
+        // Total passengers: sum of passengers on active buses.
         $totalPassengers = Bus::whereIn('id', $activeBusIds)->sum('passengers');
 
-        // Average utilization: (passengers / capacity) * 100
+        // Average utilization: (passengers / capacity) * 100.
         $avgUtilization = 0;
         if ($activeBuses > 0) {
             $activeBusData = Bus::whereIn('id', $activeBusIds)->get();
@@ -69,23 +69,21 @@ class DashboardService
             $avgUtilization = (int) round($totalUtil);
         }
 
-        // Open incidents: reported or under review
+        // Open incidents: reported or under review.
         $openIncidentCount = DB::table('incidents')
             ->whereIn('status', ['reported', 'under_review'])
             ->count();
 
-        // Delta vs yesterday — use completed trips (ended_at) for consistency on both days
+        // Delta vs yesterday - use completed trips (ended_at) for consistency on both days.
         $tripsYesterday = Trip::where('status', 'completed')
-            ->whereDate('ended_at', Carbon::yesterday())
+            ->whereDate('ended_at', $yesterday)
             ->count();
 
-        // Active buses yesterday: buses that had a completed or ongoing trip yesterday
-        $activeBusIdsYesterday = Trip::whereDate('ended_at', Carbon::yesterday())
-            ->whereIn('status', ['completed', 'ongoing'])
-            ->pluck('bus_id')->unique()->toArray();
+        // Active buses yesterday: same trip activity rule used for today's count.
+        $activeBusIdsYesterday = $this->activeTripBusIdsForDay($yesterday);
         $activeBusesYesterday = count($activeBusIdsYesterday);
 
-        // Delayed buses yesterday: active buses yesterday whose ETA met the delay threshold
+        // Delayed buses yesterday: active buses yesterday whose ETA met the delay threshold.
         $delayedBusesYesterday = Bus::whereIn('id', $activeBusIdsYesterday)
             ->where('eta', '>=', $delayThreshold)
             ->count();
@@ -106,14 +104,35 @@ class DashboardService
             'deltas' => (object) [
                 'active_buses_yesterday' => ($activeDelta >= 0 ? '+' : '') . $activeDelta . ' vs yesterday',
                 'delayed_buses_yesterday' => ($delayedDelta >= 0 ? '+' : '') . $delayedDelta . ' vs yesterday',
-                'offline_buses_yesterday' => '— in maintenance',
-                'idle_buses_yesterday' => '— standby',
+                'offline_buses_yesterday' => '- in maintenance',
+                'idle_buses_yesterday' => '- standby',
                 'trips_completed_yesterday' => ($tripsDelta >= 0 ? '+' : '') . $tripsDelta . ' vs yesterday',
                 'total_passengers_yesterday' => $activeBuses > 0 ? 'on active buses' : 'no active buses',
-                'avg_utilization_yesterday' => $activeBuses > 0 ? 'of capacity used' : '—',
+                'avg_utilization_yesterday' => $activeBuses > 0 ? 'of capacity used' : '-',
                 'open_incidents_yesterday' => $openIncidentCount > 0 ? 'needs attention' : 'all clear',
             ],
         ];
+    }
+
+    /**
+     * Get bus IDs with trips that overlap the given Manila service day.
+     */
+    private function activeTripBusIdsForDay(Carbon $day): array
+    {
+        $start = $day->copy()->startOfDay();
+        $end = $day->copy()->endOfDay();
+
+        return Trip::whereIn('status', ['ongoing', 'completed'])
+            ->whereNotNull('started_at')
+            ->where('started_at', '<=', $end)
+            ->where(function ($query) use ($start) {
+                $query->whereNull('ended_at')
+                    ->orWhere('ended_at', '>=', $start);
+            })
+            ->pluck('bus_id')
+            ->unique()
+            ->values()
+            ->toArray();
     }
 
     /**
@@ -133,14 +152,14 @@ class DashboardService
             $tripsToday = $driver->trips_today;
             $paxToday = $driver->pax_today;
 
-            // Calculate 30-day incidents count from real incident records
+            // Calculate 30-day incidents count from real incident records.
             $dbIncidents30 = DB::table('incidents')
                 ->where('driver_id', $driver->id)
                 ->where('created_at', '>=', now()->subDays(30))
                 ->count();
             $incidents30 = max((int) ($driver->incidents_30 ?? 0), $dbIncidents30);
 
-            // Delegate to the shared scoring service (last 30 days)
+            // Delegate to the shared scoring service (last 30 days).
             $start30 = Carbon::now()->subDays(30)->startOfDay();
             $end30 = Carbon::now()->endOfDay();
             $performanceScore = DriverPerformanceService::calculateScore(

@@ -22,7 +22,7 @@ class RouteStatusService
             return 'Disrupted';
         }
 
-        $hasActiveSuspension = ServiceAlert::where('status', 'active')
+        $hasActiveSuspension = ServiceAlert::activeAlerts()
             ->where(function ($query) use ($route) {
                 $query->where('route_id', $route->id)
                       ->orWhere('affected_routes', 'like', '%' . $route->name . '%');
@@ -34,7 +34,7 @@ class RouteStatusService
             return 'Disrupted';
         }
 
-        $hasActiveDelay = ServiceAlert::where('status', 'active')
+        $hasActiveDelay = ServiceAlert::activeAlerts()
             ->where(function ($query) use ($route) {
                 $query->where('route_id', $route->id)
                       ->orWhere('affected_routes', 'like', '%' . $route->name . '%');

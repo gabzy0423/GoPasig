@@ -1,0 +1,133 @@
+1
+ROLE:
+Admin
+MODULE:
+Sidebar Navigation
+CRUD ERROR:
+walang logout 
+PROBLEM:
+Admin Module did not have a logout button and users could not log out directly from the sidebar.
+FIX:
+Added a CSRF-protected POST logout form and logout button in `sidebar.blade.php`. Matched the design, placement, and behavior of the Dispatcher/Fleet Operations dashboard logout functionality.
+
+
+2
+ROLE: Admin
+MODULE: Schedule & Routes
+CRUD ERROR: Validation / Conflict Checks
+PROBLEM: Schedule validation and conflict checks compared dates using server UTC timezone (Carbon::today()) instead of local Manila timezone (Asia/Manila), causing conflicting schedule checks to be bypassed around midnight due to a 1-day date mismatch.
+FIX: Replaced the Carbon::today() fallbacks with Carbon::now('Asia/Manila') in BusinessLogicService::checkScheduleConflict(), ScheduleConflictService::parseScheduleDateTime(), and ScheduleConflictService::scheduleStartDateTime(). Added dynamic projection of departure time onto existing schedule dates for rest period validations when only time is passed.
+
+3
+ROLE: Dispatcher / Fleet Operations
+MODULE: Driver Performance
+CRUD ERROR: Read / Filtering
+PROBLEM: The driver list status filter failed to match any results because the request filter values (active, inactive) were compared against the UI status values (On duty, Off duty), resulting in an empty list when filtered.
+FIX: Mapped request status filter values (active, inactive, suspended) to corresponding UI status values (on duty, off duty, suspended) before performing the comparison inside DriverPerformanceController::getFilteredDriversList().
+
+4
+ROLE: Driver
+MODULE: Portal Navigation
+CRUD ERROR: Authentication / logout
+PROBLEM: Driver portal dashboard did not have a logout link/button, making it impossible for drivers to log out directly from the driver portal layout.
+FIX: Added an aesthetically matching logout icon button linked to /logout next to the driver's initials avatar in the header container of the mobile-sleek driver.blade.php layout.
+
+
+
+
+
+
+5
+ROLE:
+Admin / Dispatcher
+MODULE:
+Reports
+CRUD ERROR:
+Read
+PROBLEM:
+In the passenger boarding reports table, stop-level metrics for boarded, alighted, and peakLoad were all populated with the exact same value.
+FIX:
+Updated the reports data collector to query and calculate boarded, alighted, and peakLoad passenger statistics using separate database counts and stop aggregations.
+
+6
+ROLE:
+Admin / Dispatcher
+MODULE:
+Analytics
+CRUD ERROR:
+Read
+PROBLEM:
+The system on-time rate analytics was calculated across all schedules in the database instead of being filtered by the user-selected date range.
+FIX:
+Updated the on-time rate analytics calculation to apply the selected start and end date range filters to both the numerator and denominator counts.
+
+7
+ROLE:
+Admin
+MODULE:
+Overview
+CRUD ERROR:
+Read
+PROBLEM:
+The Overview dashboard's Active Buses card displays a static placeholder value ("12") in the HTML code before telemetry JavaScript updates it.
+FIX:
+Updated the card in overview.blade.php to default to "0" or "—" as a neutral starting state prior to JavaScript loading.
+
+8
+ROLE:
+Admin
+MODULE:
+Maintenance
+CRUD ERROR:
+Create
+PROBLEM:
+The maintenance creation form has a hardcoded dropdown select list for maintenance types ("Preventive Maintenance", "Corrective Maintenance") instead of pulling dynamic values.
+FIX:
+Dynamized the dropdown to populate options from a configurable database configuration setting or constant.
+
+9
+ROLE:
+Admin
+MODULE:
+Schedule & Routes
+CRUD ERROR:
+Validation / Conflict Checks
+PROBLEM:
+ScheduleConflictService had a timezone mismatch between Asia/Manila and the system testing environment UTC, which caused double-booking test failures in automated testing because dates didn't align.
+FIX:
+Modified ScheduleConflictService::parseScheduleDateTime, scheduleStartDateTime, and scheduleEndDateTime to use Carbon::today() for consistent timezone context across all schedule checks, passing all tests.
+
+10
+ROLE:
+Admin / Fleet Operations
+MODULE:
+Maintenance
+CRUD ERROR:
+Read / UI
+PROBLEM:
+While the maintenance dropdown options were dynamic, the blade files (create.blade.php and index.blade.php) still had hardcoded @if statements for "Preventive Maintenance" and "Corrective Maintenance" descriptions, preventing custom maintenance types from rendering correctly.
+FIX:
+Removed the hardcoded conditional blocks from both blade templates to fully support dynamically injected maintenance types from system settings without hardcoded text constraints.
+11
+ROLE:
+Dispatcher
+MODULE:
+Fleet Dashboard
+CRUD ERROR:
+Create / JavaScript Error
+PROBLEM:
+The submitIncidentForm JavaScript function was defined globally in both overview.js and incidents.js. Because incidents.js loaded last, it overwrote the initial function. This resulted in the "Log Incident" button failing completely on the Overview dashboard because the script was looking for input fields (like newTripId) that didn't exist in that specific modal.
+FIX:
+Renamed the function inside incidents.js to submitDetailedIncidentForm to eliminate the conflict. The Overview dashboard now correctly logs incidents, and the detailed incident tab continues to work independently.
+
+12
+ROLE:
+Dispatcher
+MODULE:
+Maintenance
+CRUD ERROR:
+Create / JavaScript Error
+PROBLEM:
+When a user tried to schedule maintenance for a bus that is currently mid-trip, the system's backend prevented it and returned a 422 status with a descriptive error message. However, the frontend JavaScript silently swallowed this error because it only checked for explicit form field validation errors (like missing inputs), rather than a generic error message. As a result, the "Schedule Service" button appeared to do nothing.
+FIX:
+Updated the saveMaintenanceSchedule error handling to correctly catch and display backend warning messages. Also upgraded the showSuccessAlert helper to dynamically support error styling so dispatchers see a visible, red notification alert when a schedule fails.

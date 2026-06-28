@@ -48,6 +48,31 @@ return new class extends Migration
                 'value' => '150',
                 'description' => 'Maximum bus capacity allowed',
             ],
+            [
+                'key' => 'bus_default_driver_name',
+                'value' => 'Unassigned',
+                'description' => 'Default driver_name value when a bus has no assigned driver',
+            ],
+            [
+                'key' => 'bus_default_next_stop',
+                'value' => 'None',
+                'description' => 'Default next_stop value when a bus has no upcoming stop',
+            ],
+            [
+                'key' => 'bus_initial_speed',
+                'value' => '0',
+                'description' => 'Initial speed value for newly registered buses',
+            ],
+            [
+                'key' => 'bus_initial_passengers',
+                'value' => '0',
+                'description' => 'Initial passenger count for newly registered buses',
+            ],
+            [
+                'key' => 'bus_initial_eta',
+                'value' => '0',
+                'description' => 'Initial ETA value for newly registered buses',
+            ],
             
             // Schedule Settings
             [
@@ -59,6 +84,11 @@ return new class extends Migration
                 'key' => 'driver_schedule_buffer_minutes',
                 'value' => '15',
                 'description' => 'Buffer time in minutes between driver schedules',
+            ],
+            [
+                'key' => 'bus_schedule_buffer_minutes',
+                'value' => '15',
+                'description' => 'Buffer time in minutes between bus schedules',
             ],
             
             // Time Slot Settings
@@ -99,6 +129,16 @@ return new class extends Migration
                 'value' => '10000',
                 'description' => 'GPS polling interval in milliseconds for real-time tracking',
             ],
+            [
+                'key' => 'overview_default_route_name',
+                'value' => 'No route configured',
+                'description' => 'Dashboard map chip label when no route exists',
+            ],
+            [
+                'key' => 'default_route_avg_pax',
+                'value' => '0',
+                'description' => 'Default average route passenger count when a route has no completed trips',
+            ],
             
             // Geofencing Settings
             [
@@ -132,6 +172,31 @@ return new class extends Migration
                 'key' => 'license_expiry_warning_threshold_days',
                 'value' => '30',
                 'description' => 'Days before license expiry to show warning',
+            ],
+            [
+                'key' => 'license_expiry_warn_critical_days',
+                'value' => '7',
+                'description' => 'Days before license expiry to classify as critical',
+            ],
+            [
+                'key' => 'driver_initial_performance_score',
+                'value' => '80',
+                'description' => 'Initial performance score assigned to newly registered drivers',
+            ],
+            [
+                'key' => 'incident_score_penalty_per_event',
+                'value' => '10',
+                'description' => 'Performance score points deducted per driver incident',
+            ],
+            [
+                'key' => 'driver_performance_rolling_days',
+                'value' => '30',
+                'description' => 'Rolling window in days for driver performance calculations',
+            ],
+            [
+                'key' => 'driver_passenger_rating_default',
+                'value' => '80',
+                'description' => 'Default passenger rating score until passenger feedback data exists',
             ],
         ];
 

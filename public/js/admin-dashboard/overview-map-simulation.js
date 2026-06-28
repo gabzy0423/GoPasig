@@ -286,46 +286,41 @@ function updateOverviewDashboard() {
     if (dispatchList) {
         dispatchList.innerHTML = '';
 
-        // Filter dispatched buses (status is Active or Delayed)
-        const dispatchedBuses = fleetData.filter(b => b.status === 'Active' || b.status === 'Delayed');
+        const dispatchedBuses = typeof dispatchQueueData !== 'undefined' ? [...dispatchQueueData] : [];
 
-        // Sort so Delayed ones appear at top of list
+        // Sort so delayed trips appear at top, then by departure time
         dispatchedBuses.sort((a, b) => {
             if (a.status === 'Delayed' && b.status !== 'Delayed') return -1;
             if (a.status !== 'Delayed' && b.status === 'Delayed') return 1;
-            return 0;
+            return a.departureTime.localeCompare(b.departureTime);
         });
 
         if (dispatchedBuses.length === 0) {
             dispatchList.innerHTML = `
                 <div class="py-16 text-center text-xs font-semibold text-slate-400">
-                    No active dispatches found in database.
+                    No dispatches scheduled for today.
                 </div>
             `;
         } else {
-            dispatchedBuses.forEach(bus => {
+            dispatchedBuses.forEach(dispatch => {
                 const card = document.createElement('div');
                 card.className = "rounded-lg border border-slate-100 bg-slate-50/50 p-3 hover:border-slate-200 hover:bg-slate-50 transition-all duration-200";
 
-                const dispatchStatus = bus.status === 'Delayed' || bus.eta > 10 ? 'Delayed' : 'On Time';
+                const dispatchStatus = dispatch.status === 'Delayed' || dispatch.status === 'delayed' ? 'Delayed' : 'On Time';
                 const badgeClass = dispatchStatus === 'Delayed' ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-[#EAF3DE] text-[#3B6D11]';
-
-                // Get clean route description or name
-                const fullRouteName = routeNames[bus.route] || 'Unassigned';
-                const displayRoute = fullRouteName.includes('|') ? fullRouteName.split('|')[1].trim() : fullRouteName;
 
                 card.innerHTML = `
                     <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-[#003F87]">${bus.plate}</span>
+                        <span class="text-xs font-bold text-[#003F87]">${dispatch.busPlate}</span>
                         <span class="inline-flex rounded-full ${badgeClass} px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">${dispatchStatus}</span>
                     </div>
                     <div class="mt-2 text-[11px] text-slate-500 font-semibold space-y-1">
-                        <div>Route: <span class="text-slate-800 font-bold">${displayRoute}</span></div>
-                        <div>Driver: <span class="text-slate-800 font-bold">${bus.driver}</span></div>
+                        <div>Route: <span class="text-slate-800 font-bold">${dispatch.routeName}</span></div>
+                        <div>Driver: <span class="text-slate-800 font-bold">${dispatch.driverName}</span></div>
                     </div>
                     <div class="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2 shrink-0">
-                        <span class="text-[10px] font-bold text-slate-400">ETA: ${bus.eta} mins</span>
-                        <button onclick="viewTripDetails(${bus.id})" class="text-[10px] font-extrabold text-[#003F87] hover:text-[#002D62] transition uppercase tracking-wider cursor-pointer">View Details</button>
+                        <span class="text-[10px] font-bold text-slate-400">Departure: ${dispatch.departureTime}</span>
+                        <button onclick="viewTripDetails(${dispatch.busId})" class="text-[10px] font-extrabold text-[#003F87] hover:text-[#002D62] transition uppercase tracking-wider cursor-pointer">View Details</button>
                     </div>
                 `;
                 dispatchList.appendChild(card);

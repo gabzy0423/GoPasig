@@ -170,10 +170,10 @@ class RoutePerformanceController extends Controller
 
         $colorPalette = ColorPalette::getColors('analytics');
 
-        $countInRange = Schedule::whereBetween('created_at', [$start, $end])->count();
+        $countInRange = Schedule::whereBetween('service_date', [$start->toDateString(), $end->toDateString()])->count();
         $useAllTime = $countInRange === 0;
 
-        $effectiveQuery = fn() => $useAllTime ? Schedule::query() : Schedule::whereBetween('created_at', [$start, $end]);
+        $effectiveQuery = fn() => $useAllTime ? Schedule::query() : Schedule::whereBetween('service_date', [$start->toDateString(), $end->toDateString()]);
 
         $routeIds = $selectedRoute !== 'all' ? [(int) $selectedRoute] : null;
 

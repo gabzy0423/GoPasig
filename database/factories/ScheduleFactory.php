@@ -16,6 +16,7 @@ class ScheduleFactory extends Factory
     {
         return [
             'route_id' => Route::factory(),
+            'service_date' => now()->toDateString(),
             'bus_id' => Bus::factory(),
             'driver_id' => Driver::factory(),
             'departure_time' => $this->faker->time('H:i'),

@@ -79,14 +79,14 @@ class BusController extends Controller
 
         $bus = Bus::create([
             'plate_number' => $validated['plate_number'],
-            'route_id' => isset($validated['route_id']) ? ($validated['route_id'] ?: null) : null,
-            'driver_name' => isset($validated['driver_name']) ? ($validated['driver_name'] ?: Bus::DEFAULT_DRIVER_NAME) : Bus::DEFAULT_DRIVER_NAME,
+            'route_id' => $validated['route_id'] ?: null,
+            'driver_name' => $validated['driver_name'] ?: Bus::DEFAULT_DRIVER_NAME,
             'capacity' => $validated['capacity'],
             'status' => $validated['status'],
-            'speed' => 0,
-            'passengers' => 0,
-            'next_stop' => Bus::DEFAULT_NEXT_STOP,
-            'eta' => 0,
+            'speed' => Bus::getInitialSpeed(),
+            'passengers' => Bus::getInitialPassengers(),
+            'next_stop' => Bus::getDefaultNextStop(),
+            'eta' => Bus::getInitialEta(),
             'lat' => $defaultLat,
             'lng' => $defaultLng,
         ]);
@@ -128,7 +128,8 @@ class BusController extends Controller
             'status' => 'required|in:active,inactive,maintenance',
         ]);
 
-        // Validate status transition + update all fields atomically
+        // Status transition and field edits are wrapped together so a failed
+        // field update rolls back the status change too.
         try {
             DB::transaction(function () use ($bus, $validated) {
                 if ($validated['status'] !== $bus->status) {
@@ -138,15 +139,15 @@ class BusController extends Controller
 
                 $bus->update([
                     'plate_number' => $validated['plate_number'],
-                    'route_id'     => array_key_exists('route_id', $validated) ? ($validated['route_id'] ?: null) : $bus->route_id,
-                    'driver_name'  => array_key_exists('driver_name', $validated) ? ($validated['driver_name'] ?: Bus::DEFAULT_DRIVER_NAME) : $bus->driver_name,
-                    'capacity'     => $validated['capacity'],
+                    'route_id' => $validated['route_id'] ?: null,
+                    'driver_name' => $validated['driver_name'] ?: Bus::DEFAULT_DRIVER_NAME,
+                    'capacity' => $validated['capacity'],
                 ]);
             });
         } catch (InvalidStatusTransitionException $e) {
             return response()->json([
-                'success'           => false,
-                'message'           => $e->getMessage(),
+                'success' => false,
+                'message' => $e->getMessage(),
                 'valid_transitions' => $e->validTransitions,
             ], 422);
         }
@@ -154,7 +155,7 @@ class BusController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Bus successfully updated!',
-            'bus'     => $bus->fresh()
+            'bus' => $bus->fresh()
         ]);
     }
 
@@ -180,7 +181,7 @@ class BusController extends Controller
         }
 
         $activeSchedule = Schedule::where('bus_id', $bus->id)
-            ->whereIn('status', ['pending', 'in_progress'])
+            ->where('status', '!=', Schedule::STATUS_CANCELLED)
             ->exists();
         if ($activeSchedule) {
             return response()->json([

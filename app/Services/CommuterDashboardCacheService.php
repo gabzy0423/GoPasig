@@ -21,7 +21,7 @@ class CommuterDashboardCacheService
             $routes = Route::with('stops')->orderBy('id')->get();
             $activeBuses = Bus::with('route')->where('status', 'active')->orderBy('eta')->get();
             $schedules = Schedule::orderBy('departure_time')->get();
-            $activeAlerts = ServiceAlert::where('status', 'active')->latest('created_at')->get();
+            $activeAlerts = ServiceAlert::activeAlerts()->latest('created_at')->get();
 
             $activeBusesByRoute = $activeBuses->groupBy('route_id');
             $schedulesByRoute = $schedules->groupBy('route_id');

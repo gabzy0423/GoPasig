@@ -14,22 +14,24 @@ class BusinessLogicService
      * Check if driver has exceeded daily hour limits
      * Issue 3.1.1: No daily hours limit enforcement
      */
-    public static function checkDriverDailyHours(int $driverId, string $departureTime, int $tripDurationMinutes, int $maxDailyHours): array
-    {
+    public static function checkDriverDailyHours(
+        int $driverId,
+        string $departureTime,
+        int $tripDurationMinutes,
+        int $maxDailyHours,
+        ?int $excludeScheduleId = null,
+        ?string $serviceDate = null
+    ): array {
         $timeParts = explode(':', $departureTime);
         $departureMinutes = intval($timeParts[0]) * 60 + intval($timeParts[1]);
         $tripEndMinutes = $departureMinutes + $tripDurationMinutes;
 
         // Get all schedules for this driver today
         $today = \Carbon\Carbon::today()->toDateString();
-        $schedules = Schedule::where('driver_id', $driverId)
-            ->whereDate('created_at', $today)
-            ->get();
+        $schedules = Schedule::where('driver_id', $driverId)->get();
 
         $totalMinutesScheduled = 0;
         foreach ($schedules as $schedule) {
-            $sParts = explode(':', $schedule->departure_time);
-            $sStart = intval($sParts[0]) * 60 + intval($sParts[1]);
             $sDuration = $schedule->route?->travel_time_minutes ?? (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
             $totalMinutesScheduled += $sDuration;
         }
@@ -201,9 +203,11 @@ class BusinessLogicService
     /**
      * Check schedule conflicts for a driver or bus (ENHANCED from original)
      * Issue 3.1.1: Schedule conflict detection incomplete
+     * Issue BL-4.2: Now applies rest buffer to BOTH driver AND bus conflicts
      * 
      * Now also checks:
      * - Driver rest periods (minimum time between trips)
+     * - Bus rest periods (minimum time between trips)
      * - Route constraints (driver certification)
      * - Bus availability
      */
@@ -212,59 +216,58 @@ class BusinessLogicService
         int $driverId,
         int $routeId,
         string $departureTime,
-        ?int $excludeScheduleId = null
+        ?int $excludeScheduleId = null,
+        ?string $serviceDate = null
     ): array {
         // Get buffer time from settings
         $driverBuffer = (int) SystemSetting::get('driver_schedule_buffer_minutes', 15);
-        
-        // Convert time to minutes for comparison
-        $timeParts = explode(':', $departureTime);
-        $startMin = intval($timeParts[0]) * 60 + intval($timeParts[1]);
-        
+        $busBuffer = (int) SystemSetting::get('bus_schedule_buffer_minutes', 15);
+
         // Get route duration
         $route = Route::find($routeId);
         $duration = $route?->travel_time_minutes ?? (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
-        $endMin = $startMin + $duration;
 
-        // Check existing schedules for conflicts
-        $conflictingSchedules = Schedule::query();
-        
-        if ($excludeScheduleId) {
-            $conflictingSchedules->where('id', '!=', $excludeScheduleId);
-        }
+        $targetDate = $serviceDate ?: \Carbon\Carbon::now('Asia/Manila')->toDateString();
+        $newStart = \Carbon\Carbon::parse($targetDate . ' ' . $departureTime);
+        $newEnd = $newStart->copy()->addMinutes($duration);
 
-        $existingSchedules = $conflictingSchedules->get();
+        // Check existing schedules for conflicts (excluding cancelled ones)
+        $existingSchedules = Schedule::whereNotIn('status', ['cancelled', Schedule::STATUS_CANCELLED])
+            ->when($excludeScheduleId, fn($q) => $q->where('id', '!=', $excludeScheduleId))
+            ->get();
 
         foreach ($existingSchedules as $schedule) {
-            // Check bus conflict
-            if ($schedule->bus_id === $busId) {
-                $sParts = explode(':', $schedule->departure_time);
-                $sStart = intval($sParts[0]) * 60 + intval($sParts[1]);
-                $sDuration = $schedule->route?->travel_time_minutes ?? (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
-                $sEnd = $sStart + $sDuration;
+            $sDate = $schedule->service_date
+                ? \Carbon\Carbon::parse($schedule->service_date)->toDateString()
+                : \Carbon\Carbon::now('Asia/Manila')->toDateString();
+            $sStart = \Carbon\Carbon::parse($sDate . ' ' . substr($schedule->departure_time, 0, 8));
+            $sDuration = $schedule->route?->travel_time_minutes ?? (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
+            $sEnd = $sStart->copy()->addMinutes($sDuration);
 
-                if (($startMin < $sEnd) && ($sStart < $endMin)) {
+            // Check bus conflict with buffer
+            if ($schedule->bus_id === $busId) {
+                if (
+                    $newStart->lessThan($sEnd->copy()->addMinutes($busBuffer)) &&
+                    $sStart->lessThan($newEnd->copy()->addMinutes($busBuffer))
+                ) {
                     return [
                         'conflict' => true,
                         'type' => 'bus',
-                        'message' => "Bus is already scheduled from {$schedule->departure_time} to end of route"
+                        'message' => "Bus is already scheduled from " . substr($schedule->departure_time, 0, 5) . " with {$busBuffer}min buffer"
                     ];
                 }
             }
 
             // Check driver conflict with buffer
             if ($schedule->driver_id === $driverId) {
-                $sParts = explode(':', $schedule->departure_time);
-                $sStart = intval($sParts[0]) * 60 + intval($sParts[1]);
-                $sDuration = $schedule->route?->travel_time_minutes ?? (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
-                $sEnd = $sStart + $sDuration;
-
-                // Add buffer for driver rest
-                if (($startMin < ($sEnd + $driverBuffer)) && ($sStart < ($endMin + $driverBuffer))) {
+                if (
+                    $newStart->lessThan($sEnd->copy()->addMinutes($driverBuffer)) &&
+                    $sStart->lessThan($newEnd->copy()->addMinutes($driverBuffer))
+                ) {
                     return [
                         'conflict' => true,
                         'type' => 'driver',
-                        'message' => "Driver already has trip from {$schedule->departure_time} with {$driverBuffer}min buffer"
+                        'message' => "Driver already has trip from " . substr($schedule->departure_time, 0, 5) . " with {$driverBuffer}min buffer"
                     ];
                 }
             }

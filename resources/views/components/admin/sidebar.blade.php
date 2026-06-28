@@ -137,5 +137,11 @@
             <p class="text-[10px] font-extrabold uppercase tracking-widest text-white/50">Lungsod ng Pasig</p>
             <p class="text-xs font-bold truncate text-white">Umaagos Ang Pag-Asa</p>
         </div>
+        <form id="admin-logout-form" action="{{ route('logout') }}" method="POST" class="hidden">
+            @csrf
+        </form>
+        <button onclick="event.preventDefault(); document.getElementById('admin-logout-form').submit();" class="ml-auto text-white/60 hover:text-white transition-colors flex items-center justify-center p-1 cursor-pointer" title="Sign Out">
+            <i class="ti ti-logout text-[18px]"></i>
+        </button>
     </div>
 </aside>

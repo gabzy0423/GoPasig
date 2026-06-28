@@ -152,7 +152,10 @@
     function reScanConflicts() {
         conflictsList = [];
 
-        // 1. Scan: Check for double-booked drivers (within duration + 15 min buffer)
+        const driverBuffer = {{ $scheduleBuffer }};
+        const busBuffer = {{ $busScheduleBuffer }};
+
+        // 1. Scan: Check for double-booked drivers (within duration + configured buffer)
         for (let i = 0; i < schedulesData.length; i++) {
             const s1 = schedulesData[i];
             const duration1 = ROUTE_DURATIONS[s1.routeId] || 30;
@@ -164,11 +167,13 @@
             for (let j = i + 1; j < schedulesData.length; j++) {
                 const s2 = schedulesData[j];
                 
-                if (s1.driver && s2.driver && s1.driver === s2.driver) {
+                if (s1.driverId && s2.driverId && String(s1.driverId) === String(s2.driverId)) {
                     const time2Parts = s2.time.split(':').map(Number);
                     const start2 = time2Parts[0] * 60 + time2Parts[1];
+                    const duration2 = ROUTE_DURATIONS[s2.routeId] || 30;
+                    const end2 = start2 + duration2;
                     
-                    const isOverlapping = (start2 >= start1 && start2 < (end1 + 15)) || (start1 >= start2 && start1 < (start2 + 15));
+                    const isOverlapping = (start1 < (end2 + driverBuffer)) && (start2 < (end1 + driverBuffer));
                     
                     if (isOverlapping) {
                         const diffMin = Math.abs(start2 - start1);
@@ -179,7 +184,7 @@
                             entityName: `${s1.driverName} (${s1.driver}) — double booked`,
                             description: `Assigned to Route ${s2.routeId} at ${format12Hour(s2.time)} and Route ${s1.routeId} at ${format12Hour(s1.time)}. Insufficient transition buffer (${diffMin} minutes).`,
                             affectedIds: [s1.id, s2.id],
-                            driverInitials: s1.driver,
+                            driverId: s1.driverId,
                             schedule1: s1,
                             schedule2: s2
                         });
@@ -193,7 +198,7 @@
                     const duration2 = ROUTE_DURATIONS[s2.routeId] || 30;
                     const end2 = start2 + duration2;
 
-                    const isOverlapping = (start2 >= start1 && start2 < end1) || (start1 >= start2 && start1 < end2) || (Math.abs(start2 - start1) <= 120);
+                    const isOverlapping = (start1 < (end2 + busBuffer)) && (start2 < (end1 + busBuffer));
 
                     if (isOverlapping) {
                         conflictsList.push({
@@ -301,8 +306,8 @@
                                 <div id="res-wrap-reassign-${c.id}" class="space-y-2">
                                     <select id="res-select-driver-${c.id}" class="w-full rounded-lg border border-slate-200 bg-white py-1.5 px-3 text-xs font-semibold outline-none focus:border-[#003F87]">
                                         ${driversList
-                                            .filter(d => d.status === 'active' && d.initials !== c.driverInitials)
-                                            .map(d => `<option value="${d.initials}">${d.first_name} ${d.last_name} (${d.initials})</option>`)
+                                            .filter(d => d.status === 'active' && String(d.id) !== String(c.driverId))
+                                            .map(d => `<option value="${d.id}">${d.first_name} ${d.last_name} (${d.initials})</option>`)
                                             .join('')}
                                     </select>
                                 </div>
@@ -421,11 +426,11 @@
                     alert(data.message || 'Failed to remove schedule.');
                 }
             } else {
-                let driverInitials = schedule.driver;
+                let driverId = schedule.driverId;
                 let departureTime = schedule.time;
 
                 if (choice === 'reassign') {
-                    driverInitials = document.getElementById(`res-select-driver-${conflictId}`).value;
+                    driverId = document.getElementById(`res-select-driver-${conflictId}`).value;
                 } else if (choice === 'adjust') {
                     departureTime = document.getElementById(`res-time-${conflictId}`).value;
                 }
@@ -433,7 +438,7 @@
                 const payload = {
                     route_id: schedule.routeId,
                     bus_plate: schedule.bus,
-                    driver_initials: driverInitials,
+                    driver_id: driverId,
                     departure_time: departureTime
                 };
 

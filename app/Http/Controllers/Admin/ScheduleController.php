@@ -3,14 +3,14 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Schedule;
 use App\Models\Bus;
 use App\Models\Driver;
 use App\Models\Route;
+use App\Models\Schedule;
 use App\Models\SystemSetting;
 use App\Services\BusinessLogicService;
-use App\Services\ScheduleConflictService;
-use App\Services\ValidationService;
+use App\Services\DriverPerformanceService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class ScheduleController extends Controller
@@ -20,7 +20,16 @@ class ScheduleController extends Controller
         // Get settings from SystemSetting instead of hardcoding
         $defaultTravelTime = (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
         $scheduleBuffer = (int) SystemSetting::get('driver_schedule_buffer_minutes', 15);
-        return redirect('/admin/dashboard#schedules-create');
+        $busScheduleBuffer = (int) SystemSetting::get('bus_schedule_buffer_minutes', 15);
+
+        return response()->json([
+            'success' => true,
+            'settings' => [
+                'defaultTravelTime' => $defaultTravelTime,
+                'scheduleBuffer' => $scheduleBuffer,
+                'busScheduleBuffer' => $busScheduleBuffer,
+            ],
+        ]);
     }
 
     /**
@@ -44,7 +53,7 @@ class ScheduleController extends Controller
                 'routeId' => (string) $s->route_id,
                 'time' => substr($s->departure_time, 0, 5), // HH:MM
                 'driver' => $s->driver ? $s->driver->initials : '',
-                'driverName' => $s->driver ? ($s->driver->first_name . ' ' . $s->driver->last_name) : 'Unassigned',
+                'driverName' => $s->driver ? ($s->driver->first_name.' '.$s->driver->last_name) : 'Unassigned',
                 'driverId' => $s->driver_id,
                 'bus' => $s->bus ? $s->bus->plate_number : 'Unassigned',
                 'busId' => $s->bus_id,
@@ -55,7 +64,7 @@ class ScheduleController extends Controller
 
         return response()->json([
             'success' => true,
-            'schedules' => $formatted
+            'schedules' => $formatted,
         ]);
     }
 
@@ -69,54 +78,52 @@ class ScheduleController extends Controller
         if (auth()->user()->role !== 'admin') {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized: Only admins can create schedules'
+                'message' => 'Unauthorized: Only admins can create schedules',
             ], 403);
         }
         $validated = $request->validate([
             'route_id' => 'required|exists:routes,id',
             'bus_plate' => 'required|string',
-            'driver_initials' => 'required|string',
+            'driver_id' => 'required|integer|exists:drivers,id',
+            'service_date' => 'nullable|date',
             'departure_time' => 'required|date_format:H:i',
         ]);
 
         $bus = Bus::where('plate_number', $validated['bus_plate'])->first();
-        if (!$bus) {
+        if (! $bus) {
             return response()->json(['success' => false, 'message' => 'Bus not found.'], 404);
         }
 
         // NEW: Validate bus availability
         // Issue 3.1.1: Schedule conflict incomplete
         $busAvailable = BusinessLogicService::validateBusAvailability($bus->id);
-        if (!$busAvailable['available']) {
+        if (! $busAvailable['available']) {
             return response()->json(['success' => false, 'message' => $busAvailable['error']], 422);
         }
 
-        // Find driver by initials (database query using first/last name)
-        $firstName = substr($validated['driver_initials'], 0, 1);
-        $lastName = strlen($validated['driver_initials']) > 1 ? substr($validated['driver_initials'], 1, 1) : '';
-        $driver = Driver::where('first_name', 'like', $firstName . '%')
-            ->where('last_name', 'like', $lastName . '%')
-            ->first();
-        // Fallback: search by computed initials (for flexibility)
-        if (!$driver && strlen($validated['driver_initials']) === 2) {
-            $allDrivers = Driver::all();
-            $driver = $allDrivers->first(fn($d) => $d->initials === strtoupper($validated['driver_initials']));
-        }
-        if (!$driver) {
+        $driver = Driver::find($validated['driver_id']);
+        if (! $driver) {
             return response()->json(['success' => false, 'message' => 'Driver not found.'], 404);
         }
 
         // NEW: Validate driver availability
         // Issue 3.1.1: Schedule conflict incomplete
         $driverAvailable = BusinessLogicService::validateDriverAvailability($driver->id);
-        if (!$driverAvailable['available']) {
+        if (! $driverAvailable['available']) {
             return response()->json(['success' => false, 'message' => $driverAvailable['error']], 422);
         }
 
         // NEW: Check daily hours limit for driver
         $maxDailyHours = (int) SystemSetting::get('driver_max_daily_hours', 10);
-        $dailyHoursCheck = BusinessLogicService::checkDriverDailyHours($driver->id, $validated['departure_time'], $this->resolveRouteTravelDuration($validated['route_id']), $maxDailyHours);
-        if (!$dailyHoursCheck['allowed']) {
+        $dailyHoursCheck = BusinessLogicService::checkDriverDailyHours(
+            $driver->id,
+            $validated['departure_time'],
+            $this->resolveRouteTravelDuration($validated['route_id']),
+            $maxDailyHours,
+            null,
+            $validated['service_date'] ?? now('Asia/Manila')->toDateString()
+        );
+        if (! $dailyHoursCheck['allowed']) {
             return response()->json(['success' => false, 'message' => $dailyHoursCheck['error']], 422);
         }
 
@@ -127,13 +134,14 @@ class ScheduleController extends Controller
             $driver->id,
             $validated['route_id'],
             $validated['departure_time'],
-            null
+            null,
+            $validated['service_date'] ?? now('Asia/Manila')->toDateString()
         );
 
         if ($conflictCheck['conflict']) {
             return response()->json([
                 'success' => false,
-                'message' => $conflictCheck['message']
+                'message' => $conflictCheck['message'],
             ], 422);
         }
 
@@ -149,12 +157,13 @@ class ScheduleController extends Controller
 
         $schedule = Schedule::create([
             'route_id' => $validated['route_id'],
+            'service_date' => $validated['service_date'] ?? now('Asia/Manila')->toDateString(),
             'bus_id' => $bus->id,
             'driver_id' => $driver->id,
             'departure_time' => $departure,
             'arrival_time' => $arrivalTime,
             'passengers' => 0,
-            'status' => 'On time'
+            'status' => 'On time',
         ]);
 
         return response()->json([
@@ -165,13 +174,13 @@ class ScheduleController extends Controller
                 'routeId' => (string) $schedule->route_id,
                 'time' => substr($schedule->departure_time, 0, 5),
                 'driver' => $driver->initials,
-                'driverName' => $driver->first_name . ' ' . $driver->last_name,
+                'driverName' => $driver->first_name.' '.$driver->last_name,
                 'driverId' => $driver->id,
                 'bus' => $bus->plate_number,
                 'busId' => $bus->id,
                 'pax' => $schedule->passengers,
-                'status' => $schedule->status
-            ]
+                'status' => $schedule->status,
+            ],
         ], 201);
     }
 
@@ -184,39 +193,65 @@ class ScheduleController extends Controller
         if (auth()->user()->role !== 'admin') {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized: Only admins can update schedules'
+                'message' => 'Unauthorized: Only admins can update schedules',
             ], 403);
         }
         $validated = $request->validate([
             'route_id' => 'required|exists:routes,id',
             'bus_plate' => 'required|string',
-            'driver_initials' => 'required|string',
+            'driver_id' => 'required|integer|exists:drivers,id',
+            'service_date' => 'nullable|date',
             'departure_time' => 'required|date_format:H:i',
         ]);
 
         $bus = Bus::where('plate_number', $validated['bus_plate'])->first();
-        if (!$bus) {
+        if (! $bus) {
             return response()->json(['success' => false, 'message' => 'Bus not found.'], 404);
         }
 
-        // Find driver by initials (database query using first/last name)
-        $firstName = substr($validated['driver_initials'], 0, 1);
-        $lastName = strlen($validated['driver_initials']) > 1 ? substr($validated['driver_initials'], 1, 1) : '';
-        $driver = Driver::where('first_name', 'like', $firstName . '%')
-            ->where('last_name', 'like', $lastName . '%')
-            ->first();
-        // Fallback: search by computed initials (for flexibility)
-        if (!$driver && strlen($validated['driver_initials']) === 2) {
-            $allDrivers = Driver::all();
-            $driver = $allDrivers->first(fn($d) => $d->initials === strtoupper($validated['driver_initials']));
+        $busAvailable = BusinessLogicService::validateBusAvailability($bus->id);
+        if (! $busAvailable['available']) {
+            return response()->json(['success' => false, 'message' => $busAvailable['error']], 422);
         }
-        if (!$driver) {
+
+        $driver = Driver::find($validated['driver_id']);
+        if (! $driver) {
             return response()->json(['success' => false, 'message' => 'Driver not found.'], 404);
         }
 
-        $conflictDetails = '';
-        if ($this->hasConflict($bus->id, $driver->id, $validated['route_id'], $validated['departure_time'], $schedule->id, $conflictDetails)) {
-            return response()->json(['success' => false, 'message' => $conflictDetails], 422);
+        $driverAvailable = BusinessLogicService::validateDriverAvailability($driver->id);
+        if (! $driverAvailable['available']) {
+            return response()->json(['success' => false, 'message' => $driverAvailable['error']], 422);
+        }
+
+        $maxDailyHours = (int) SystemSetting::get('driver_max_daily_hours', 10);
+        $dailyHoursCheck = BusinessLogicService::checkDriverDailyHours(
+            $driver->id,
+            $validated['departure_time'],
+            $this->resolveRouteTravelDuration($validated['route_id']),
+            $maxDailyHours,
+            $schedule->id,
+            $validated['service_date'] ?? $schedule->service_date ?? now('Asia/Manila')->toDateString()
+        );
+        if (! $dailyHoursCheck['allowed']) {
+            return response()->json(['success' => false, 'message' => $dailyHoursCheck['error']], 422);
+        }
+
+        // Use enhanced conflict checking from BusinessLogicService
+        $conflictCheck = BusinessLogicService::checkScheduleConflict(
+            $bus->id,
+            $driver->id,
+            $validated['route_id'],
+            $validated['departure_time'],
+            $schedule->id,
+            $validated['service_date'] ?? $schedule->service_date ?? now('Asia/Manila')->toDateString()
+        );
+
+        if ($conflictCheck['conflict']) {
+            return response()->json([
+                'success' => false,
+                'message' => $conflictCheck['message'],
+            ], 422);
         }
 
         // Compute estimated arrival time using route duration from the database or settings
@@ -231,6 +266,7 @@ class ScheduleController extends Controller
 
         $schedule->update([
             'route_id' => $validated['route_id'],
+            'service_date' => $validated['service_date'] ?? $schedule->service_date ?? now('Asia/Manila')->toDateString(),
             'bus_id' => $bus->id,
             'driver_id' => $driver->id,
             'departure_time' => $departure,
@@ -245,13 +281,13 @@ class ScheduleController extends Controller
                 'routeId' => (string) $schedule->route_id,
                 'time' => substr($schedule->departure_time, 0, 5),
                 'driver' => $driver->initials,
-                'driverName' => $driver->first_name . ' ' . $driver->last_name,
+                'driverName' => $driver->first_name.' '.$driver->last_name,
                 'driverId' => $driver->id,
                 'bus' => $bus->plate_number,
                 'busId' => $bus->id,
                 'pax' => $schedule->passengers,
-                'status' => $schedule->status
-            ]
+                'status' => $schedule->status,
+            ],
         ]);
     }
 
@@ -264,26 +300,72 @@ class ScheduleController extends Controller
         if (auth()->user()->role !== 'admin') {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized: Only admins can update schedule status'
+                'message' => 'Unauthorized: Only admins can update schedule status',
             ], 403);
         }
         $validated = $request->validate([
-            'status' => 'required|string|in:On time,delayed',
+            'status' => 'required|string|in:On time,Delayed,delayed,Cancelled,cancelled',
         ]);
 
         $oldStatus = $schedule->status;
-        $newStatus = $validated['status'];
+        $newStatus = match (strtolower($validated['status'])) {
+            'delayed' => Schedule::STATUS_DELAYED,
+            'cancelled' => Schedule::STATUS_CANCELLED,
+            default => Schedule::STATUS_ON_TIME,
+        };
 
         $schedule->update(['status' => $newStatus]);
 
         // If status changed to delayed, recalculate driver performance score
-        if ($newStatus === 'delayed' && $oldStatus !== 'delayed') {
-            \App\Services\DriverPerformanceService::recalculate($schedule->driver_id);
+        if ($newStatus === Schedule::STATUS_DELAYED && $oldStatus !== Schedule::STATUS_DELAYED) {
+            DriverPerformanceService::recalculate($schedule->driver_id);
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'Schedule status updated successfully.'
+            'message' => 'Schedule status updated successfully.',
+        ]);
+    }
+
+    /**
+     * Return today's dispatch queue for the overview panel.
+     */
+    public function getTodayDispatchQueue()
+    {
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins can view the dispatch queue',
+            ], 403);
+        }
+
+        $today = Carbon::now('Asia/Manila')->toDateString();
+
+        $dispatches = Schedule::with(['route', 'bus', 'driver'])
+            ->whereDate('service_date', $today)
+            ->whereNotIn('status', [Schedule::STATUS_CANCELLED, 'cancelled'])
+            ->orderBy('departure_time')
+            ->get()
+            ->map(function (Schedule $schedule) {
+                return [
+                    'id' => $schedule->id,
+                    'routeId' => (string) $schedule->route_id,
+                    'routeName' => $schedule->route?->name ?? 'Unassigned',
+                    'busId' => $schedule->bus_id,
+                    'busPlate' => $schedule->bus?->plate_number ?? 'Unassigned',
+                    'driverId' => $schedule->driver_id,
+                    'driverName' => $schedule->driver?->name ?? 'Unassigned',
+                    'driverInitials' => $schedule->driver?->initials ?? '',
+                    'departureTime' => substr($schedule->departure_time, 0, 5),
+                    'arrivalTime' => $schedule->arrival_time ? substr($schedule->arrival_time, 0, 5) : null,
+                    'status' => $schedule->status,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'date' => $today,
+            'dispatches' => $dispatches,
         ]);
     }
 
@@ -296,14 +378,14 @@ class ScheduleController extends Controller
         if (auth()->user()->role !== 'admin') {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized: Only admins can delete schedules'
+                'message' => 'Unauthorized: Only admins can delete schedules',
             ], 403);
         }
         $schedule->delete();
 
         return response()->json([
             'success' => true,
-            'message' => 'Schedule successfully deleted!'
+            'message' => 'Schedule successfully deleted!',
         ]);
     }
 
@@ -317,61 +399,9 @@ class ScheduleController extends Controller
 
         if ($duration === null) {
             // Use configurable fallback travel time from settings
-            return (int) SystemSetting::get('default_travel_time_minutes', 30);
+            return (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
         }
 
         return (int) $duration;
-    }
-
-    /**
-     * Check if a bus or driver has a schedule conflict/overlap.
-     */
-    protected function hasConflict(int $busId, int $driverId, int $routeId, string $departureTime, $excludeScheduleId = null, &$conflictDetails = '')
-    {
-        $duration = $this->resolveRouteTravelDuration($routeId);
-        $timeParts = explode(':', $departureTime);
-        $startMin = intval($timeParts[0]) * 60 + intval($timeParts[1]);
-        $endMin = $startMin + $duration;
-
-        $schedulesQuery = Schedule::with(['route', 'bus', 'driver']);
-        if ($excludeScheduleId) {
-            $schedulesQuery->where('id', '!=', $excludeScheduleId);
-        }
-        $schedules = $schedulesQuery->get();
-
-        foreach ($schedules as $s) {
-            $isSameDriver = $s->driver_id == $driverId;
-            $isSameBus = $s->bus_id == $busId;
-
-            if ($isSameDriver || $isSameBus) {
-                $sParts = explode(':', $s->departure_time);
-                $sStart = intval($sParts[0]) * 60 + intval($sParts[1]);
-                $sDuration = $this->resolveRouteTravelDuration($s->route_id);
-                $sEnd = $sStart + $sDuration;
-
-                $buffer = $isSameDriver ? (int) SystemSetting::get('driver_schedule_buffer_minutes', 15) : 0;
-                if (($startMin < ($sEnd + $buffer)) && ($sStart < ($endMin + $buffer))) {
-                    $entityType = $isSameDriver ? 'Driver' : 'Bus';
-                    $entityName = $isSameDriver 
-                        ? ($s->driver ? $s->driver->first_name . ' ' . $s->driver->last_name : 'Unassigned')
-                        : ($s->bus ? $s->bus->plate_number : 'Unknown Bus');
-                    
-                    $sEndHour = floor($sEnd / 60) % 24;
-                    $sEndMin = $sEnd % 60;
-                    $sEndTimeStr = sprintf('%02d:%02d', $sEndHour, $sEndMin);
-                    
-                    $conflictDetails = sprintf(
-                        "%s %s already assigned to Route %s at %s-%s",
-                        $entityType,
-                        $entityName,
-                        $s->route ? $s->route->name : $s->route_id,
-                        substr($s->departure_time, 0, 5),
-                        $sEndTimeStr
-                    );
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 }

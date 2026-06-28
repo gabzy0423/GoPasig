@@ -30,10 +30,10 @@ class SecurityAuthTest extends TestCase
         $this->adminUser = User::factory()->create(['role' => 'admin']);
         $this->nonAdminUser = User::factory()->create(['role' => 'driver']);
 
-        // Create test data
-        $this->testRoute = Route::factory()->create();
-        $this->testBus = Bus::factory()->create();
-        $this->testDriver = Driver::factory()->create();
+        // Create test data with correct status
+        $this->testRoute = Route::factory()->create(['status' => 'active']);
+        $this->testBus = Bus::factory()->create(['status' => 'active']);
+        $this->testDriver = Driver::factory()->create(['status' => 'active', 'license_expiry' => now()->addYear()]);
     }
 
     // ============================================================
@@ -159,7 +159,7 @@ class SecurityAuthTest extends TestCase
         $response = $this->actingAs($this->nonAdminUser)->postJson('/admin/api/schedules', [
             'route_id' => $this->testRoute->id,
             'bus_plate' => $this->testBus->plate_number,
-            'driver_initials' => 'JD',
+            'driver_id' => $this->testDriver->id,
             'departure_time' => '08:00',
         ]);
 
@@ -176,7 +176,7 @@ class SecurityAuthTest extends TestCase
         $response = $this->actingAs($this->adminUser)->postJson('/admin/api/schedules', [
             'route_id' => $this->testRoute->id,
             'bus_plate' => $this->testBus->plate_number,
-            'driver_initials' => $this->testDriver->first_name[0] . $this->testDriver->last_name[0],
+            'driver_id' => $this->testDriver->id,
             'departure_time' => '08:00',
         ]);
 
@@ -192,7 +192,7 @@ class SecurityAuthTest extends TestCase
         $response = $this->actingAs($this->nonAdminUser)->putJson("/admin/api/schedules/{$schedule->id}", [
             'route_id' => $this->testRoute->id,
             'bus_plate' => $this->testBus->plate_number,
-            'driver_initials' => 'JD',
+            'driver_id' => $this->testDriver->id,
             'departure_time' => '09:00',
         ]);
 

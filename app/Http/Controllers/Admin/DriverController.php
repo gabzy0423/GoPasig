@@ -101,6 +101,13 @@ class DriverController extends Controller
             ], 422);
         }
 
+        if ($request->status === 'active' && Carbon::parse($request->license_expiry)->isPast()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot set driver active: license is expired.',
+            ], 422);
+        }
+
         // Create corresponding user account
         $domain = \App\Models\SystemSetting::get('driver_email_domain', 'gopasig.com');
         $firstNameClean = \Illuminate\Support\Str::slug($request->first_name, '');
@@ -134,7 +141,7 @@ class DriverController extends Controller
             'emergency_contact' => $request->emergency_contact,
             'trips_today' => 0,
             'pax_today' => 0,
-            'performance_score' => 80,
+            'performance_score' => (int) SystemSetting::get('driver_initial_performance_score', 80),
             'incidents_30' => 0,
         ]);
 
@@ -177,8 +184,12 @@ class DriverController extends Controller
             ], 422);
         }
 
-        // Keep the old driver status if they were active or off duty unless they explicitly suspended them
-        $oldStatus = $driver->status;
+        if ($request->status === 'active' && Carbon::parse($request->license_expiry)->isPast()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot set driver active: license is expired.',
+            ], 422);
+        }
 
         $driver->update([
             'first_name' => $request->first_name,
@@ -232,7 +243,13 @@ class DriverController extends Controller
     public function toggleSuspend(Driver $driver)
     {
         $willSuspend = $driver->status !== 'suspended';
-        $driver->status = $willSuspend ? 'suspended' : 'inactive';
+        if ($willSuspend) {
+            $driver->previous_status = $driver->status;
+            $driver->status = 'suspended';
+        } else {
+            $driver->status = $driver->previous_status ?: 'inactive';
+            $driver->previous_status = null;
+        }
         $driver->save();
 
         $action = $willSuspend ? 'suspended' : 'unsuspended';

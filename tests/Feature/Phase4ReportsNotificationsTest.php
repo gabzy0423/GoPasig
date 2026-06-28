@@ -115,11 +115,13 @@ class Phase4ReportsNotificationsTest extends TestCase
             'bus_id' => $this->bus->id,
             'status' => 'completed',
             'completed_at' => now(),
+            'scheduled_at' => now(),
         ]);
 
         MaintenanceRecord::factory()->create([
             'bus_id' => $this->bus->id,
             'status' => 'scheduled',
+            'scheduled_at' => now(),
         ]);
 
         $report = ReportGenerationService::generateFleetPerformanceReport();

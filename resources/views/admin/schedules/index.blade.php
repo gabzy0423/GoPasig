@@ -196,7 +196,7 @@
                         <input type="radio" name="res-choice" id="res-choice-reassign" value="reassign" checked
                             onchange="toggleResolutionChoiceFields()">
                         <div class="rm-res-card-content">
-                            <div class="rm-res-title">Reassign driver for Route A · 7:15 AM</div>
+                            <div class="rm-res-title" id="resolve-reassign-title">Reassign driver</div>
                             <div class="rm-res-sub">Select a different driver from available pool</div>
                             <div class="rm-res-dropdown-wrapper mt-2 hidden" id="resolve-reassign-dropdown-wrap">
                                 <select class="rm-form-select" id="resolve-select-driver">
@@ -211,10 +211,10 @@
                         <input type="radio" name="res-choice" id="res-choice-adjust" value="adjust"
                             onchange="toggleResolutionChoiceFields()">
                         <div class="rm-res-card-content">
-                            <div class="rm-res-title">Adjust departure time for Route A</div>
-                            <div class="rm-res-sub">Move to 8:00 AM — next available slot</div>
+                            <div class="rm-res-title" id="resolve-adjust-title">Adjust departure time</div>
+                            <div class="rm-res-sub" id="resolve-adjust-sub">Move to another available slot</div>
                             <div class="rm-res-time-wrapper mt-2 hidden" id="resolve-time-wrap">
-                                <input type="time" class="rm-form-input" id="resolve-input-time" value="08:00">
+                                <input type="time" class="rm-form-input" id="resolve-input-time" value="{{ $defaultDepartureTime }}">
                             </div>
                         </div>
                     </label>
@@ -225,7 +225,7 @@
                             onchange="toggleResolutionChoiceFields()">
                         <div class="rm-res-card-content">
                             <div class="rm-res-title text-red">Remove one of the conflicting schedules</div>
-                            <div class="rm-res-sub">Delete Route A · 7:15 AM entry entirely</div>
+                            <div class="rm-res-sub" id="resolve-remove-sub">Delete the selected conflicting entry entirely</div>
                         </div>
                     </label>
                 </div>
@@ -262,15 +262,15 @@
                     </div>
                     <div class="rm-form-field">
                         <label class="rm-form-label" for="as-boarding">Avg Boarding</label>
-                        <input class="rm-form-input" id="as-boarding" type="number" value="15" min="0">
+                        <input class="rm-form-input" id="as-boarding" type="number" value="{{ $defaultStopBoarding }}" min="0">
                     </div>
                     <div class="rm-form-field">
                         <label class="rm-form-label" for="as-alighting">Avg Alighting</label>
-                        <input class="rm-form-input" id="as-alighting" type="number" value="10" min="0">
+                        <input class="rm-form-input" id="as-alighting" type="number" value="{{ $defaultStopAlighting }}" min="0">
                     </div>
                     <div class="rm-form-field">
                         <label class="rm-form-label" for="as-dwell">Dwell time (sec)</label>
-                        <input class="rm-form-input" id="as-dwell" type="number" value="45" min="0">
+                        <input class="rm-form-input" id="as-dwell" type="number" value="{{ $defaultStopDwellSeconds }}" min="0">
                     </div>
                 </form>
             </div>

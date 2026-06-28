@@ -42,6 +42,31 @@ class Bus extends Model
         return (int) SystemSetting::get('default_bus_capacity', 45);
     }
 
+    public static function getDefaultDriverName(): string
+    {
+        return (string) SystemSetting::get('bus_default_driver_name', self::DEFAULT_DRIVER_NAME);
+    }
+
+    public static function getDefaultNextStop(): string
+    {
+        return (string) SystemSetting::get('bus_default_next_stop', self::DEFAULT_NEXT_STOP);
+    }
+
+    public static function getInitialSpeed(): int
+    {
+        return (int) SystemSetting::get('bus_initial_speed', 0);
+    }
+
+    public static function getInitialPassengers(): int
+    {
+        return (int) SystemSetting::get('bus_initial_passengers', 0);
+    }
+
+    public static function getInitialEta(): int
+    {
+        return (int) SystemSetting::get('bus_initial_eta', 0);
+    }
+
     public function getRouteDelayThreshold()
     {
         if ($this->route && isset($this->route->delay_threshold_minutes)) {

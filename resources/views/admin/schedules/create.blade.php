@@ -63,7 +63,7 @@
                                     <span class="absolute inset-y-0 left-3 flex items-center text-slate-400">
                                         <i class="ti ti-clock text-base"></i>
                                     </span>
-                                    <input id="sf-departure" name="departure_time" type="time" value="{{ $prefilledTime ?? '08:00' }}" required oninput="onDepartureTimeChange()"
+                                    <input id="sf-departure" name="departure_time" type="time" value="{{ $prefilledTime ?? $defaultDepartureTime }}" required oninput="onDepartureTimeChange()"
                                            class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87]">
                                 </div>
                             </div>
@@ -92,7 +92,7 @@
                                     <span class="absolute inset-y-0 left-3 flex items-center text-slate-400">
                                         <i class="ti ti-id text-base"></i>
                                     </span>
-                                    <select id="sf-driver" name="driver_initials" required onchange="checkFormConflicts()"
+                                    <select id="sf-driver" name="driver_id" required onchange="checkFormConflicts()"
                                             class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87] appearance-none cursor-pointer">
                                         <!-- Will be dynamically populated by JS -->
                                     </select>
@@ -145,7 +145,7 @@
                                 <div class="flex flex-wrap gap-2">
                                     @foreach(['M' => 'Monday', 'T' => 'Tuesday', 'W' => 'Wednesday', 'Th' => 'Thursday', 'F' => 'Friday', 'Sa' => 'Saturday', 'Su' => 'Sunday'] as $key => $name)
                                         <label class="relative flex-1 min-w-[70px] cursor-pointer">
-                                            <input type="checkbox" id="day-{{ $key }}" value="{{ $key }}" {{ in_array($key, ['M','T','W','Th','F']) ? 'checked' : '' }} class="peer sr-only">
+                                            <input type="checkbox" id="day-{{ $key }}" value="{{ $key }}" {{ in_array($key, $defaultActiveDays ?? []) ? 'checked' : '' }} class="peer sr-only">
                                             <span class="flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 transition duration-150 hover:bg-slate-50 peer-checked:border-[#003F87] peer-checked:bg-[#003F87] peer-checked:text-white">
                                                 {{ $key }}
                                             </span>
@@ -184,13 +184,18 @@
     // Route duration mapping to calculate estimated arrival times
     window.ROUTE_DURATIONS = window.ROUTE_DURATIONS || {
         @foreach($routes as $route)
-            "{{ $route->id }}": {{ $route->travel_time_minutes ?? $defaultTravelTime ?? 30 }},
+            "{{ $route->id }}": {{ $route->travel_time_minutes ?? $defaultTravelTime }},
         @endforeach
     };
     var ROUTE_DURATIONS = window.ROUTE_DURATIONS;
 
     // Schedule conflict buffer (driver fatigue protection) in minutes
-    const scheduleBuffer = {{ $scheduleBuffer ?? 15 }};
+    const scheduleBuffer = {{ $scheduleBuffer }};
+    const busScheduleBuffer = {{ $busScheduleBuffer }};
+    const licenseWarningDays = {{ $licenseWarningDays }};
+    const defaultTravelTime = {{ $defaultTravelTime }};
+    const defaultDepartureTime = @json($defaultDepartureTime);
+    const defaultActiveDays = @json($defaultActiveDays);
 
     // Store raw schedules for conflict checks
     window.schedulesData = window.schedulesData || [];
@@ -208,7 +213,7 @@
             routeSelect.value = routeId;
         }
         if (departureInput) {
-            departureInput.value = timeStr || "08:00";
+            departureInput.value = timeStr || defaultDepartureTime;
         }
         
         // Reset checkbox days to default (Mon-Fri active)
@@ -216,7 +221,7 @@
         days.forEach(d => {
             const el = document.getElementById(`day-${d}`);
             if (el) {
-                el.checked = ['M','T','W','Th','F'].includes(d);
+                el.checked = defaultActiveDays.includes(d);
             }
         });
 
@@ -283,7 +288,7 @@
         });
 
         const busyBuses = conflictingSchedules.map(s => s.bus);
-        const busyDrivers = conflictingSchedules.map(s => s.driver);
+        const busyDrivers = conflictingSchedules.map(s => String(s.driverId));
 
         // Repopulate Bus Select
         busSelect.innerHTML = createPageBusesList.map(bus => {
@@ -296,7 +301,7 @@
 
         // Repopulate Driver Select
         driverSelect.innerHTML = createPageDriversList.map(driver => {
-            const isBusy = busyDrivers.includes(driver.initials);
+            const isBusy = busyDrivers.includes(String(driver.id));
             const isSuspended = driver.status === 'suspended';
             
             let disabledAttr = '';
@@ -309,8 +314,8 @@
                 disabledAttr = 'disabled style="color:var(--color-text-secondary);cursor:not-allowed;"';
                 suffix = ` (Scheduled ${timeVal} ✗)`;
             }
-            const selected = driver.initials === currentSelectedDriver ? 'selected' : '';
-            return `<option value="${driver.initials}" ${disabledAttr} ${selected}>${driver.first_name} ${driver.last_name} (${driver.initials})${suffix}</option>`;
+            const selected = String(driver.id) === String(currentSelectedDriver) ? 'selected' : '';
+            return `<option value="${driver.id}" ${disabledAttr} ${selected}>${driver.first_name} ${driver.last_name} (${driver.initials})${suffix}</option>`;
         }).join('');
 
         checkFormConflicts();
@@ -321,7 +326,7 @@
         const timeVal = document.getElementById('sf-departure').value;
         
         // Update estimated arrival time
-        const duration = ROUTE_DURATIONS[routeVal] || 30;
+        const duration = ROUTE_DURATIONS[routeVal] || defaultTravelTime;
         const helperText = document.getElementById('sf-arrival-helper');
         if (helperText) {
             helperText.textContent = `Based on Route ${routeVal} average duration: ${duration} minutes.`;
@@ -365,28 +370,28 @@
 
         // Perform time overlap scan
         const hour = parseInt(timeVal.split(':')[0]);
-        const duration = ROUTE_DURATIONS[routeVal] || 30;
+        const duration = ROUTE_DURATIONS[routeVal] || defaultTravelTime;
         const startMin = hour * 60 + parseInt(timeVal.split(':')[1]);
         const endMin = startMin + duration;
 
         const conflict = schedulesData.find(s => {
-            const isSameDriver = s.driver === driverVal;
+            const isSameDriver = String(s.driverId) === String(driverVal);
             const isSameBus = s.bus === busVal;
 
             if (isSameDriver || isSameBus) {
                 const sParts = s.time.split(':').map(Number);
                 const sStart = sParts[0] * 60 + sParts[1];
-                const sDuration = ROUTE_DURATIONS[s.routeId] || 30;
+                const sDuration = ROUTE_DURATIONS[s.routeId] || defaultTravelTime;
                 const sEnd = sStart + sDuration;
 
-                const buffer = isSameDriver ? scheduleBuffer : 0;
+                const buffer = isSameDriver ? scheduleBuffer : busScheduleBuffer;
                 return (startMin < (sEnd + buffer)) && (sStart < (endMin + buffer));
             }
             return false;
         });
 
         if (conflict) {
-            const isDriver = conflict.driver === driverVal;
+            const isDriver = String(conflict.driverId) === String(driverVal);
             const entityName = isDriver ? `Driver ${conflict.driverName}` : `Bus ${conflict.bus}`;
             const relation = isDriver ? 'is already assigned to' : 'is already scheduled on';
             
@@ -401,9 +406,9 @@
         checkDriverLicenseExpiry(driverVal);
     }
 
-    function checkDriverLicenseExpiry(driverInitials) {
+    function checkDriverLicenseExpiry(driverId) {
         const warningLabel = document.getElementById('sf-driver-expiry-warning');
-        const driver = createPageDriversList.find(d => d.initials === driverInitials);
+        const driver = createPageDriversList.find(d => String(d.id) === String(driverId));
         
         if (driver && driver.license_expiry) {
             const exp = new Date(driver.license_expiry);
@@ -411,7 +416,7 @@
             today.setHours(0,0,0,0);
             const diff = Math.floor((exp - today) / 86400000);
             
-            if (diff <= 30) {
+            if (diff <= licenseWarningDays) {
                 const labelText = document.getElementById('sf-driver-expiry-warning-text');
                 labelText.textContent = diff < 0 
                     ? `Driver license has EXPIRED! Please suspend operations.` 
@@ -442,7 +447,7 @@
         const payload = {
             route_id: routeVal,
             bus_plate: busVal,
-            driver_initials: driverVal,
+            driver_id: driverVal,
             departure_time: timeVal
         };
 

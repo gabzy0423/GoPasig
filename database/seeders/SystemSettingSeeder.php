@@ -16,6 +16,11 @@ class SystemSettingSeeder extends Seeder
             ['key' => 'default_bus_capacity', 'value' => '45', 'description' => 'Default passenger seating capacity for buses when not specified (default: 45)'],
             ['key' => 'bus_capacity_min', 'value' => '10', 'description' => 'Minimum allowed passenger seating capacity for buses (default: 10)'],
             ['key' => 'bus_capacity_max', 'value' => '150', 'description' => 'Maximum allowed passenger seating capacity for buses (default: 150)'],
+            ['key' => 'bus_default_driver_name', 'value' => 'Unassigned', 'description' => 'Default driver_name value when a bus has no assigned driver'],
+            ['key' => 'bus_default_next_stop', 'value' => 'None', 'description' => 'Default next_stop value when a bus has no upcoming stop'],
+            ['key' => 'bus_initial_speed', 'value' => '0', 'description' => 'Initial speed value for newly registered buses'],
+            ['key' => 'bus_initial_passengers', 'value' => '0', 'description' => 'Initial passenger count for newly registered buses'],
+            ['key' => 'bus_initial_eta', 'value' => '0', 'description' => 'Initial ETA value for newly registered buses'],
             ['key' => 'captcha_attempt_threshold', 'value' => '3', 'description' => 'Number of failed login attempts before displaying captcha (default: 3)'],
             ['key' => 'delay_threshold', 'value' => '10', 'description' => 'Threshold in minutes to classify a bus trip as delayed (default: 10)'],
             ['key' => 'occupancy_warning_threshold', 'value' => '50', 'description' => 'Bus passenger occupancy percentage threshold to trigger a warning status (default: 50)'],
@@ -58,14 +63,39 @@ class SystemSettingSeeder extends Seeder
                 'description' => 'Points deducted from a driver performance score per logged incident (default: 10)',
             ],
             [
+                'key'         => 'incident_score_penalty_per_event',
+                'value'       => '10',
+                'description' => 'Performance score points deducted per driver incident (default: 10)',
+            ],
+            [
                 'key'         => 'driver_score_delay_penalty',
                 'value'       => '5',
                 'description' => 'Points deducted from a driver performance score per delayed schedule (default: 5)',
             ],
             [
+                'key'         => 'driver_performance_rolling_days',
+                'value'       => '30',
+                'description' => 'Rolling window in days for driver performance calculations (default: 30)',
+            ],
+            [
+                'key'         => 'driver_passenger_rating_default',
+                'value'       => '80',
+                'description' => 'Default passenger rating score until passenger feedback data exists (default: 80)',
+            ],
+            [
                 'key'         => 'license_expiry_warning_threshold_days',
                 'value'       => '30',
                 'description' => 'Number of days in advance to show license expiry warning (default: 30)',
+            ],
+            [
+                'key'         => 'license_expiry_warn_critical_days',
+                'value'       => '7',
+                'description' => 'Number of days in advance to classify license expiry as critical (default: 7)',
+            ],
+            [
+                'key'         => 'driver_initial_performance_score',
+                'value'       => '80',
+                'description' => 'Initial performance score assigned to newly registered drivers (default: 80)',
             ],
             [
                 'key'         => 'maintenance_due_warning_days',
@@ -101,6 +131,11 @@ class SystemSettingSeeder extends Seeder
                 'key'         => 'driver_schedule_buffer_minutes',
                 'value'       => '15',
                 'description' => 'Driver fatigue protection buffer in minutes between schedules to prevent back-to-back conflicts (default: 15)',
+            ],
+            [
+                'key'         => 'bus_schedule_buffer_minutes',
+                'value'       => '15',
+                'description' => 'Bus turnaround buffer in minutes between schedules to prevent immediate reuse (default: 15)',
             ],
             [
                 'key'         => 'sim_rush_spurt_min',
@@ -206,6 +241,16 @@ class SystemSettingSeeder extends Seeder
                 'key'         => 'map_telemetry_polling_interval_ms',
                 'value'       => '10000',
                 'description' => 'Interval in milliseconds for map telemetry updates polling (default: 10000)',
+            ],
+            [
+                'key'         => 'overview_default_route_name',
+                'value'       => 'No route configured',
+                'description' => 'Dashboard map chip label when no route exists',
+            ],
+            [
+                'key'         => 'default_route_avg_pax',
+                'value'       => '0',
+                'description' => 'Default average route passenger count when a route has no completed trips',
             ],
         ];
 

@@ -214,13 +214,13 @@ class DriverPerformanceController extends Controller
 
         $colorPalette = ColorPalette::getColors('analytics');
 
-        $countInRange = Schedule::whereBetween('created_at', [$start, $end])->count();
+        $countInRange = Schedule::whereBetween('service_date', [$start->toDateString(), $end->toDateString()])->count();
         $useAllTime = $countInRange === 0;
 
         $isSqlite = DB::connection()->getDriverName() === 'sqlite';
 
         $schedAgg = DB::table('schedules')
-            ->when(!$useAllTime, fn($q) => $q->whereBetween('created_at', [$start, $end]))
+            ->when(!$useAllTime, fn($q) => $q->whereBetween('service_date', [$start->toDateString(), $end->toDateString()]))
             ->select(
                 'driver_id',
                 DB::raw('COUNT(*) as trips_completed'),
@@ -306,15 +306,22 @@ class DriverPerformanceController extends Controller
     {
         $all = $this->buildDriverData($startDate, $endDate);
 
-        return array_values(array_filter($all, function ($d) use ($selectedRoute, $selectedStatus, $search) {
+        $mappedStatus = strtolower($selectedStatus);
+        if ($mappedStatus === 'active') {
+            $mappedStatus = 'on duty';
+        } elseif ($mappedStatus === 'inactive') {
+            $mappedStatus = 'off duty';
+        }
+
+        return array_values(array_filter($all, function ($d) use ($selectedRoute, $mappedStatus, $search) {
             $matchSearch = empty($search)
                 || str_contains(strtolower($d['driver_name']), strtolower($search));
 
             $matchRoute = $selectedRoute === 'all'
                 || $d['assigned_route_id'] == $selectedRoute;
 
-            $matchStatus = $selectedStatus === 'all'
-                || strtolower($d['status']) === strtolower($selectedStatus);
+            $matchStatus = $mappedStatus === 'all'
+                || strtolower($d['status']) === $mappedStatus;
 
             return $matchSearch && $matchRoute && $matchStatus;
         }));

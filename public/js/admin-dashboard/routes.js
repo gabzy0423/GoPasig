@@ -1339,7 +1339,31 @@ window.saveBusAssignments = saveBusAssignments;
 function reScanRoutesConflicts() {
     conflictsList = [];
 
-    // 1. DYNAMIC SCAN: Check for double-booked drivers (within duration + 15 min buffer)
+    const driverBuffer = typeof scheduleBuffer !== 'undefined' ? scheduleBuffer : 15;
+    const busBuffer = typeof busScheduleBuffer !== 'undefined' ? busScheduleBuffer : 15;
+
+    function getCircularIntervals(start, duration, buffer) {
+        const end = start + duration + buffer;
+        if (end > 1440) {
+            return [[start, 1440], [0, end - 1440]];
+        }
+        return [[start, end]];
+    }
+
+    function intervalsOverlap(intervals1, intervals2) {
+        for (const int1 of intervals1) {
+            for (const int2 of intervals2) {
+                const maxStart = Math.max(int1[0], int2[0]);
+                const minEnd = Math.min(int1[1], int2[1]);
+                if (maxStart < minEnd) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // 1. DYNAMIC SCAN: Check for double-booked drivers (within configured buffer)
     for (let i = 0; i < schedulesData.length; i++) {
         const s1 = schedulesData[i];
         const route1 = routesData.find(r => r.id === s1.routeId);
@@ -1347,20 +1371,21 @@ function reScanRoutesConflicts() {
 
         const time1Parts = s1.time.split(':').map(Number);
         const start1 = time1Parts[0] * 60 + time1Parts[1];
-        const end1 = start1 + duration1;
 
         for (let j = i + 1; j < schedulesData.length; j++) {
             const s2 = schedulesData[j];
             
             // Check driver double book
-            if (s1.driver === s2.driver) {
+            if (s1.driverId && s2.driverId && String(s1.driverId) === String(s2.driverId)) {
                 const time2Parts = s2.time.split(':').map(Number);
                 const start2 = time2Parts[0] * 60 + time2Parts[1];
+                const route2 = routesData.find(r => r.id === s2.routeId);
+                const duration2 = route2 ? ROUTE_DURATIONS[s2.routeId] : 30;
                 
-                // Overlap buffer window: 15 minutes changeover
-                const isOverlapping = (start2 >= start1 && start2 < (end1 + 15)) || (start1 >= start2 && start1 < (start2 + 15));
+                const int1 = getCircularIntervals(start1, duration1, driverBuffer);
+                const int2 = getCircularIntervals(start2, duration2, driverBuffer);
                 
-                if (isOverlapping) {
+                if (intervalsOverlap(int1, int2)) {
                     const diffMin = Math.abs(start2 - start1);
                     conflictsList.push({
                         id: `drv-${s1.id}-${s2.id}`,
@@ -1372,7 +1397,8 @@ function reScanRoutesConflicts() {
                         routeId1: s1.routeId,
                         time1: s1.time,
                         routeId2: s2.routeId,
-                        time2: s2.time
+                        time2: s2.time,
+                        driverId: s1.driverId
                     });
                 }
             }
@@ -1384,19 +1410,16 @@ function reScanRoutesConflicts() {
                 const route2 = routesData.find(r => r.id === s2.routeId);
                 const duration2 = route2 ? ROUTE_DURATIONS[s2.routeId] : 30;
 
-                // Overlap: trip 1 ends after trip 2 starts, or trip 2 ends after trip 1 starts
-                const end2 = start2 + duration2;
-                const isOverlapping = (start2 >= start1 && start2 < end1) || (start1 >= start2 && start1 < end2) || 
-                                     // Also flag 2-hour window risk as high severity overlap risk
-                                     (Math.abs(start2 - start1) <= 120);
+                const int1 = getCircularIntervals(start1, duration1, busBuffer);
+                const int2 = getCircularIntervals(start2, duration2, busBuffer);
 
-                if (isOverlapping) {
+                if (intervalsOverlap(int1, int2)) {
                     conflictsList.push({
                         id: `bus-${s1.id}-${s2.id}`,
                         type: 'Bus conflict',
                         severity: 'High',
                         entityName: `Bus ${s1.bus} — assigned to two routes`,
-                        description: `Scheduled on Route ${s2.routeId} at ${format12Hour(s2.time)} and Route ${s1.routeId} at ${format12Hour(s1.time)}. Route ${s2.routeId} trip (est. ${duration2} min) ends at ~${format12Hour(formatMinuteToTime(start2 + duration2))} — overlap risk if delayed.`,
+                        description: `Scheduled on Route ${s2.routeId} at ${format12Hour(s2.time)} and Route ${s1.routeId} at ${format12Hour(s1.time)}. Route ${s2.routeId} trip (est. ${duration2} min) ends at ~${format12Hour(formatMinuteToTime((start2 + duration2) % 1440))} — overlap risk if delayed.`,
                         affectedIds: [s1.id, s2.id],
                         routeId1: s1.routeId,
                         time1: s1.time,
@@ -1573,15 +1596,32 @@ function openResolveModal(conflictId) {
     const driverSelect = document.getElementById('resolve-select-driver');
     // Load available drivers
     driverSelect.innerHTML = driversList
-        .filter(d => d.status === 'On Duty' && d.initials !== conflict.driver)
-        .map(d => `<option value="${d.initials}">${d.firstName} ${d.lastName} (${d.initials})</option>`)
+        .filter(d => (d.status === 'On Duty' || d.status === 'active') && String(d.id) !== String(conflict.driverId))
+        .map(d => `<option value="${d.id}">${d.firstName || d.first_name} ${d.lastName || d.last_name} (${d.initials})</option>`)
         .join('');
 
     // Pre-fill time wrap
     const timeInput = document.getElementById('resolve-input-time');
     if (conflict.time1) {
         // Offer standard delay offset of +45 mins (e.g. 7:15 AM to 8:00 AM)
-        timeInput.value = '08:00';
+        const parts = conflict.time1.split(':').map(Number);
+        let hour = parts[0];
+        let min = parts[1] + 45;
+        if (min >= 60) {
+            hour = (hour + Math.floor(min / 60)) % 24;
+            min = min % 60;
+        }
+        timeInput.value = `${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
+    } else {
+        timeInput.value = (window.GoPasigConfig && window.GoPasigConfig.defaultDepartureTime) || '08:00';
+    }
+
+    // Dynamic remove subtext showing the specific schedule to delete
+    const affectedScheduleId = conflict.affectedIds[0];
+    const schedule = schedulesData.find(s => s.id === affectedScheduleId);
+    const removeSubEl = document.getElementById('resolve-remove-sub');
+    if (removeSubEl && schedule) {
+        removeSubEl.textContent = `Delete the schedule for Route ${schedule.routeId} at ${format12Hour(schedule.time)} entirely.`;
     }
 
     // Toggle initial inputs
@@ -1632,11 +1672,11 @@ async function applyConflictResolution() {
                 return;
             }
         } else {
-            let driverInitials = schedule.driver;
+            let driverId = schedule.driverId;
             let timeVal = schedule.time;
 
             if (isReassign) {
-                driverInitials = document.getElementById('resolve-select-driver').value;
+                driverId = document.getElementById('resolve-select-driver').value;
             } else if (isAdjust) {
                 timeVal = document.getElementById('resolve-input-time').value;
             }
@@ -1644,7 +1684,7 @@ async function applyConflictResolution() {
             const payload = {
                 route_id: schedule.routeId,
                 bus_plate: schedule.bus,
-                driver_initials: driverInitials,
+                driver_id: driverId,
                 departure_time: timeVal
             };
 
@@ -1687,9 +1727,9 @@ function openAddStopToRouteModal() {
     const modal = document.getElementById('rm-add-stop-modal');
     document.getElementById('as-name').value = '';
     document.getElementById('as-landmark').value = '';
-    document.getElementById('as-boarding').value = '15';
-    document.getElementById('as-alighting').value = '10';
-    document.getElementById('as-dwell').value = '45';
+    document.getElementById('as-boarding').value = (window.GoPasigConfig && window.GoPasigConfig.defaultStopBoarding) !== undefined ? window.GoPasigConfig.defaultStopBoarding : '15';
+    document.getElementById('as-alighting').value = (window.GoPasigConfig && window.GoPasigConfig.defaultStopAlighting) !== undefined ? window.GoPasigConfig.defaultStopAlighting : '10';
+    document.getElementById('as-dwell').value = (window.GoPasigConfig && window.GoPasigConfig.defaultStopDwellSeconds) !== undefined ? window.GoPasigConfig.defaultStopDwellSeconds : '45';
     modal.classList.remove('hidden');
 }
 

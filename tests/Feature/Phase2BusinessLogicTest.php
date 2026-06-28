@@ -25,6 +25,7 @@ class Phase2BusinessLogicTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Carbon::setTestNow(Carbon::create(2026, 6, 26, 12, 0, 0, 'UTC'));
 
         $this->driver = Driver::factory()->create([
             'status' => 'active',
@@ -39,6 +40,12 @@ class Phase2BusinessLogicTest extends TestCase
         $this->route = Route::factory()->create([
             'travel_time_minutes' => 30,
         ]);
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
     }
 
     // ============================================================

@@ -78,10 +78,16 @@
         busesBaseUrl: "{{ url('admin/api/buses') }}",
         driversBaseUrl: "{{ url('admin/api/drivers') }}",
         schedulesBaseUrl: "{{ url('admin/api/schedules') }}",
+        dispatchQueueTodayUrl: "{{ route('admin.api.schedules.dispatch-queue.today') }}",
         routesBaseUrl: "{{ url('admin/api/routes') }}",
         stopsBaseUrl: "{{ url('admin/api/stops') }}",
         maintenanceBaseUrl: "{{ url('admin/api/maintenance') }}",
         alertsBaseUrl: "{{ url('admin/api/alerts') }}",
+        defaultTravelTime: {{ $defaultTravelTime }},
+        defaultDepartureTime: @json($defaultDepartureTime),
+        defaultStopBoarding: {{ $defaultStopBoarding }},
+        defaultStopAlighting: {{ $defaultStopAlighting }},
+        defaultStopDwellSeconds: {{ $defaultStopDwellSeconds }},
         csrfToken: "{{ csrf_token() }}"
     };
 </script>

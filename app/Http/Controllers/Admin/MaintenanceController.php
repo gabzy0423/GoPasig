@@ -13,12 +13,11 @@ use Illuminate\Support\Facades\DB;
 
 class MaintenanceController extends Controller
 {
-    /**
-     * Show the form for creating a new maintenance record.
-     */
     public function create()
     {
-        return redirect('/admin/dashboard#maintenance');
+        $maintenanceTypes = array_filter(array_map('trim', explode(',', (string) SystemSetting::get('maintenance_type_options', 'Preventive Maintenance,Corrective Maintenance'))));
+        $buses = Bus::orderBy('plate_number')->get();
+        return view('admin.maintenance.create', compact('maintenanceTypes', 'buses'));
     }
 
     /**
@@ -65,6 +64,15 @@ class MaintenanceController extends Controller
             'scheduled_at' => 'required|date',
             'expected_duration_minutes' => "nullable|integer|min:{$minDuration}|max:{$maxDuration}",
         ]);
+
+        // BL-6.5: Block scheduling maintenance if the bus is mid-trip
+        $ongoingTrip = \App\Models\Trip::where('bus_id', $validated['bus_id'])->where('status', 'ongoing')->first();
+        if ($ongoingTrip) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot schedule maintenance: The bus currently has an ongoing trip.'
+            ], 422);
+        }
 
         $duration = $validated['expected_duration_minutes'] 
             ?? (int) SystemSetting::get('default_maintenance_duration_minutes', 120);
@@ -118,10 +126,10 @@ class MaintenanceController extends Controller
 
         $record = MaintenanceRecord::findOrFail($id);
 
-        if ($record->status !== 'scheduled') {
+        if (!in_array($record->status, ['scheduled', 'in_progress'])) {
             return response()->json([
                 'success' => false,
-                'message' => 'Can only update scheduled maintenance'
+                'message' => 'Can only update scheduled or in_progress maintenance'
             ], 422);
         }
 
@@ -190,7 +198,14 @@ class MaintenanceController extends Controller
             if (!$passed) {
                 // Inspection failed - bus stays locked, record stays in_progress
                 // Admin must go back and do more work
+                $record->increment('failed_inspections_count');
+                $maxFailed = (int) SystemSetting::get('maintenance_max_failed_inspections', 3);
+                if ($record->failed_inspections_count >= $maxFailed) {
+                    $record->update(['workflow_status' => 'escalated']);
+                }
                 return;
+            } else {
+                $record->update(['workflow_status' => null]);
             }
 
             // If passed, inspection is complete - ready for final completion
@@ -245,7 +260,7 @@ class MaintenanceController extends Controller
         DB::transaction(function () use ($record) {
             // If deleting uncompleted record, restore bus to prior status
             if ($record->status !== 'completed') {
-                $bus = Bus::find($record->bus_id);
+                $bus = Bus::find($record->getRawOriginal('bus_id'));
                 if ($bus) {
                     $restoreStatus = $bus->previous_status ?? 'active';
                     $bus->update(['status' => $restoreStatus, 'previous_status' => null]);

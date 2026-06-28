@@ -189,7 +189,7 @@
 <!-- INLINE SCRIPT: License Expiry Warning Logic with Dynamic Threshold -->
 <script>
     // Inject license warning threshold from PHP controller
-    const licenseWarningDays = {{ $licenseWarningDays }};
+    const driverLicenseWarningDays = {{ $licenseWarningDays }};
 
     document.addEventListener('DOMContentLoaded', () => {
         const expiryInput = document.getElementById('df-expiry');
@@ -218,7 +218,7 @@
             const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
 
             // Show warning if expiring within threshold days or already expired
-            if (daysDiff <= licenseWarningDays && daysDiff > 0) {
+            if (daysDiff <= driverLicenseWarningDays && daysDiff > 0) {
                 warnDiv.classList.remove('hidden');
                 warnText.textContent = `License expiring in ${daysDiff} day(s)!`;
             } else if (daysDiff <= 0) {
