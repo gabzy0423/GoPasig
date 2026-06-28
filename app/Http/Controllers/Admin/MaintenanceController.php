@@ -13,12 +13,11 @@ use Illuminate\Support\Facades\DB;
 
 class MaintenanceController extends Controller
 {
-    /**
-     * Show the form for creating a new maintenance record.
-     */
     public function create()
     {
-        return redirect('/admin/dashboard#maintenance');
+        $maintenanceTypes = array_filter(array_map('trim', explode(',', (string) SystemSetting::get('maintenance_type_options', 'Preventive Maintenance,Corrective Maintenance'))));
+        $buses = Bus::orderBy('plate_number')->get();
+        return view('admin.maintenance.create', compact('maintenanceTypes', 'buses'));
     }
 
     /**

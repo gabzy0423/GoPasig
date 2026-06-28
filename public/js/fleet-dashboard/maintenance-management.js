@@ -443,11 +443,16 @@ async function saveMaintenanceSchedule(event) {
                         errorSpan.classList.remove('hidden');
                     }
                 });
+            } else if (result.message) {
+                showSuccessAlert(result.message, true);
             }
             return;
         }
 
-        if (!response.ok) throw new Error(result.message || 'Failed to save schedule');
+        if (!response.ok) {
+            showSuccessAlert(result.message || 'Failed to save schedule', true);
+            throw new Error(result.message || 'Failed to save schedule');
+        }
 
         // Success Alert
         showSuccessAlert(result.message);
@@ -456,6 +461,7 @@ async function saveMaintenanceSchedule(event) {
 
     } catch (error) {
         console.error('Error saving maintenance schedule:', error);
+        showSuccessAlert(error.message || 'An error occurred', true);
     }
 }
 
@@ -721,12 +727,21 @@ async function deleteRecord(id) {
 }
 
 // Success Alert Animation Helper
-function showSuccessAlert(message) {
+function showSuccessAlert(message, isError = false) {
     const alertCont = document.getElementById('maintenance-alert');
     const alertMsg = document.getElementById('maintenance-alert-message');
 
     if (alertCont && alertMsg) {
         alertMsg.innerText = message;
+        if (isError) {
+            alertCont.className = 'p-3 bg-red-100 border border-red-500 text-red-700 rounded-lg text-xs font-semibold flex items-center justify-between animate-fade-in-up';
+            const icon = alertCont.querySelector('i');
+            if (icon) icon.className = 'ti ti-circle-x text-[16px]';
+        } else {
+            alertCont.className = 'p-3 bg-[#EAF3DE] border border-[#3B6D11] text-[#3B6D11] rounded-lg text-xs font-semibold flex items-center justify-between animate-fade-in-up';
+            const icon = alertCont.querySelector('i');
+            if (icon) icon.className = 'ti ti-circle-check text-[16px]';
+        }
         alertCont.classList.remove('hidden');
         
         // Auto fade out after 5 seconds

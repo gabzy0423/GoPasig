@@ -187,9 +187,9 @@ class ScheduleComplianceController extends Controller
 
         $colorPalette = ColorPalette::getColors('analytics');
 
-        $countInRange = Schedule::whereBetween('created_at', [$start, $end])->count();
+        $countInRange = Schedule::whereBetween('service_date', [$start->toDateString(), $end->toDateString()])->count();
         $useAllTime = $countInRange === 0;
-        $baseQ = fn() => $useAllTime ? Schedule::query() : Schedule::whereBetween('created_at', [$start, $end]);
+        $baseQ = fn() => $useAllTime ? Schedule::query() : Schedule::whereBetween('service_date', [$start->toDateString(), $end->toDateString()]);
 
         $routes = Route::orderBy('id')->get();
         $routeColorMap = [];

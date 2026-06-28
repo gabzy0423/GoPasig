@@ -413,7 +413,7 @@ async function handleTripChange(event) {
 }
 
 // Submit Incident Creation
-async function submitIncidentForm(event) {
+async function submitDetailedIncidentForm(event) {
     event.preventDefault();
     clearIncidentsFormErrors();
 
@@ -565,7 +565,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Form submission
-        document.getElementById('incident-creation-form')?.addEventListener('submit', submitIncidentForm);
+        document.getElementById('incident-creation-form')?.addEventListener('submit', submitDetailedIncidentForm);
 
         // Polling interval
         setInterval(fetchIncidentsData, 15000);

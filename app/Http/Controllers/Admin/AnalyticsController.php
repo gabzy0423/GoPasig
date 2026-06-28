@@ -294,17 +294,46 @@ class AnalyticsController extends Controller
             $peakLoad = 0;
 
             if ($busId) {
+                // Boarded: passengers who boarded the bus on this route and service date
                 $boarded = CommuterTrip::where('bus_id', $busId)
+                    ->where('route_id', $s->route_id)
                     ->whereDate('created_at', $scheduleDate)
                     ->whereNotNull('boarded_at')
                     ->count();
 
+                // Alighted: passengers who arrived at their destination on this route and service date
                 $alighted = CommuterTrip::where('bus_id', $busId)
+                    ->where('route_id', $s->route_id)
                     ->whereDate('created_at', $scheduleDate)
                     ->whereNotNull('arrived_at')
                     ->count();
 
-                $peakLoad = max($boarded, $s->passengers);
+                // Calculate peakLoad using stop-by-stop sequential aggregation
+                $routeStops = Stop::where('route_id', $s->route_id)->orderBy('sequence')->get();
+                $currentLoad = 0;
+                $maxLoad = 0;
+                foreach ($routeStops as $stop) {
+                    $stopBoarded = CommuterTrip::where('bus_id', $busId)
+                        ->where('route_id', $s->route_id)
+                        ->where('origin_stop_id', $stop->id)
+                        ->whereDate('created_at', $scheduleDate)
+                        ->whereNotNull('boarded_at')
+                        ->count();
+
+                    $stopAlighted = CommuterTrip::where('bus_id', $busId)
+                        ->where('route_id', $s->route_id)
+                        ->where('destination_stop_id', $stop->id)
+                        ->whereDate('created_at', $scheduleDate)
+                        ->whereNotNull('arrived_at')
+                        ->count();
+
+                    $currentLoad += ($stopBoarded - $stopAlighted);
+                    if ($currentLoad > $maxLoad) {
+                        $maxLoad = $currentLoad;
+                    }
+                }
+
+                $peakLoad = max($maxLoad, $boarded, $s->passengers);
             }
 
             if ($boarded === 0) {

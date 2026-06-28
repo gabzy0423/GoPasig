@@ -232,7 +232,7 @@ class BusinessLogicService
         $route = Route::find($routeId);
         $duration = $route?->travel_time_minutes ?? (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
 
-        $targetDate = $serviceDate ?: \Carbon\Carbon::today()->toDateString();
+        $targetDate = $serviceDate ?: \Carbon\Carbon::now('Asia/Manila')->toDateString();
         $newStart = \Carbon\Carbon::parse($targetDate . ' ' . $departureTime);
         $newEnd = $newStart->copy()->addMinutes($duration);
 
@@ -244,7 +244,7 @@ class BusinessLogicService
         foreach ($existingSchedules as $schedule) {
             $sDate = $schedule->service_date
                 ? \Carbon\Carbon::parse($schedule->service_date)->toDateString()
-                : \Carbon\Carbon::today()->toDateString();
+                : \Carbon\Carbon::now('Asia/Manila')->toDateString();
             $sStart = \Carbon\Carbon::parse($sDate . ' ' . substr($schedule->departure_time, 0, 8));
             $sDuration = $schedule->route?->travel_time_minutes ?? (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
             $sEnd = $sStart->copy()->addMinutes($sDuration);

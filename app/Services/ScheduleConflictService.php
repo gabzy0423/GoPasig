@@ -208,6 +208,7 @@ class ScheduleConflictService
     {
         $minRestHours = (int) SystemSetting::get('driver_min_rest_hours', 8);
         $minRestMinutes = $minRestHours * 60;
+        $isTimeOnly = (bool) preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $departureTime);
         $newStartTime = self::parseScheduleDateTime($departureTime);
 
         // Check every prior schedule with real dates so overnight trips still enforce rest.
@@ -234,9 +235,18 @@ class ScheduleConflictService
             $existingStart = self::scheduleStartDateTime($schedule);
             $existingEnd = self::scheduleEndDateTime($schedule, $existingStart);
 
+            $currentNewStart = $newStartTime;
+            $currentNewEnd = $newEndTime;
+
+            if ($isTimeOnly) {
+                $existingDateStr = $existingStart->toDateString();
+                $currentNewStart = Carbon::parse($existingDateStr . ' ' . $departureTime);
+                $currentNewEnd = $currentNewStart->copy()->addMinutes($newDuration);
+            }
+
             // Case A: new trip starts AFTER existing trip ends — enforce rest after existing
-            if ($newStartTime->greaterThanOrEqualTo($existingEnd)) {
-                $restMinutes = $existingEnd->diffInMinutes($newStartTime);
+            if ($currentNewStart->greaterThanOrEqualTo($existingEnd)) {
+                $restMinutes = $existingEnd->diffInMinutes($currentNewStart);
                 if ($restMinutes < $minRestMinutes) {
                     $restHours = round($restMinutes / 60, 1);
                     return [
@@ -247,8 +257,8 @@ class ScheduleConflictService
             }
 
             // Case B: new trip ends BEFORE existing trip starts — enforce rest before existing
-            if ($newEndTime->lessThanOrEqualTo($existingStart)) {
-                $restMinutes = $newEndTime->diffInMinutes($existingStart);
+            if ($currentNewEnd->lessThanOrEqualTo($existingStart)) {
+                $restMinutes = $currentNewEnd->diffInMinutes($existingStart);
                 if ($restMinutes < $minRestMinutes) {
                     $restHours = round($restMinutes / 60, 1);
                     return [
@@ -396,6 +406,7 @@ class ScheduleConflictService
     protected static function parseScheduleDateTime(string $time): Carbon
     {
         if (preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $time)) {
+            // Use Carbon::today to respect the current default timezone (or test now)
             return Carbon::today()->setTimeFromTimeString($time);
         }
 

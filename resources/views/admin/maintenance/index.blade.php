@@ -215,11 +215,6 @@
                                 @foreach($maintenanceTypes as $typeOption)
                                     <option value="{{ $typeOption }}">
                                         {{ $typeOption }}
-                                        @if($typeOption === 'Preventive Maintenance')
-                                            (Routine inspection / oil change / checkups)
-                                        @elseif($typeOption === 'Corrective Maintenance')
-                                            (Repairs for mechanical or electrical issues)
-                                        @endif
                                     </option>
                                 @endforeach
                             </select>

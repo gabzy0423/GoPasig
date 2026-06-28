@@ -89,9 +89,17 @@
                 </div>
 
                 <!-- Driver Initials Avatar -->
-                <div class="w-9 h-9 rounded-full bg-[#003F87]/10 border border-[#003F87]/20 flex items-center justify-center text-[#003F87] font-extrabold text-xs">
+                <div class="w-9 h-9 rounded-full bg-[#003F87]/10 border border-[#003F87]/20 flex items-center justify-center text-[#003F87] font-extrabold text-xs shrink-0">
                     {{ $drv ? $drv->initials : (Auth::user() ? strtoupper(substr(Auth::user()->name, 0, 1)) : 'D') }}
                 </div>
+
+                <!-- Driver Logout Button -->
+                <a href="/logout" onclick="event.preventDefault(); document.getElementById('driver-logout-form').submit();" class="w-9 h-9 rounded-full bg-slate-50 border border-slate-100 text-slate-500 hover:text-[#E24B4A] hover:bg-rose-50 hover:border-rose-100 active:scale-95 transition-all flex items-center justify-center shadow-inner shrink-0" title="Sign Out">
+                    <i class="ti ti-logout text-[18px]"></i>
+                </a>
+                <form id="driver-logout-form" action="{{ route('logout') }}" method="POST" class="hidden">
+                    @csrf
+                </form>
             </div>
         </header>
 
