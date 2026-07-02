@@ -6,6 +6,7 @@ use App\Models\Route;
 use App\Models\Stop;
 use App\Models\Schedule;
 use App\Models\SystemSetting;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
 class BusinessLogicService
@@ -26,9 +27,11 @@ class BusinessLogicService
         $departureMinutes = intval($timeParts[0]) * 60 + intval($timeParts[1]);
         $tripEndMinutes = $departureMinutes + $tripDurationMinutes;
 
-        // Get all schedules for this driver today
-        $today = \Carbon\Carbon::today()->toDateString();
-        $schedules = Schedule::where('driver_id', $driverId)->get();
+        // Get all schedules for this driver on the target date only
+        $targetDate = $serviceDate ? Carbon::parse($serviceDate) : Carbon::today();
+        $schedules = Schedule::where('driver_id', $driverId)
+            ->whereDate('departure_time', $targetDate)
+            ->get();
 
         $totalMinutesScheduled = 0;
         foreach ($schedules as $schedule) {

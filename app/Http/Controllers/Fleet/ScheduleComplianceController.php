@@ -223,7 +223,7 @@ class ScheduleComplianceController extends Controller
                 'On Time' => 'On time',
                 'Late' => 'Delayed',
                 'Missed' => 'Cancelled',
-                'Early' => 'On time',
+                'Early' => 'Early',
                 default => $selectedStatus,
             };
             $schedQuery->where('status', $dbStatus);
@@ -256,10 +256,10 @@ class ScheduleComplianceController extends Controller
                 $varianceMin = (int) Carbon::parse($s->departure_time)->diffInMinutes(Carbon::parse($s->actual_departure_time), false);
                 $isEstimated = false;
             } else {
-                $isEstimated = (strtolower((string) $s->status) === 'delayed');
+                $isEstimated = false;
                 if (strtolower((string) $s->status) === 'delayed') {
-                    $varianceMin = $s->delay_minutes ?: max(1, (int) round($duration * 0.1));
-                    $actualDep = Carbon::parse($s->departure_time)->addMinutes($varianceMin)->format('g:i A');
+                    $varianceMin = $s->delay_minutes ?: null;
+                    $actualDep = $varianceMin !== null ? Carbon::parse($s->departure_time)->addMinutes($varianceMin)->format('g:i A') : '--';
                 } else {
                     $varianceMin = 0;
                     $actualDep = $uiStatus === 'Missed' ? '--' : $departureFormatted;
@@ -374,9 +374,6 @@ class ScheduleComplianceController extends Controller
                     $totalDelayMin += max(0, (int) Carbon::parse($ds->departure_time)->diffInMinutes(Carbon::parse($ds->actual_departure_time), false));
                 } elseif ($ds->delay_minutes > 0) {
                     $totalDelayMin += $ds->delay_minutes;
-                } else {
-                    $dur = Carbon::parse($ds->departure_time)->diffInMinutes(Carbon::parse($ds->arrival_time));
-                    $totalDelayMin += max(1, (int) round($dur * 0.1));
                 }
             }
             if ($totalDelayMin > 0) {
@@ -430,7 +427,7 @@ class ScheduleComplianceController extends Controller
                 } elseif ($row->total_delay_minutes > 0) {
                     $avgDelay = (int) round($row->total_delay_minutes / $row->late_count);
                 } else {
-                    $avgDelay = max(1, (int) round(($row->total_duration / $row->late_count) * 0.1));
+                    $avgDelay = 0;
                 }
             }
             return [

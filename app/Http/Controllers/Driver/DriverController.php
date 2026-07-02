@@ -9,12 +9,14 @@ use Illuminate\Support\Facades\DB;
 use App\Models\Driver;
 use App\Models\Bus;
 use App\Models\Route;
+use App\Models\Trip;
 use App\Models\User;
 use App\Models\Schedule;
 use App\Models\ServiceAlert;
 use App\Models\Stop;
 use App\Services\GPSKalmanFilter;
 use App\Services\DashboardService;
+use App\Services\TripLogService;
 use App\Models\SystemSetting;
 
 class DriverController extends Controller
@@ -166,7 +168,15 @@ class DriverController extends Controller
             ->latest()
             ->get();
 
-        return view('driver.announcements.index', compact('driver', 'alerts'));
+        $messages = collect();
+        if ($driver) {
+            $messages = \App\Models\DriverMessage::where('driver_id', $driver->id)
+                ->with('sender')
+                ->latest()
+                ->get();
+        }
+
+        return view('driver.announcements.index', compact('driver', 'alerts', 'messages'));
     }
 
     /**
@@ -208,15 +218,65 @@ class DriverController extends Controller
                             'updated_at' => now(),
                         ]);
                     }
+                    
+                    // Populate actual_departure_time on the driver's next schedule
+                    $schedule = \App\Models\Schedule::where('driver_id', $driver->id)
+                        ->whereNull('actual_departure_time')
+                        ->where('service_date', now('Asia/Manila')->toDateString())
+                        ->orderBy('departure_time', 'asc')
+                        ->first();
+                    
+                    if ($schedule) {
+                        $now = now('Asia/Manila');
+                        $schedule->actual_departure_time = $now->format('H:i:s');
+                        
+                        $scheduledDep = \Carbon\Carbon::parse($schedule->departure_time);
+                        $variance = $scheduledDep->diffInMinutes($now, false);
+                        
+                        if ($variance < 0) {
+                            $schedule->status = \App\Models\Schedule::STATUS_EARLY;
+                        } elseif ($variance > 5) {
+                            $schedule->status = \App\Models\Schedule::STATUS_DELAYED;
+                            $schedule->delay_minutes = $variance;
+                        }
+                        $schedule->save();
+                    }
                 } elseif ($status === 'inactive' || $status === 'breakdown') {
-                    DB::table('trips')
+                    $ongoingTrip = DB::table('trips')
                         ->where('driver_id', $driver->id)
                         ->where('status', 'ongoing')
-                        ->update([
-                            'status' => $status === 'breakdown' ? 'cancelled' : 'completed',
-                            'ended_at' => now(),
-                            'updated_at' => now(),
-                        ]);
+                        ->first();
+
+                    if ($ongoingTrip) {
+                        DB::table('trips')
+                            ->where('id', $ongoingTrip->id)
+                            ->update([
+                                'status' => $status === 'breakdown' ? 'cancelled' : 'completed',
+                                'ended_at' => now(),
+                                'updated_at' => now(),
+                            ]);
+
+                        if ($status === 'inactive') {
+                            $trip = Trip::find($ongoingTrip->id);
+                            if ($trip) {
+                                $serviceDate = now('Asia/Manila')->toDateString();
+                                $flow = TripLogService::computePassengerFlow(
+                                    (int) $trip->bus_id,
+                                    (int) $trip->route_id,
+                                    $serviceDate
+                                );
+
+                                TripLogService::logTrip($trip, [
+                                    'started_at' => $ongoingTrip->started_at,
+                                    'completed_at' => now(),
+                                    'passengers' => $flow['boarded'],
+                                    'alighted_passengers' => $flow['alighted'],
+                                    'peak_passengers' => (int) ($ongoingTrip->peak_passengers ?? 0),
+                                    'status' => 'completed',
+                                ]);
+                            }
+                        }
+                    }
                 }
                 return response()->json(['success' => true, 'status' => $status, 'trips_today' => $driver->trips_today]);
             }

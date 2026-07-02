@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\CommuterTrip;
+use App\Models\Stop;
 use App\Models\TripLog;
 use App\Models\Trip;
 use App\Models\Driver;
@@ -23,6 +25,7 @@ class TripLogService
                 'started_at' => $data['started_at'] ?? $trip->started_at,
                 'completed_at' => $data['completed_at'] ?? now(),
                 'passengers' => $data['passengers'] ?? $trip->peak_passengers ?? 0,
+                'alighted_passengers' => $data['alighted_passengers'] ?? 0,
                 'peak_passengers' => $data['peak_passengers'] ?? $trip->peak_passengers ?? 0,
                 'status' => $data['status'] ?? 'completed',
                 'is_on_time' => $data['is_on_time'] ?? true,
@@ -224,5 +227,66 @@ class TripLogService
         $driver->update(['trip_history' => []]);
 
         return $count;
+    }
+
+    /**
+     * Count boarded and alighted passengers from commuter trip records.
+     */
+    public static function computePassengerFlow(int $busId, int $routeId, string $date): array
+    {
+        $boarded = CommuterTrip::where('bus_id', $busId)
+            ->where('route_id', $routeId)
+            ->where('is_simulated', false)
+            ->whereDate('created_at', $date)
+            ->whereNotNull('boarded_at')
+            ->count();
+
+        $alighted = CommuterTrip::where('bus_id', $busId)
+            ->where('route_id', $routeId)
+            ->where('is_simulated', false)
+            ->whereDate('created_at', $date)
+            ->whereNotNull('arrived_at')
+            ->count();
+
+        return [
+            'boarded' => $boarded,
+            'alighted' => $alighted,
+        ];
+    }
+
+    /**
+     * Estimate peak onboard load using stop-by-stop boarding/alighting aggregation.
+     */
+    public static function computePeakLoad(int $busId, int $routeId, string $date): int
+    {
+        $flow = self::computePassengerFlow($busId, $routeId, $date);
+        $routeStops = Stop::where('route_id', $routeId)->orderBy('sequence')->get();
+        $currentLoad = 0;
+        $maxLoad = 0;
+
+        foreach ($routeStops as $stop) {
+            $stopBoarded = CommuterTrip::where('bus_id', $busId)
+                ->where('route_id', $routeId)
+                ->where('is_simulated', false)
+                ->where('origin_stop_id', $stop->id)
+                ->whereDate('created_at', $date)
+                ->whereNotNull('boarded_at')
+                ->count();
+
+            $stopAlighted = CommuterTrip::where('bus_id', $busId)
+                ->where('route_id', $routeId)
+                ->where('is_simulated', false)
+                ->where('destination_stop_id', $stop->id)
+                ->whereDate('created_at', $date)
+                ->whereNotNull('arrived_at')
+                ->count();
+
+            $currentLoad += ($stopBoarded - $stopAlighted);
+            if ($currentLoad > $maxLoad) {
+                $maxLoad = $currentLoad;
+            }
+        }
+
+        return max($maxLoad, $flow['boarded']);
     }
 }

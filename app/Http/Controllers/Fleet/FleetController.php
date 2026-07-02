@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Fleet;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -183,14 +184,25 @@ class FleetController extends Controller
     }
 
     /**
-     * Helper to log recent activity in the session or db if needed.
-     * For now, we will let AppServiceProvider or local logs capture it.
+     * Log a fleet activity with type, description, actor, and timestamp.
+     *
+     * ISSUE-024 fix: previously an empty stub that silently dropped all activity
+     * calls. Now writes a structured log entry to Laravel's application log
+     * (storage/logs/laravel.log) so incidents, announcements, and resolutions
+     * are permanently recorded with the authenticated user context.
      */
-    protected function logActivity($type, $description)
+    protected function logActivity(string $type, string $description): void
     {
-        // In Laravel, activities are dynamic from DB query. We insert them or let DB query read them.
-        // Since getOverviewDataArray reads from dispatch_logs, incidents, maintenance_records, and service_alerts,
-        // inserting to DB tables will automatically make them appear in the feed.
+        $userId = Auth::id();
+        $userName = Auth::user()?->name ?? 'System';
+
+        Log::info('[FleetActivity] ' . $type, [
+            'type'        => $type,
+            'description' => $description,
+            'user_id'     => $userId,
+            'user_name'   => $userName,
+            'logged_at'   => now()->toDateTimeString(),
+        ]);
     }
 
     /**
@@ -200,10 +212,11 @@ class FleetController extends Controller
     {
         $today = Carbon::today('Asia/Manila');
 
-        // Auto-detect offline buses (> 2 minutes without GPS ping)
+        // Auto-detect offline buses (configurable threshold, default 2 minutes without GPS ping)
+        $gpsOfflineThreshold = (int) SystemSetting::get('bus_gps_offline_threshold_minutes', 2);
         $activeTripBuses = Trip::where('status', 'ongoing')->pluck('bus_id')->toArray();
         $offlineBusesCheck = Bus::whereIn('id', $activeTripBuses)
-            ->where('updated_at', '<', now()->subMinutes(2))
+            ->where('updated_at', '<', now()->subMinutes($gpsOfflineThreshold))
             ->get();
 
         foreach ($offlineBusesCheck as $busCheck) {
@@ -531,6 +544,7 @@ class FleetController extends Controller
     public function getCommuterTrips(Request $request)
     {
         $query = CommuterTrip::with(['route', 'originStop', 'destinationStop'])
+            ->where('is_simulated', false)
             ->latest();
 
         if ($request->filled('search')) {

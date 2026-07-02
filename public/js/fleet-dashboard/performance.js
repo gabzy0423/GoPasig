@@ -467,13 +467,19 @@ function closeDriverDrawer() {
 }
 
 async function messageDriverAction(driverId) {
+    const message = prompt("Enter the message to send to the driver:");
+    if (!message || message.trim() === '') {
+        return; // User cancelled or entered empty string
+    }
+
     try {
         const response = await fetch(`${window.FleetPerformanceConfig.driverMessageUrl}/${driverId}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': window.FleetPerformanceConfig.csrfToken
-            }
+            },
+            body: JSON.stringify({ message: message.trim() })
         });
         const data = await response.json();
         if (response.ok && data.success) {

@@ -11,6 +11,7 @@ class Schedule extends Model
 
     // Schedule status constants — single source of truth for status strings
     const STATUS_ON_TIME   = 'On time';
+    const STATUS_EARLY     = 'Early';
     const STATUS_DELAYED   = 'Delayed';
     const STATUS_CANCELLED = 'Cancelled';
 

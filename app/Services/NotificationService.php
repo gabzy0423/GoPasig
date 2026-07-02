@@ -8,6 +8,7 @@ use App\Models\ServiceAlert;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
+use App\Mail\NotificationMail;
 use Illuminate\Support\Facades\Mail;
 
 class NotificationService
@@ -305,12 +306,9 @@ class NotificationService
 
     private static function sendEmailNotification(string $email, array $data): void
     {
-        // Simple email notification
-        // In production, use Laravel's Mailable classes
-        Log::info("Notification queued for {$email}", $data);
+        Mail::to($email)->queue(new NotificationMail($data));
 
-        // This would integrate with Laravel's mailing system:
-        // Mail::to($email)->queue(new NotificationMail($data));
+        Log::info("Notification queued for {$email}", ['notification_type' => $data['notification_type'] ?? 'general']);
     }
 
     private static function getLicenseExpiryUrgency(int $daysUntilExpiry): string

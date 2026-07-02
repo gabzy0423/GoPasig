@@ -270,6 +270,7 @@ class DispatchIntelligenceController extends Controller
                     'origin_stop_id' => $routeStops->first()->id,
                     'destination_stop_id' => $routeStops->last()->id,
                     'status' => 'WAITING',
+                    'is_simulated' => true,
                     'created_at' => now()->subMinutes(rand(1, 5)),
                 ]);
             }
@@ -450,6 +451,7 @@ class DispatchIntelligenceController extends Controller
         $routes = Route::getAllCached();
 
         $autoCounts = CommuterTrip::where('status', 'WAITING')
+            ->where('is_simulated', false)
             ->whereHas('session', function ($q) {
                 $q->where('expires_at', '>', now());
             })
@@ -496,8 +498,8 @@ class DispatchIntelligenceController extends Controller
             $suggestedBusData = null;
             if ($status === 'red') {
                 $firstStop = Stop::where('route_id', $route->id)->orderBy('sequence')->first();
-                $firstLat = $firstStop ? (float) $firstStop->lat : 14.5593;
-                $firstLng = $firstStop ? (float) $firstStop->lng : 121.0805;
+                $firstLat = $firstStop ? (float) $firstStop->lat : (float) SystemSetting::get('map_default_latitude', 14.5593);
+                $firstLng = $firstStop ? (float) $firstStop->lng : (float) SystemSetting::get('map_default_longitude', 121.0805);
 
                 $inactiveBuses = Bus::where('status', 'inactive')->get();
                 $minDist = null;

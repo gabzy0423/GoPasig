@@ -2,19 +2,28 @@
 
 namespace App\Services;
 
+use App\Models\SystemSetting;
 use Illuminate\Support\Facades\Log;
 
 class ValidationService
 {
     /**
-     * Philippines geographic bounds (main island group)
-     * Latitude: 4.6° to 20.9°N
-     * Longitude: 116.4° to 127.0°E
+     * Return the configured geographic bounds for coordinate validation.
+     * Values are read from SystemSetting so they can be adjusted without
+     * touching source code (e.g. tightening to Pasig City only).
+     * Falls back to the Pasig-area defaults seeded by the migration.
+     *
+     * @return array{lat_min: float, lat_max: float, lng_min: float, lng_max: float}
      */
-    private const PHILIPPINES_LAT_MIN = 4.6;
-    private const PHILIPPINES_LAT_MAX = 20.9;
-    private const PHILIPPINES_LNG_MIN = 116.4;
-    private const PHILIPPINES_LNG_MAX = 127.0;
+    private static function getBounds(): array
+    {
+        return [
+            'lat_min' => (float) SystemSetting::get('coordinates_bounds_south_latitude', 14.30),
+            'lat_max' => (float) SystemSetting::get('coordinates_bounds_north_latitude', 14.85),
+            'lng_min' => (float) SystemSetting::get('coordinates_bounds_west_longitude', 120.95),
+            'lng_max' => (float) SystemSetting::get('coordinates_bounds_east_longitude', 121.20),
+        ];
+    }
 
     /**
      * Validate GPS coordinates are within Philippines bounds
@@ -24,21 +33,23 @@ class ValidationService
      */
     public static function validateGPSCoordinates(float $latitude, float $longitude): array
     {
+        $bounds = self::getBounds();
+
         // Check latitude bounds
-        if ($latitude < self::PHILIPPINES_LAT_MIN || $latitude > self::PHILIPPINES_LAT_MAX) {
+        if ($latitude < $bounds['lat_min'] || $latitude > $bounds['lat_max']) {
             return [
                 'valid' => false,
-                'message' => "Latitude {$latitude} out of bounds. Philippines range: " . 
-                    self::PHILIPPINES_LAT_MIN . "° to " . self::PHILIPPINES_LAT_MAX . "°N"
+                'message' => "Latitude {$latitude} out of bounds. Configured range: " .
+                    $bounds['lat_min'] . "° to " . $bounds['lat_max'] . "°N"
             ];
         }
 
         // Check longitude bounds
-        if ($longitude < self::PHILIPPINES_LNG_MIN || $longitude > self::PHILIPPINES_LNG_MAX) {
+        if ($longitude < $bounds['lng_min'] || $longitude > $bounds['lng_max']) {
             return [
                 'valid' => false,
-                'message' => "Longitude {$longitude} out of bounds. Philippines range: " . 
-                    self::PHILIPPINES_LNG_MIN . "° to " . self::PHILIPPINES_LNG_MAX . "°E"
+                'message' => "Longitude {$longitude} out of bounds. Configured range: " .
+                    $bounds['lng_min'] . "° to " . $bounds['lng_max'] . "°E"
             ];
         }
 
@@ -81,7 +92,8 @@ class ValidationService
         }
 
         $invalidCoords = [];
-        
+        $bounds = self::getBounds();
+
         foreach ($coordinates as $index => $coord) {
             // Check coordinate format
             if (!is_array($coord) || count($coord) < 2) {
@@ -105,8 +117,8 @@ class ValidationService
             }
 
             // Validate bounds
-            if ($lat < self::PHILIPPINES_LAT_MIN || $lat > self::PHILIPPINES_LAT_MAX ||
-                $lng < self::PHILIPPINES_LNG_MIN || $lng > self::PHILIPPINES_LNG_MAX) {
+            if ($lat < $bounds['lat_min'] || $lat > $bounds['lat_max'] ||
+                $lng < $bounds['lng_min'] || $lng > $bounds['lng_max']) {
                 $invalidCoords[] = [
                     'index' => $index,
                     'lat' => $lat,
@@ -133,7 +145,7 @@ class ValidationService
         }
 
         // Check for excessive distance jumps between consecutive points (basic geometry validation)
-        $maxJumpKm = 50; // Flag if any two consecutive points are >50km apart
+        $maxJumpKm = (float) SystemSetting::get('polyline_max_jump_km', 10); // Configurable; default 10km suits Pasig City scale
         $invalidJumps = [];
 
         for ($i = 0; $i < count($coordinates) - 1; $i++) {
@@ -251,18 +263,21 @@ class ValidationService
 
         $duration = $arrMinutes - $depMinutes;
 
-        // Duration must be between 5 minutes and 12 hours
-        if ($duration < 5) {
+        // Duration must be within configured bounds
+        $minDuration = (int) SystemSetting::get('schedule_min_duration_minutes', 5);
+        $maxDuration = (int) SystemSetting::get('schedule_max_duration_minutes', 720);
+
+        if ($duration < $minDuration) {
             return [
                 'valid' => false,
-                'message' => 'Trip duration too short (minimum 5 minutes)'
+                'message' => "Trip duration too short (minimum {$minDuration} minutes)"
             ];
         }
 
-        if ($duration > 12 * 60) {
+        if ($duration > $maxDuration) {
             return [
                 'valid' => false,
-                'message' => 'Trip duration too long (maximum 12 hours)'
+                'message' => "Trip duration too long (maximum {$maxDuration} minutes)"
             ];
         }
 

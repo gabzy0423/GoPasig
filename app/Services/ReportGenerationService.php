@@ -99,7 +99,9 @@ class ReportGenerationService
                     'avg_trip_duration_minutes' => round($tripLogs->avg('trip_duration_minutes') ?? 0, 2),
                 ],
                 'utilization' => [
-                    'scheduled_hours' => $totalSchedules > 0 ? round($totalSchedules * 1.5, 2) : 0, // Estimate
+                    'scheduled_hours' => $totalSchedules > 0 
+                        ? round($totalSchedules * (($route->travel_time_minutes ?? 90) / 60), 2) 
+                        : 0,
                     'average_passengers_per_trip' => $tripLogs->count() > 0 
                         ? round($tripLogs->sum('peak_passengers') / $tripLogs->count(), 2) 
                         : 0,
@@ -172,9 +174,9 @@ class ReportGenerationService
                 'safety_record' => [
                     'incidents_period' => $incidents,
                     'incidents_last_30_days' => $driver->incidents_30,
-                    'safety_rating' => max(0, 100 - ($incidents * 5)), // Simple formula
+                    'safety_rating' => max(0, 100 - ($incidents * (int) \App\Models\SystemSetting::get('driver_score_incident_penalty', 10))),
                 ],
-                'ranking_score' => self::calculateDriverRankingScore($performanceScore, $onTimeTrips, $totalTrips, $incidents),
+                'ranking_score' => \App\Services\DriverPerformanceService::calculateDriverRankingScore($performanceScore, $onTimeTrips, $totalTrips, $incidents),
             ];
         }
 
@@ -304,14 +306,7 @@ class ReportGenerationService
         return 'F';
     }
 
-    private static function calculateDriverRankingScore(int $perfScore, int $onTime, int $total, int $incidents): float
-    {
-        $onTimeRate = $total > 0 ? ($onTime / $total) * 100 : 0;
-        $safetyScore = max(0, 100 - ($incidents * 10));
-
-        // Weighted average: Performance (40%), On-time (40%), Safety (20%)
-        return ($perfScore * 0.4) + ($onTimeRate * 0.4) + ($safetyScore * 0.2);
-    }
+    // Note: calculateDriverRankingScore has been moved to DriverPerformanceService
 
     /**
      * Export report as CSV

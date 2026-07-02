@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Fleet;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Driver;
+use App\Models\DriverMessage;
 use App\Models\Schedule;
 use App\Models\Incident;
 use App\Models\Route;
@@ -196,11 +197,30 @@ class DriverPerformanceController extends Controller
     /**
      * Initialize messaging.
      */
-    public function messageDriver($id)
+    public function messageDriver(Request $request, $id)
     {
+        // Parse DB id from string if it starts with DRV-
+        $dbId = (int) ltrim(str_replace('DRV-', '', $id), '0');
+
+        $driver = Driver::find($dbId);
+        if (!$driver) {
+            return response()->json(['success' => false, 'message' => 'Driver not found.'], 404);
+        }
+
+        $validated = $request->validate([
+            'message' => 'required|string|max:1000'
+        ]);
+
+        DriverMessage::create([
+            'driver_id' => $driver->id,
+            'sender_id' => auth()->id(),
+            'message' => $validated['message'],
+            'is_read' => false,
+        ]);
+
         return response()->json([
             'success' => true,
-            'message' => "Message thread initialized with Driver ID: {$id}"
+            'message' => "Message sent to {$driver->first_name}"
         ]);
     }
 

@@ -9,6 +9,8 @@ use App\Models\Schedule;
 use App\Models\Stop;
 use App\Models\SystemSetting;
 use App\Models\DemandHistory;
+use App\Models\Trip;
+use App\Models\TripLog;
 use App\Models\User;
 use App\Models\TimeSlotConfiguration;
 use Carbon\Carbon;
@@ -117,11 +119,11 @@ class Module8AnalyticsTest extends TestCase
     }
 
     /**
-     * Test alighted and boarded counts show disparity.
+     * Test alighted, boarded, and peak load come from trip_logs separately.
      */
     public function test_trip_passenger_flow_disparity()
     {
-        Schedule::create([
+        $schedule = Schedule::create([
             'route_id' => $this->route->id,
             'service_date' => Carbon::today()->toDateString(),
             'bus_id' => $this->bus->id,
@@ -132,17 +134,41 @@ class Module8AnalyticsTest extends TestCase
             'status' => 'On time',
         ]);
 
+        $trip = Trip::create([
+            'bus_id' => $this->bus->id,
+            'driver_id' => $this->driver->id,
+            'route_id' => $this->route->id,
+            'status' => 'completed',
+            'peak_passengers' => 35,
+            'started_at' => Carbon::today()->setTime(8, 0),
+            'ended_at' => Carbon::today()->setTime(9, 0),
+        ]);
+
+        TripLog::create([
+            'driver_id' => $this->driver->id,
+            'trip_id' => $trip->id,
+            'bus_id' => $this->bus->id,
+            'route_id' => $this->route->id,
+            'passengers' => 30,
+            'alighted_passengers' => 22,
+            'peak_passengers' => 35,
+            'completed_at' => Carbon::today()->setTime(9, 0),
+            'status' => 'completed',
+        ]);
+
         $response = $this->getJson(route('admin.api.analytics', [
             'start' => Carbon::today()->toDateString(),
             'end' => Carbon::today()->toDateString()
         ]));
 
         $response->assertStatus(200);
-        $trip = $response->json('tripPaxTable.0');
-        $this->assertNotNull($trip);
-        $this->assertEquals(30, $trip['boarded']);
-        // Verify they are not identical
-        $this->assertNotEquals($trip['boarded'], $trip['alighted']);
+        $tripRow = $response->json('tripPaxTable.0');
+        $this->assertNotNull($tripRow);
+        $this->assertEquals(30, $tripRow['boarded']);
+        $this->assertEquals(22, $tripRow['alighted']);
+        $this->assertEquals(35, $tripRow['peakLoad']);
+        $this->assertNotEquals($tripRow['boarded'], $tripRow['alighted']);
+        $this->assertNotEquals($tripRow['boarded'], $tripRow['peakLoad']);
     }
 
     /**
