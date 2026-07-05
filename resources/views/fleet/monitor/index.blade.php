@@ -118,7 +118,7 @@
 <div class="h-full flex flex-col space-y-4">
     <!-- Page Header -->
     <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-2 shrink-0">
-        <h1 class="text-xl font-bold text-slate-900">Live Fleet Tracker</h1>
+        <h1 class="text-xl font-bold text-slate-900">Trace Buses</h1>
         <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
             <span>Dashboard</span>
             <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
