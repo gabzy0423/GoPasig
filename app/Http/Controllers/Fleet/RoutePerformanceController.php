@@ -333,7 +333,7 @@ class RoutePerformanceController extends Controller
 
             $schedTimeStr = $firstDep ? Carbon::parse($firstDep)->format('g:i A') : '--';
 
-            $stopVariance = $hasSchedules 
+            $stopVariance = $hasSchedules
                 ? (int) SystemSetting::get('stop_default_variance_minutes', 2) + ($stop->sequence % 3)
                 : 0;
             $stopDwell = $hasSchedules

@@ -6,6 +6,7 @@ use App\Models\Route;
 use App\Models\Stop;
 use App\Models\Schedule;
 use App\Models\SystemSetting;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
 class BusinessLogicService
@@ -27,7 +28,7 @@ class BusinessLogicService
         $tripEndMinutes = $departureMinutes + $tripDurationMinutes;
 
         // Get all schedules for this driver on the target date
-        $targetDate = $serviceDate ?? \Carbon\Carbon::today()->toDateString();
+        $targetDate = $serviceDate ? Carbon::parse($serviceDate)->toDateString() : Carbon::today()->toDateString();
         $schedules = Schedule::where('driver_id', $driverId)
             ->whereDate('service_date', $targetDate)
             ->when($excludeScheduleId, function ($query) use ($excludeScheduleId) {
@@ -146,7 +147,7 @@ class BusinessLogicService
      * Check schedule conflicts for a driver or bus (ENHANCED from original)
      * Issue 3.1.1: Schedule conflict detection incomplete
      * Issue BL-4.2: Now applies rest buffer to BOTH driver AND bus conflicts
-     * 
+     *
      * Now also checks:
      * - Driver rest periods (minimum time between trips)
      * - Bus rest periods (minimum time between trips)

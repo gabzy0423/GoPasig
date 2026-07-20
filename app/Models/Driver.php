@@ -81,6 +81,14 @@ class Driver extends Model
     }
 
     /**
+     * Direct messages sent to this driver by dispatchers.
+     */
+    public function messages()
+    {
+        return $this->hasMany(DriverMessage::class);
+    }
+
+    /**
      * Get active route certifications
      */
     public function activeRouteCertifications()

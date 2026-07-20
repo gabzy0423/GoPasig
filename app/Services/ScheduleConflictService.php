@@ -197,8 +197,13 @@ class ScheduleConflictService
     }
 
     /**
-     * Check if schedule violates driver rest period requirements
-     * Minimum 8 hours between end of one trip and start of next
+     * Check if schedule violates driver rest period requirements.
+     * Minimum rest hours (default 8h) must separate end of one trip from start of next.
+     *
+     * ISSUE-022 fix: all time comparisons are done purely in minutes derived from
+     * HH:MM string parsing so that Carbon::parse() never anchors a bare time string
+     * to an arbitrary date. Cross-day (overnight) gaps are handled by adding 1440
+     * minutes when the arithmetic would otherwise produce a negative result.
      */
     public static function checkDriverRestPeriod(
         int $driverId,
@@ -206,64 +211,75 @@ class ScheduleConflictService
         ?int $excludeScheduleId = null
     ): array
     {
-        $minRestHours = (int) SystemSetting::get('driver_min_rest_hours', 8);
+        $minRestHours   = (int) SystemSetting::get('driver_min_rest_hours', 8);
         $minRestMinutes = $minRestHours * 60;
-        $isTimeOnly = (bool) preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $departureTime);
-        $newStartTime = self::parseScheduleDateTime($departureTime);
+        $newTripDuration = (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
 
-        // Check every prior schedule with real dates so overnight trips still enforce rest.
+        // Convert a time string ("HH:MM" or "HH:MM:SS") to total minutes since midnight.
+        // Works regardless of whether the value is a bare time or a full datetime string.
+        $toMinutes = static function (string $time): int {
+            // Strip date prefix if present (e.g. "2024-01-15 16:30:00" → "16:30:00")
+            if (str_contains($time, ' ')) {
+                $time = explode(' ', $time)[1];
+            }
+            $parts = explode(':', $time);
+            return (int) $parts[0] * 60 + (int) ($parts[1] ?? 0);
+        };
+
+        // Compute the gap in minutes between two time-of-day values.
+        // If $endMinutes < $startMinutes the two times straddle midnight (+1440 correction).
+        $gapMinutes = static function (int $endMinutes, int $startMinutes): int {
+            $gap = $startMinutes - $endMinutes; // positive = start is after end
+            if ($gap < 0) {
+                $gap += 1440; // overnight wrap-around
+            }
+            return $gap;
+        };
+
         $schedules = Schedule::where('driver_id', $driverId)
             ->where('status', '!=', 'cancelled')
-            ->when($excludeScheduleId, function ($q) use ($excludeScheduleId) {
-                return $q->where('id', '!=', $excludeScheduleId);
-            })
+            ->when($excludeScheduleId, fn ($q) => $q->where('id', '!=', $excludeScheduleId))
             ->get();
 
         if ($schedules->isEmpty()) {
-            // No previous schedule, rest period OK
             return [
                 'compliant' => true,
-                'message' => 'No previous schedule - rest period OK'
+                'message'   => 'No previous schedule — rest period OK',
             ];
         }
 
-        // Estimate new schedule end time using route travel time for cross-day support
-        $newDuration = (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
-        $newEndTime = $newStartTime->copy()->addMinutes($newDuration);
+        $newStartMin = $toMinutes($departureTime);
+        $newEndMin   = ($newStartMin + $newTripDuration) % 1440; // wrap at midnight
 
         foreach ($schedules as $schedule) {
-            $existingStart = self::scheduleStartDateTime($schedule);
-            $existingEnd = self::scheduleEndDateTime($schedule, $existingStart);
+            $existingStartMin = $toMinutes((string) $schedule->departure_time);
+            $existingEndMin   = $toMinutes((string) $schedule->arrival_time);
 
-            $currentNewStart = $newStartTime;
-            $currentNewEnd = $newEndTime;
-
-            if ($isTimeOnly) {
-                $existingDateStr = $existingStart->toDateString();
-                $currentNewStart = Carbon::parse($existingDateStr . ' ' . $departureTime);
-                $currentNewEnd = $currentNewStart->copy()->addMinutes($newDuration);
+            // Handle overnight existing trip (arrival before departure in minutes)
+            if ($existingEndMin <= $existingStartMin) {
+                $existingEndMin += 1440;
             }
 
-            // Case A: new trip starts AFTER existing trip ends — enforce rest after existing
-            if ($currentNewStart->greaterThanOrEqualTo($existingEnd)) {
-                $restMinutes = $existingEnd->diffInMinutes($currentNewStart);
-                if ($restMinutes < $minRestMinutes) {
-                    $restHours = round($restMinutes / 60, 1);
+            // Case A: new trip starts after existing trip ends → check rest gap after existing
+            $restAfter = $gapMinutes($existingEndMin % 1440, $newStartMin);
+            if ($newStartMin >= $existingEndMin % 1440 || $newStartMin < $existingStartMin) {
+                if ($restAfter < $minRestMinutes) {
+                    $restHours = round($restAfter / 60, 1);
                     return [
                         'compliant' => false,
-                        'message' => "Driver needs {$minRestHours}h rest after previous trip (currently: {$restHours}h)"
+                        'message'   => "Driver needs {$minRestHours}h rest after previous trip (currently: {$restHours}h)",
                     ];
                 }
             }
 
-            // Case B: new trip ends BEFORE existing trip starts — enforce rest before existing
-            if ($currentNewEnd->lessThanOrEqualTo($existingStart)) {
-                $restMinutes = $currentNewEnd->diffInMinutes($existingStart);
-                if ($restMinutes < $minRestMinutes) {
-                    $restHours = round($restMinutes / 60, 1);
+            // Case B: new trip ends before existing trip starts → check rest gap before existing
+            $restBefore = $gapMinutes($newEndMin, $existingStartMin);
+            if ($newEndMin <= $existingStartMin) {
+                if ($restBefore < $minRestMinutes) {
+                    $restHours = round($restBefore / 60, 1);
                     return [
                         'compliant' => false,
-                        'message' => "Driver needs {$minRestHours}h rest before next scheduled trip (currently: {$restHours}h)"
+                        'message'   => "Driver needs {$minRestHours}h rest before next scheduled trip (currently: {$restHours}h)",
                     ];
                 }
             }
@@ -271,7 +287,7 @@ class ScheduleConflictService
 
         return [
             'compliant' => true,
-            'message' => 'Rest period OK'
+            'message'   => 'Rest period OK',
         ];
     }
 
@@ -386,7 +402,7 @@ class ScheduleConflictService
     protected static function checkRouteCapability(Route $route, Bus $bus, Driver $driver): array
     {
         // Check 1: Bus capacity vs route requirements
-        $minimumCapacity = (int) ($route->min_capacity ?? SystemSetting::get('route_min_capacity_default', 30));
+        $minimumCapacity = (int) ($route->min_capacity ?? SystemSetting::get('route_min_bus_capacity', 30));
         if ($bus->capacity < $minimumCapacity) {
             return [
                 'capable' => false,

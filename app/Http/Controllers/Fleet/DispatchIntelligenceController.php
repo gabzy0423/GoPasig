@@ -449,6 +449,7 @@ class DispatchIntelligenceController extends Controller
         $routes = Route::getAllCached();
 
         $autoCounts = CommuterTrip::where('status', 'WAITING')
+            ->where('is_simulated', false)
             ->whereHas('session', function ($q) {
                 $q->where('expires_at', '>', now());
             })

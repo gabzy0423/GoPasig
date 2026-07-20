@@ -328,17 +328,45 @@ class ScheduleController extends Controller
             ], 403);
         }
         $validated = $request->validate([
-            'status' => 'required|string|in:On time,Delayed,delayed,Cancelled,cancelled',
+            'status' => 'required|string',
+            'delay_minutes' => 'nullable|integer',
+            'actual_departure_time' => 'nullable|date_format:H:i',
         ]);
 
         $oldStatus = $schedule->status;
         $newStatus = match (strtolower($validated['status'])) {
             'delayed' => Schedule::STATUS_DELAYED,
             'cancelled' => Schedule::STATUS_CANCELLED,
+            'early' => Schedule::STATUS_EARLY,
             default => Schedule::STATUS_ON_TIME,
         };
 
-        $schedule->update(['status' => $newStatus]);
+        $updates = ['status' => $newStatus];
+
+        if ($newStatus === Schedule::STATUS_DELAYED) {
+            if (isset($validated['delay_minutes'])) {
+                $updates['delay_minutes'] = $validated['delay_minutes'];
+            }
+        } else {
+            $updates['delay_minutes'] = 0; // Clear if no longer delayed
+        }
+        
+        if (isset($validated['actual_departure_time'])) {
+            $updates['actual_departure_time'] = $validated['actual_departure_time'];
+            $variance = Carbon::parse($schedule->departure_time)->diffInMinutes(Carbon::parse($validated['actual_departure_time']), false);
+            if ($variance < 0) {
+                $updates['status'] = Schedule::STATUS_EARLY;
+                $newStatus = Schedule::STATUS_EARLY;
+            } elseif ($variance > 0) {
+                $updates['delay_minutes'] = $variance;
+                if ($variance > 5 && $newStatus !== Schedule::STATUS_DELAYED) {
+                    $updates['status'] = Schedule::STATUS_DELAYED;
+                    $newStatus = Schedule::STATUS_DELAYED;
+                }
+            }
+        }
+
+        $schedule->update($updates);
 
         // If status changed to delayed, recalculate driver performance score
         if ($newStatus === Schedule::STATUS_DELAYED && $oldStatus !== Schedule::STATUS_DELAYED) {

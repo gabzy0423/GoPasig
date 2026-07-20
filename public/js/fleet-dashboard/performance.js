@@ -462,6 +462,32 @@ function closeDriverDrawer() {
     setTimeout(() => drawer.classList.add('hidden'), 300);
 }
 
+async function messageDriverAction(driverId) {
+    const message = prompt("Enter the message to send to the driver:");
+    if (!message || message.trim() === '') {
+        return; // User cancelled or entered empty string
+    }
+
+    try {
+        const response = await fetch(`${window.FleetPerformanceConfig.driverMessageUrl}/${driverId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': window.FleetPerformanceConfig.csrfToken
+            },
+            body: JSON.stringify({ message: message.trim() })
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+            // Flash a success message
+            showNotification(data.message);
+            closeDriverDrawer();
+        }
+    } catch (e) {
+        console.error('Error messaging driver:', e);
+    }
+}
+
 function showNotification(message) {
     let alertContainer = document.getElementById('driver-success-alert');
     if (!alertContainer) {
@@ -581,7 +607,7 @@ async function fetchRoutesData() {
         updateRouteMetricsDOM(data.routePerformanceSummary);
         updateRouteHealthDOM(data.routeHealthScore);
         updateRouteChartsData(data.headwayData, data.scheduleCompliance);
-        
+
         // Save stops globally and display first page
         allStopsData = data.stops;
         stopCurrentPage = 1;
@@ -596,12 +622,12 @@ async function fetchRoutesData() {
 
 function selectRouteTab(routeId) {
     activeRouteTab = routeId;
-    
+
     // Toggle active classes on tab buttons
     document.querySelectorAll('.flex.items-center.bg-slate-100 button').forEach(btn => {
         btn.className = 'px-3 py-1.5 rounded-md text-xs font-semibold transition-all text-slate-500 hover:text-slate-800';
     });
-    
+
     const activeBtn = document.getElementById(`tab-route-${routeId}`);
     if (activeBtn) {
         activeBtn.className = 'px-3 py-1.5 rounded-md text-xs font-semibold transition-all bg-[#003F87] text-white shadow-sm';
@@ -629,7 +655,7 @@ function updateRouteMetricsDOM(summary) {
     const adherenceEl = document.getElementById('metric-stop-adherence');
 
     if (completedEl) completedEl.innerText = summary.trips_completed;
-    
+
     if (otRateEl) {
         otRateEl.innerText = `${summary.on_time_rate}%`;
         const otColor = summary.on_time_rate >= summary.on_time_target ? 'text-[#3B6D11]' : 'text-[#A32D2D]';
@@ -931,11 +957,11 @@ function renderStopPaginationControls() {
 
     const div = document.createElement('div');
     div.className = 'flex items-center justify-between w-full text-xs font-semibold text-slate-600 py-3 border-t border-slate-100 mt-2';
-    
+
     let pageNumbersMarkup = '';
     for (let i = 1; i <= totalPages; i++) {
-        const activeClass = i === stopCurrentPage 
-            ? 'bg-[#003F87] text-white shadow-sm' 
+        const activeClass = i === stopCurrentPage
+            ? 'bg-[#003F87] text-white shadow-sm'
             : 'hover:bg-slate-100 text-slate-600';
         pageNumbersMarkup += `
             <button onclick="gotoStopPage(${i})" class="h-8 w-8 flex items-center justify-center rounded-lg transition-colors ${activeClass}">
@@ -1044,7 +1070,7 @@ function toggleDeviationFilter(type) {
 
 function clearDeviationFilters() {
     selectedDeviationTypes = [];
-    
+
     // Uncheck checkboxes in DOM
     document.querySelectorAll('.deviation-filter-checkbox').forEach(cb => {
         cb.checked = false;
@@ -1072,7 +1098,7 @@ function sortStopTable(columnName) {
     document.querySelectorAll('.sort-icon').forEach(icon => {
         icon.className = 'ti ti-arrows-sort text-slate-300 ml-1 sort-icon';
     });
-    
+
     const activeIcon = document.getElementById(`sort-icon-${columnName}`);
     if (activeIcon) {
         activeIcon.className = currentStopSortDir === 'asc'
@@ -1121,7 +1147,7 @@ function setupSortingObservers() {
 
 document.addEventListener('DOMContentLoaded', () => {
     // Detect which performance screen is active
-    
+
     // DRIVERS LOGIC INITIALIZATION
     if (document.getElementById('metric-total-drivers')) {
         // Init Driver Performance Distribution EChart
@@ -1192,7 +1218,7 @@ window.addEventListener('screen-shown', event => {
         setTimeout(() => {
             if (headwayChart) headwayChart.resize();
             if (scheduleComplianceChart) scheduleComplianceChart.resize();
-            
+
             if (!headwayChart && window.GoPasigRoutesInitialData) {
                 initRouteCharts(window.GoPasigRoutesInitialData.headway, window.GoPasigRoutesInitialData.schedule);
             }

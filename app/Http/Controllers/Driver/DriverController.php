@@ -9,15 +9,16 @@ use Illuminate\Support\Facades\DB;
 use App\Models\Driver;
 use App\Models\Bus;
 use App\Models\Route;
+use App\Models\Trip;
 use App\Models\User;
 use App\Models\Schedule;
 use App\Models\ServiceAlert;
 use App\Models\Stop;
 use App\Services\GPSKalmanFilter;
 use App\Services\DashboardService;
+use App\Services\TripLogService;
 use App\Models\SystemSetting;
 use App\Models\GPSLog;
-use App\Models\Trip;
 use App\Services\TelemetryProcessingService;
 use Illuminate\Support\Facades\Log;
 
@@ -28,8 +29,8 @@ class DriverController extends Controller
      */
     private function getDispatcherName()
     {
-        $dispatcher = User::where('role', 'dispatcher')->first() 
-            ?? User::where('role', 'admin')->first() 
+        $dispatcher = User::where('role', 'dispatcher')->first()
+            ?? User::where('role', 'admin')->first()
             ?? User::first();
         return $dispatcher ? explode(' ', $dispatcher->name)[0] : 'Dispatcher';
     }
@@ -48,7 +49,7 @@ class DriverController extends Controller
     {
         $user = Auth::user();
         $driver = Driver::where('user_id', $user->id)->first();
-        
+
         $bus = null;
         $route = null;
         if ($driver) {
@@ -70,7 +71,7 @@ class DriverController extends Controller
     {
         $user = Auth::user();
         $driver = Driver::where('user_id', $user->id)->first();
-        
+
         $bus = null;
         $route = null;
         $gpsCoords = [];
@@ -145,7 +146,7 @@ class DriverController extends Controller
     {
         $user = Auth::user();
         $driver = Driver::where('user_id', $user->id)->first();
-        
+
         $schedules = collect();
         if ($driver && $driver->assigned_route) {
             $schedules = Schedule::where('route_id', $driver->assigned_route)
@@ -165,12 +166,20 @@ class DriverController extends Controller
     {
         $user = Auth::user();
         $driver = Driver::where('user_id', $user->id)->first();
-        
+
         $alerts = ServiceAlert::activeAlerts()
             ->latest()
             ->get();
 
-        return view('driver.announcements.index', compact('driver', 'alerts'));
+        $messages = collect();
+        if ($driver) {
+            $messages = \App\Models\DriverMessage::where('driver_id', $driver->id)
+                ->with('sender')
+                ->latest()
+                ->get();
+        }
+
+        return view('driver.announcements.index', compact('driver', 'alerts', 'messages'));
     }
 
     /**
@@ -184,7 +193,7 @@ class DriverController extends Controller
             $bus = Bus::where('plate_number', $driver->assigned_bus)->first();
             if ($bus) {
                 $status = $request->input('status'); // 'active', 'inactive', or 'breakdown'
-                
+
                 if ($status === 'active' && !$driver->assigned_route) {
                     return response()->json(['success' => false, 'message' => 'No route assigned. Contact your dispatcher.'], 422);
                 }
@@ -224,7 +233,7 @@ class DriverController extends Controller
                     $trip = \App\Models\Trip::where('driver_id', $driver->id)
                         ->where('status', 'ongoing')
                         ->first();
-                    
+
                     if ($trip) {
                         try {
                             if ($status === 'breakdown') {
@@ -243,6 +252,29 @@ class DriverController extends Controller
                             ->whereDate('service_date', $today)
                             ->where('bus_id', $bus->id)
                             ->update(['passengers' => $bus->passengers]);
+                    }
+
+                    // Populate actual departure on the driver's current schedule.
+                    $schedule = \App\Models\Schedule::where('driver_id', $driver->id)
+                        ->whereNull('actual_departure_time')
+                        ->where('service_date', now('Asia/Manila')->toDateString())
+                        ->orderBy('departure_time', 'asc')
+                        ->first();
+
+                    if ($schedule) {
+                        $now = now('Asia/Manila');
+                        $schedule->actual_departure_time = $now->format('H:i:s');
+
+                        $scheduledDep = \Carbon\Carbon::parse($schedule->departure_time);
+                        $variance = $scheduledDep->diffInMinutes($now, false);
+
+                        if ($variance < 0) {
+                            $schedule->status = \App\Models\Schedule::STATUS_EARLY;
+                        } elseif ($variance > 5) {
+                            $schedule->status = \App\Models\Schedule::STATUS_DELAYED;
+                            $schedule->delay_minutes = $variance;
+                        }
+                        $schedule->save();
                     }
                 }
                 return response()->json(['success' => true, 'status' => $status, 'trips_today' => $driver->trips_today]);
@@ -327,17 +359,17 @@ class DriverController extends Controller
                 $change = (int)$request->input('change', 0);
                 $newPax = max(0, min($bus->capacity, $bus->passengers + $change));
                 $bus->update(['passengers' => $newPax]);
-                
+
                 if ($change > 0) {
                     $driver->increment('pax_today', $change);
                 }
-                
+
                 // Track peak passengers in the active ongoing trip
                 $ongoingTrip = DB::table('trips')
                     ->where('driver_id', $driver->id)
                     ->where('status', 'ongoing')
                     ->first();
-                
+
                 if (!$ongoingTrip) {
                     if (!$driver->assigned_route) {
                         return response()->json(['success' => false, 'message' => 'No route assigned. Contact your dispatcher.'], 422);
@@ -364,7 +396,7 @@ class DriverController extends Controller
                         \App\Services\TripService::updatePeakPassengers($tripModel, $newPax);
                     }
                 }
-                
+
                 return response()->json(['success' => true, 'passengers' => $newPax, 'pax_today' => $driver->pax_today]);
             }
         }
@@ -568,12 +600,3 @@ class DriverController extends Controller
         ]);
     }
 }
-
-
-
-
-
-
-
-
-

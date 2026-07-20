@@ -10,10 +10,12 @@ use App\Models\Trip;
 use App\Models\Route;
 use App\Models\Stop;
 use App\Models\CommuterTrip;
+use App\Models\TripLog;
 use App\Models\SystemSetting;
 use App\Models\DemandHistory;
 use App\Models\TimeSlotConfiguration;
 use App\Models\Terminal;
+use App\Services\TripLogService;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -318,45 +320,23 @@ class AnalyticsController extends Controller
             $alighted = 0;
             $peakLoad = 0;
 
-            if ($busId) {
-                $tripsForBusRoute = $commuterTripsInPeriod
-                    ->where('bus_id', $busId)
+            $tripLog = ($s->bus_id && $s->driver_id)
+                ? TripLog::where('bus_id', $s->bus_id)
                     ->where('route_id', $s->route_id)
-                    ->filter(function ($t) use ($scheduleDate) {
-                        return Carbon::parse($t->created_at)->toDateString() === $scheduleDate;
-                    });
+                    ->where('driver_id', $s->driver_id)
+                    ->whereDate('completed_at', $scheduleDate)
+                    ->first()
+                : null;
 
-                $boarded = $tripsForBusRoute->whereNotNull('boarded_at')->count();
-                $alighted = $tripsForBusRoute->whereNotNull('arrived_at')->count();
-
-                // Calculate peakLoad using stop-by-stop sequential aggregation
-                $routeStops = $allStopsCached->where('route_id', $s->route_id)->sortBy('sequence');
-                $currentLoad = 0;
-                $maxLoad = 0;
-                foreach ($routeStops as $stop) {
-                    $stopBoarded = $tripsForBusRoute
-                        ->where('origin_stop_id', $stop->id)
-                        ->whereNotNull('boarded_at')
-                        ->count();
-
-                    $stopAlighted = $tripsForBusRoute
-                        ->where('destination_stop_id', $stop->id)
-                        ->whereNotNull('arrived_at')
-                        ->count();
-
-                    $currentLoad += ($stopBoarded - $stopAlighted);
-                    if ($currentLoad > $maxLoad) {
-                        $maxLoad = $currentLoad;
-                    }
-                }
-
-                $peakLoad = max($maxLoad, $boarded, $s->passengers);
-            }
-
-            if ($boarded === 0) {
-                $boarded = $s->passengers;
-                $alighted = max(0, $boarded - 2);
-                $peakLoad = $boarded;
+            if ($tripLog) {
+                $boarded = (int) $tripLog->passengers;
+                $alighted = (int) $tripLog->alighted_passengers;
+                $peakLoad = (int) $tripLog->peak_passengers;
+            } elseif ($busId) {
+                $flow = TripLogService::computePassengerFlow($busId, $s->route_id, $scheduleDate);
+                $boarded = $flow['boarded'];
+                $alighted = $flow['alighted'];
+                $peakLoad = TripLogService::computePeakLoad($busId, $s->route_id, $scheduleDate);
             }
 
             $tripPaxTable[] = [

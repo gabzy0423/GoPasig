@@ -220,24 +220,14 @@ class ScheduleComplianceController extends Controller
             });
         }
         if ($selectedStatus !== 'all') {
-            if ($selectedStatus === 'Early') {
-                $schedQuery->whereNotNull('actual_departure_time')
-                    ->whereRaw('actual_departure_time < departure_time');
-            } else {
-                $dbStatus = match ($selectedStatus) {
-                    'On Time' => 'On time',
-                    'Late' => 'Delayed',
-                    'Missed' => 'Cancelled',
-                    default => $selectedStatus,
-                };
-                $schedQuery->where('status', $dbStatus);
-                if ($dbStatus === 'On time') {
-                    $schedQuery->where(function ($q) {
-                        $q->whereNull('actual_departure_time')
-                          ->orWhereRaw('actual_departure_time >= departure_time');
-                    });
-                }
-            }
+            $dbStatus = match ($selectedStatus) {
+                'On Time' => 'On time',
+                'Late' => 'Delayed',
+                'Missed' => 'Cancelled',
+                'Early' => 'Early',
+                default => $selectedStatus,
+            };
+            $schedQuery->where('status', $dbStatus);
         }
 
         $schedules = $schedQuery->get();
@@ -267,10 +257,10 @@ class ScheduleComplianceController extends Controller
                 $varianceMin = (int) Carbon::parse($s->departure_time)->diffInMinutes(Carbon::parse($s->actual_departure_time), false);
                 $isEstimated = false;
             } else {
-                $isEstimated = (strtolower((string) $s->status) === 'delayed');
+                $isEstimated = false;
                 if (strtolower((string) $s->status) === 'delayed') {
-                    $varianceMin = $s->delay_minutes ?? 0;
-                    $actualDep = Carbon::parse($s->departure_time)->addMinutes($varianceMin)->format('g:i A');
+                    $varianceMin = $s->delay_minutes ?: null;
+                    $actualDep = $varianceMin !== null ? Carbon::parse($s->departure_time)->addMinutes($varianceMin)->format('g:i A') : '--';
                 } else {
                     $varianceMin = 0;
                     $actualDep = $uiStatus === 'Missed' ? '--' : $departureFormatted;
@@ -385,8 +375,6 @@ class ScheduleComplianceController extends Controller
                     $totalDelayMin += max(0, (int) Carbon::parse($ds->departure_time)->diffInMinutes(Carbon::parse($ds->actual_departure_time), false));
                 } elseif ($ds->delay_minutes > 0) {
                     $totalDelayMin += $ds->delay_minutes;
-                } else {
-                    $totalDelayMin += $ds->delay_minutes ?? 0;
                 }
             }
             if ($totalDelayMin > 0) {

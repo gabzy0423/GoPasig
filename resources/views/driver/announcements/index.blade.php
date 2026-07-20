@@ -83,5 +83,42 @@
         @endforelse
     </div>
 
+    @if($messages->isNotEmpty())
+        <div class="flex flex-col gap-0.5 mt-2">
+            <span class="text-[10px] font-extrabold text-[#003F87] uppercase tracking-widest">Direct Messages</span>
+            <h2 class="text-lg font-black text-slate-800 tracking-tight leading-none">From Dispatch</h2>
+        </div>
+
+        <div class="flex flex-col gap-3.5">
+            @foreach($messages as $message)
+                @php
+                    $senderName = $message->sender?->name ?? 'Dispatcher';
+                    $diffTime = $message->created_at ? $message->created_at->diffForHumans() : 'Just now';
+                @endphp
+
+                <div class="rounded-2xl border-l-[4px] border border-t-slate-100 border-r-slate-100 border-b-slate-100 p-4.5 flex flex-col gap-2.5 shadow-sm bg-white"
+                     style="border-left-color: #003F87;">
+
+                    <div class="flex justify-between items-start gap-3">
+                        <div class="flex items-center gap-2.5 min-w-0">
+                            <div class="w-7 h-7 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center flex-shrink-0 text-sky-650">
+                                <i class="ti ti-message-2 text-base"></i>
+                            </div>
+                            <div class="flex flex-col leading-tight min-w-0">
+                                <span class="text-xs font-black text-slate-800 truncate">{{ $senderName }}</span>
+                                <span class="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest mt-0.5">Personal message</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] font-extrabold text-slate-400 mt-1 uppercase tracking-wider whitespace-nowrap">{{ $diffTime }}</span>
+                    </div>
+
+                    <p class="text-[12px] text-slate-550 font-medium leading-relaxed pl-0.5">
+                        {{ $message->message }}
+                    </p>
+                </div>
+            @endforeach
+        </div>
+    @endif
+
 </div>
 @endsection

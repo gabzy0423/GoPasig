@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Fleet;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -199,15 +200,30 @@ class FleetController extends Controller
     }
 
     /**
-     * Helper to log recent activity in the session or db if needed.
-     * For now, we will let AppServiceProvider or local logs capture it.
+     * Log a fleet activity with type, description, actor, and timestamp.
+     *
+     * ISSUE-024 fix: previously an empty stub that silently dropped all activity
+     * calls. Now writes a structured log entry to Laravel's application log
+     * (storage/logs/laravel.log) so incidents, announcements, and resolutions
+     * are permanently recorded with the authenticated user context.
      */
-    protected function logActivity($type, $description)
+    protected function logActivity(string $type, string $description): void
     {
         \App\Models\ActivityLog::create([
             'type' => $type,
             'description' => $description,
             'user_id' => Auth::id(),
+        ]);
+
+        $userId = Auth::id();
+        $userName = Auth::user()?->name ?? 'System';
+
+        Log::info('[FleetActivity] ' . $type, [
+            'type'        => $type,
+            'description' => $description,
+            'user_id'     => $userId,
+            'user_name'   => $userName,
+            'logged_at'   => now()->toDateTimeString(),
         ]);
     }
 
@@ -218,9 +234,9 @@ class FleetController extends Controller
     {
         $today = Carbon::today('Asia/Manila');
 
-        // Auto-detect offline buses (> 2 minutes without GPS ping from vehicle_positions)
+        // Auto-detect offline buses (configurable threshold, default 2 minutes without GPS ping)
         $activeTripBuses = Trip::where('status', 'ongoing')->pluck('bus_id')->toArray();
-        $offlineThreshold = (int) SystemSetting::get('gps_offline_threshold_minutes', 2);
+        $offlineThreshold = (int) SystemSetting::get('bus_gps_offline_threshold_minutes', (int) SystemSetting::get('gps_offline_threshold_minutes', 2));
         $offlineBusesCheck = Bus::whereIn('id', $activeTripBuses)
             ->whereDoesntHave('vehiclePosition', function ($q) use ($offlineThreshold) {
                 $q->where('last_updated_at', '>=', now()->subMinutes($offlineThreshold));
@@ -819,17 +835,3 @@ class FleetController extends Controller
         return $geospatial->calculateDistance($p, new Coordinate($closestLat, $closestLng));
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-

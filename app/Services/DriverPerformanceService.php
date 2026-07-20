@@ -16,16 +16,13 @@ class DriverPerformanceService
             return 0;
         }
 
-        $incidentCount = self::incidentCountForPeriod($driverId, $start, $end);
-        $delayCount = self::scheduleWindowQuery($driverId, $start, $end)
-            ->whereIn('status', [Schedule::STATUS_DELAYED, 'delayed'])
-            ->count();
+        $onTimeRate = self::calculateOnTimeRateForPeriod($driverId, $start, $end);
+        $incidentRate = self::calculateIncidentRateForPeriod($driverId, $start, $end);
+        $passengerRating = self::calculatePassengerRating($driverId, $start, $end);
 
-        $performanceScore = 100
-            - ($incidentCount * self::incidentPenalty())
-            - ($delayCount * self::delayPenalty());
+        $performanceScore = ($onTimeRate * 0.50) + ($incidentRate * 0.30) + ($passengerRating * 0.20);
 
-        return max(0, min(100, $performanceScore));
+        return max(0, min(100, (int) round($performanceScore)));
     }
 
     public static function recalculate(int $driverId): int|bool
@@ -61,7 +58,7 @@ class DriverPerformanceService
             ->count();
 
         if ($totalSchedules === 0) {
-            return (int) SystemSetting::get('driver_performance_default_on_time_score', 100);
+            return (int) SystemSetting::get('driver_default_on_time_score', 75);
         }
 
         $onTimeSchedules = self::scheduleWindowQuery($driverId, $start, $end)
@@ -76,7 +73,7 @@ class DriverPerformanceService
         $incidentPenalty = self::incidentPenalty();
         $incidentCount = self::incidentCountForPeriod($driverId, $start, $end);
 
-        return max(0, 100 - ($incidentCount * $incidentPenalty));
+        return (int) max(0, 100 - ($incidentCount * $incidentPenalty));
     }
 
     protected static function calculateOnTimeRate(int $driverId, Carbon $from): int
@@ -91,7 +88,21 @@ class DriverPerformanceService
 
     protected static function calculatePassengerRating(int $driverId, Carbon $start, Carbon $end = null): int
     {
-        return (int) SystemSetting::get('driver_passenger_rating_default', 80);
+        $query = \App\Models\PassengerRating::where('driver_id', $driverId);
+
+        if ($end) {
+            $query->whereBetween('created_at', [$start, $end]);
+        } else {
+            $query->where('created_at', '>=', $start);
+        }
+
+        $avgRating = $query->avg('rating');
+
+        if ($avgRating !== null) {
+            return (int) round($avgRating);
+        }
+
+        return (int) SystemSetting::get('driver_default_passenger_score', 80);
     }
 
     public static function getSummary(int $driverId): array
@@ -273,13 +284,35 @@ class DriverPerformanceService
             });
     }
 
+    public static function calculateDriverRankingScore(int $perfScore, int $onTime, int $total, int $incidents): float
+    {
+        $onTimeRate = $total > 0 ? ($onTime / $total) * 100 : 0;
+
+        $incidentPenalty = self::incidentPenalty();
+        $safetyScore = max(0, 100 - ($incidents * $incidentPenalty));
+
+        $weightPerf = (float) SystemSetting::get('report_score_weight_performance', 0.4);
+        $weightOnTime = (float) SystemSetting::get('report_score_weight_on_time', 0.4);
+        $weightSafety = (float) SystemSetting::get('report_score_weight_safety', 0.2);
+
+        // Normalize weights in case they don't add up to 1
+        $totalWeight = $weightPerf + $weightOnTime + $weightSafety;
+        if ($totalWeight > 0) {
+            $weightPerf /= $totalWeight;
+            $weightOnTime /= $totalWeight;
+            $weightSafety /= $totalWeight;
+        }
+
+        return round(($perfScore * $weightPerf) + ($onTimeRate * $weightOnTime) + ($safetyScore * $weightSafety), 2);
+    }
+
     private static function incidentCountForPeriod(int $driverId, Carbon $start, Carbon $end): int
     {
         return Incident::where('driver_id', $driverId)
             ->whereBetween('created_at', [$start, $end])
             ->get()
             ->filter(function ($incident) {
-                return !Incident::isTrafficDelay($incident->type) 
+                return !Incident::isTrafficDelay($incident->type)
                     && !Incident::isPassengerConcern($incident->type);
             })
             ->count();
@@ -287,10 +320,7 @@ class DriverPerformanceService
 
     private static function incidentPenalty(): int
     {
-        return (int) (
-            SystemSetting::get('driver_score_incident_penalty')
-            ?? SystemSetting::get('incident_score_penalty_per_event', 10)
-        );
+        return (int) SystemSetting::get('driver_score_incident_penalty', 10);
     }
 
     private static function delayPenalty(): int

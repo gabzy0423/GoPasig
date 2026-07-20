@@ -46,6 +46,7 @@ class TripLogTest extends TestCase
             'bus_id' => $bus->id,
             'route_id' => $route->id,
             'passengers' => 45,
+            'alighted_passengers' => 40,
             'peak_passengers' => 50,
             'status' => 'completed',
             'is_on_time' => true,
@@ -70,12 +71,14 @@ class TripLogTest extends TestCase
 
         $tripLog = TripLogService::logTrip($trip, [
             'passengers' => 50,
+            'alighted_passengers' => 42,
             'is_on_time' => true,
         ]);
 
         $this->assertNotNull($tripLog);
         $this->assertEquals($trip->driver_id, $tripLog->driver_id);
         $this->assertEquals(50, $tripLog->passengers);
+        $this->assertEquals(42, $tripLog->alighted_passengers);
         $this->assertTrue($tripLog->is_on_time);
     }
 

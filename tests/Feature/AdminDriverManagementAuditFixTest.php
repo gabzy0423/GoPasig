@@ -95,7 +95,7 @@ class AdminDriverManagementAuditFixTest extends TestCase
     {
         SystemSetting::updateOrCreate(['key' => 'incident_score_penalty_per_event'], ['value' => '25']);
         SystemSetting::updateOrCreate(['key' => 'driver_score_incident_penalty'], ['value' => '25']);
-        SystemSetting::updateOrCreate(['key' => 'driver_passenger_rating_default'], ['value' => '100']);
+        SystemSetting::updateOrCreate(['key' => 'driver_default_passenger_score'], ['value' => '100']);
         Cache::flush();
 
         $driver = Driver::factory()->create(['performance_score' => 100, 'incidents_30' => 0]);
@@ -109,14 +109,14 @@ class AdminDriverManagementAuditFixTest extends TestCase
         DriverPerformanceService::recalculate($driver->id);
 
         $driver->refresh();
-        $this->assertSame(75, $driver->performance_score);
+        $this->assertSame(80, $driver->performance_score); // (75 * 0.5) + (75 * 0.3) + (100 * 0.2)
         $this->assertSame(1, $driver->incidents_30);
     }
 
     #[Test]
     public function performance_recalculation_reads_incidents_from_database_not_cached_driver_field(): void
     {
-        SystemSetting::updateOrCreate(['key' => 'driver_passenger_rating_default'], ['value' => '100']);
+        SystemSetting::updateOrCreate(['key' => 'driver_default_passenger_score'], ['value' => '100']);
         Cache::flush();
 
         $driver = Driver::factory()->create(['performance_score' => 50, 'incidents_30' => 3]);
@@ -124,14 +124,14 @@ class AdminDriverManagementAuditFixTest extends TestCase
         DriverPerformanceService::recalculate($driver->id);
 
         $driver->refresh();
-        $this->assertSame(100, $driver->performance_score);
+        $this->assertSame(88, $driver->performance_score); // (75 * 0.5) + (100 * 0.3) + (100 * 0.2)
         $this->assertSame(0, $driver->incidents_30);
     }
 
     #[Test]
     public function performance_schedule_window_filters_by_service_date(): void
     {
-        SystemSetting::updateOrCreate(['key' => 'driver_passenger_rating_default'], ['value' => '100']);
+        SystemSetting::updateOrCreate(['key' => 'driver_default_passenger_score'], ['value' => '100']);
         Cache::flush();
 
         $driver = Driver::factory()->create(['performance_score' => 100]);

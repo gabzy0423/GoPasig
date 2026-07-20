@@ -8,6 +8,8 @@ use App\Models\ServiceAlert;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
+use App\Mail\NotificationMail;
+use Illuminate\Support\Facades\Mail;
 
 class NotificationService
 {
@@ -25,7 +27,7 @@ class NotificationService
 
         // Find drivers with licenses expiring soon
         $expiryDate = Carbon::now()->addDays($daysThreshold);
-        
+
         $drivers = Driver::whereNotNull('license_expiry')
             ->where('license_expiry', '<=', $expiryDate)
             ->where('license_expiry', '>', Carbon::now())
@@ -36,7 +38,7 @@ class NotificationService
             try {
                 // Prepare notification data
                 $daysUntilExpiry = Carbon::now()->diffInDays($driver->license_expiry, false);
-                
+
                 $notificationData = [
                     'driver_id' => $driver->id,
                     'driver_name' => $driver->name,
@@ -189,7 +191,7 @@ class NotificationService
 
         // Find scheduled maintenance within threshold
         $dueDate = Carbon::now()->addDays($daysThreshold);
-        
+
         $maintenance = MaintenanceRecord::where('status', 'scheduled')
             ->where('scheduled_at', '<=', $dueDate)
             ->where('scheduled_at', '>', Carbon::now())
@@ -239,7 +241,7 @@ class NotificationService
             'recipients' => []
         ];
 
-        $admins = $adminId 
+        $admins = $adminId
             ? User::where('id', $adminId)->where('role', 'admin')->get()
             : User::where('role', 'admin')->get();
 
@@ -282,6 +284,12 @@ class NotificationService
      * Private helper methods
      */
 
+    private static function sendEmailNotification(string $email, array $data): void
+    {
+        Mail::to($email)->queue(new NotificationMail($data));
+
+        Log::info("Notification queued for {$email}", ['notification_type' => $data['notification_type'] ?? 'general']);
+    }
 
     private static function getLicenseExpiryUrgency(int $daysUntilExpiry): string
     {

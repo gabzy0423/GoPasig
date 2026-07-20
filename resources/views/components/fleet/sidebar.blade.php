@@ -16,7 +16,7 @@
         </a>
         <a href="{{ route('fleet.monitor') }}" data-nav="monitor" class="flex w-full items-center gap-3 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-all duration-200 rounded-md cursor-pointer text-left {{ request()->routeIs('fleet.monitor') ? 'bg-white/12 text-white' : 'text-white/70 hover:text-white hover:bg-white/[0.04]' }}">
             <i class="ti ti-map-pin text-[20px]"></i>
-            Fleet Monitor
+            Trace
         </a>
         <a href="{{ route('fleet.utilization') }}" data-nav="utilization" class="flex w-full items-center gap-3 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-all duration-200 rounded-md cursor-pointer text-left {{ request()->routeIs('fleet.utilization') ? 'bg-white/12 text-white' : 'text-white/70 hover:text-white hover:bg-white/[0.04]' }}">
             <i class="ti ti-chart-dots text-[20px]"></i>

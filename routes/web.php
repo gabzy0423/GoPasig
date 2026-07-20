@@ -144,6 +144,7 @@ Route::middleware(['auth', 'role:dispatcher'])->prefix('fleet')->name('fleet.')-
     Route::get('/api/drivers-data', [DriverPerformanceController::class, 'getDriversData'])->name('api.drivers-data');
     Route::get('/api/drivers-details/{id}', [DriverPerformanceController::class, 'getDriverDetails'])->name('api.drivers-details');
     Route::get('/api/drivers-export', [DriverPerformanceController::class, 'exportCsv'])->name('api.drivers-export');
+    Route::post('/api/drivers-message/{id}', [DriverPerformanceController::class, 'messageDriver'])->name('api.drivers-message');
 
     Route::get('/routes', fn() => redirect()->route('fleet.dashboard', ['tab' => 'routes']))->name('routes');
     Route::get('/api/routes-data', [RoutePerformanceController::class, 'getRoutesData'])->name('api.routes-data');

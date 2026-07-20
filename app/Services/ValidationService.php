@@ -2,20 +2,28 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Log;
 use App\Models\SystemSetting;
+use Illuminate\Support\Facades\Log;
 
 class ValidationService
 {
     /**
-     * Philippines geographic bounds (main island group)
-     * Latitude: 4.6째 to 20.9째N
-     * Longitude: 116.4째 to 127.0째E
+     * Return the configured geographic bounds for coordinate validation.
+     * Values are read from SystemSetting so they can be adjusted without
+     * touching source code (e.g. tightening to Pasig City only).
+     * Falls back to the Pasig-area defaults seeded by the migration.
+     *
+     * @return array{lat_min: float, lat_max: float, lng_min: float, lng_max: float}
      */
-    private const PHILIPPINES_LAT_MIN = 4.6;
-    private const PHILIPPINES_LAT_MAX = 20.9;
-    private const PHILIPPINES_LNG_MIN = 116.4;
-    private const PHILIPPINES_LNG_MAX = 127.0;
+    private static function getBounds(): array
+    {
+        return [
+            'lat_min' => (float) SystemSetting::get('coordinates_bounds_south_latitude', 14.30),
+            'lat_max' => (float) SystemSetting::get('coordinates_bounds_north_latitude', 14.85),
+            'lng_min' => (float) SystemSetting::get('coordinates_bounds_west_longitude', 120.95),
+            'lng_max' => (float) SystemSetting::get('coordinates_bounds_east_longitude', 121.20),
+        ];
+    }
 
     /**
      * Validate GPS coordinates are within Philippines bounds
@@ -25,32 +33,31 @@ class ValidationService
      */
     public static function validateGPSCoordinates(float $latitude, float $longitude): array
     {
+        $bounds = self::getBounds();
+
+        // Check latitude bounds
+        if ($latitude < $bounds['lat_min'] || $latitude > $bounds['lat_max']) {
+            return [
+                'valid' => false,
+                'message' => "Latitude {$latitude} out of bounds. Configured range: " .
+                    $bounds['lat_min'] . "� to " . $bounds['lat_max'] . "캮"
+            ];
+        }
+
+        // Check longitude bounds
+        if ($longitude < $bounds['lng_min'] || $longitude > $bounds['lng_max']) {
+            return [
+                'valid' => false,
+                'message' => "Longitude {$longitude} out of bounds. Configured range: " .
+                    $bounds['lng_min'] . "� to " . $bounds['lng_max'] . "캞"
+            ];
+        }
+
         // Check for NaN or Infinity
         if (!is_finite($latitude) || !is_finite($longitude)) {
             return [
                 'valid' => false,
                 'message' => 'GPS coordinates contain invalid values (NaN or Infinity)'
-            ];
-        }
-
-        $latMin = (float) SystemSetting::get('coordinates_bounds_south_latitude', self::PHILIPPINES_LAT_MIN);
-        $latMax = (float) SystemSetting::get('coordinates_bounds_north_latitude', self::PHILIPPINES_LAT_MAX);
-        $lngMin = (float) SystemSetting::get('coordinates_bounds_west_longitude', self::PHILIPPINES_LNG_MIN);
-        $lngMax = (float) SystemSetting::get('coordinates_bounds_east_longitude', self::PHILIPPINES_LNG_MAX);
-
-        // Check latitude bounds
-        if ($latitude < $latMin || $latitude > $latMax) {
-            return [
-                'valid' => false,
-                'message' => "Latitude {$latitude} out of bounds. Range: {$latMin}째 to {$latMax}째N"
-            ];
-        }
-
-        // Check longitude bounds
-        if ($longitude < $lngMin || $longitude > $lngMax) {
-            return [
-                'valid' => false,
-                'message' => "Longitude {$longitude} out of bounds. Range: {$lngMin}째 to {$lngMax}째E"
             ];
         }
 
@@ -85,7 +92,8 @@ class ValidationService
         }
 
         $invalidCoords = [];
-        
+        $bounds = self::getBounds();
+
         foreach ($coordinates as $index => $coord) {
             // Check coordinate format
             if (!is_array($coord) || count($coord) < 2) {
@@ -109,8 +117,8 @@ class ValidationService
             }
 
             // Validate bounds
-            if ($lat < self::PHILIPPINES_LAT_MIN || $lat > self::PHILIPPINES_LAT_MAX ||
-                $lng < self::PHILIPPINES_LNG_MIN || $lng > self::PHILIPPINES_LNG_MAX) {
+            if ($lat < $bounds['lat_min'] || $lat > $bounds['lat_max'] ||
+                $lng < $bounds['lng_min'] || $lng > $bounds['lng_max']) {
                 $invalidCoords[] = [
                     'index' => $index,
                     'lat' => $lat,
@@ -137,7 +145,7 @@ class ValidationService
         }
 
         // Check for excessive distance jumps between consecutive points (basic geometry validation)
-        $maxJumpKm = (float) SystemSetting::get('max_polyline_jump_km', 50.0);
+        $maxJumpKm = (float) SystemSetting::get('polyline_max_jump_km', 10); // Configurable; default 10km suits Pasig City scale
         $invalidJumps = [];
 
         for ($i = 0; $i < count($coordinates) - 1; $i++) {
@@ -147,7 +155,7 @@ class ValidationService
             $lng2 = $coordinates[$i + 1][1];
 
             $distance = self::haversineDistance($lat1, $lng1, $lat2, $lng2);
-            
+
             if ($distance > $maxJumpKm) {
                 $invalidJumps[] = [
                     'from_index' => $i,
@@ -179,9 +187,18 @@ class ValidationService
      */
     private static function haversineDistance(float $lat1, float $lng1, float $lat2, float $lng2): float
     {
-        $c1 = new \App\Services\ValueObjects\Coordinate($lat1, $lng1);
-        $c2 = new \App\Services\ValueObjects\Coordinate($lat2, $lng2);
-        return app(\App\Services\Contracts\GeospatialServiceInterface::class)->calculateDistanceKm($c1, $c2);
+        $R = 6371; // Earth radius in kilometers
+
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+
+        $a = sin($dLat / 2) * sin($dLat / 2) +
+             cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
+             sin($dLng / 2) * sin($dLng / 2);
+
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+        return $R * $c;
     }
 
     /**
@@ -246,9 +263,9 @@ class ValidationService
 
         $duration = $arrMinutes - $depMinutes;
 
-        // Duration must be between 5 minutes and 12 hours
-        $minDuration = (int) SystemSetting::get('min_trip_duration_minutes', 5);
-        $maxDuration = (int) SystemSetting::get('max_trip_duration_minutes', 720);
+        // Duration must be within configured bounds
+        $minDuration = (int) SystemSetting::get('schedule_min_duration_minutes', 5);
+        $maxDuration = (int) SystemSetting::get('schedule_max_duration_minutes', 720);
 
         if ($duration < $minDuration) {
             return [
@@ -258,10 +275,9 @@ class ValidationService
         }
 
         if ($duration > $maxDuration) {
-            $maxHours = round($maxDuration / 60, 1);
             return [
                 'valid' => false,
-                'message' => "Trip duration too long (maximum {$maxHours} hours)"
+                'message' => "Trip duration too long (maximum {$maxDuration} minutes)"
             ];
         }
 
@@ -326,19 +342,19 @@ class ValidationService
     {
         // Remove script tags completely
         $output = preg_replace('/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/i', '', $input);
-        
+
         // Remove iframe tags completely
         $output = preg_replace('/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/i', '', $output);
-        
+
         // Remove on* event attributes (onclick, onload, etc.)
         $output = preg_replace('/\s*on\w+\s*=\s*[\'"][^\'"]*[\'"]/i', '', $output);
-        
+
         // Remove style tags and style attributes with javascript: protocol
         $output = preg_replace('/javascript:/i', '', $output);
-        
+
         // Escape remaining HTML entities for safe display
         $output = htmlspecialchars($output, ENT_QUOTES, 'UTF-8');
-        
+
         return $output;
     }
 

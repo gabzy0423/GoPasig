@@ -101,8 +101,8 @@ class ReportGenerationService
                 ],
                 'utilization' => [
                     'scheduled_hours' => $totalSchedules > 0 ? round(($totalSchedules * ($route->travel_time_minutes ?? 90)) / 60, 2) : 0,
-                    'average_passengers_per_trip' => $tripLogs->count() > 0 
-                        ? round($tripLogs->sum('peak_passengers') / $tripLogs->count(), 2) 
+                    'average_passengers_per_trip' => $tripLogs->count() > 0
+                        ? round($tripLogs->sum('peak_passengers') / $tripLogs->count(), 2)
                         : 0,
                 ],
             ];
@@ -173,9 +173,9 @@ class ReportGenerationService
                 'safety_record' => [
                     'incidents_period' => $incidents,
                     'incidents_last_30_days' => $driver->incidents_30,
-                    'safety_rating' => max(0, 100 - ($incidents * 5)), // Simple formula
+                    'safety_rating' => max(0, 100 - ($incidents * (int) \App\Models\SystemSetting::get('driver_score_incident_penalty', 10))),
                 ],
-                'ranking_score' => self::calculateDriverRankingScore($performanceScore, $onTimeTrips, $totalTrips, $incidents),
+                'ranking_score' => \App\Services\DriverPerformanceService::calculateDriverRankingScore($performanceScore, $onTimeTrips, $totalTrips, $incidents),
             ];
         }
 
@@ -255,7 +255,7 @@ class ReportGenerationService
         $totalSchedulesCount = Schedule::whereIn('bus_id', $buses->pluck('id'))
             ->whereBetween('created_at', [$startDate, $endDate])
             ->count();
-        
+
         $totalPassengers = Schedule::whereIn('bus_id', $buses->pluck('id'))
             ->whereBetween('created_at', [$startDate, $endDate])
             ->sum('passengers');
@@ -305,18 +305,8 @@ class ReportGenerationService
         return 'F';
     }
 
-    private static function calculateDriverRankingScore(int $perfScore, int $onTime, int $total, int $incidents): float
-    {
-        $onTimeRate = $total > 0 ? ($onTime / $total) * 100 : 0;
-        $incidentPenalty = (int) SystemSetting::get('driver_score_incident_penalty', 10);
-        $safetyScore = max(0, 100 - ($incidents * $incidentPenalty));
 
-        $weightPerf = (float) SystemSetting::get('report_score_weight_performance', 0.4);
-        $weightOnTime = (float) SystemSetting::get('report_score_weight_on_time', 0.4);
-        $weightSafety = (float) SystemSetting::get('report_score_weight_safety', 0.2);
-
-        return ($perfScore * $weightPerf) + ($onTimeRate * $weightOnTime) + ($safetyScore * $weightSafety);
-    }
+    // Note: calculateDriverRankingScore has been moved to DriverPerformanceService
 
     /**
      * Export report as CSV
