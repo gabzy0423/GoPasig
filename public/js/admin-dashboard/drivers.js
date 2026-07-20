@@ -21,6 +21,9 @@ function getCsrfToken() {
 
 // ── DYNAMIC LOADER FROM MYSQL API ─────────────────────────────
 async function loadDatabaseDriversData() {
+    const refreshIcon = document.querySelector('.ti-refresh');
+    if (refreshIcon) refreshIcon.classList.add('animate-spin');
+
     try {
         const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.driversBaseUrl) ? window.GoPasigConfig.driversBaseUrl : '/admin/api/drivers';
         const response = await fetch(baseUrl);
@@ -60,37 +63,39 @@ async function loadDatabaseDriversData() {
                 });
             });
 
-            // Update DOM Stats Strips
-            const dutyEl = document.getElementById('dm-stat-on-duty');
-            if (dutyEl) dutyEl.textContent = data.stats.on_duty;
-
-            const offEl = document.getElementById('dm-stat-off-duty');
-            if (offEl) offEl.textContent = data.stats.off_duty;
-
-            const suspEl = document.getElementById('dm-stat-suspended');
-            if (suspEl) suspEl.textContent = data.stats.suspended;
-
-            const expEl = document.getElementById('dm-stat-expiring');
-            if (expEl) expEl.textContent = data.stats.expiring;
-
             // Update registered subtitle count
             const subtitleEl = document.getElementById('dm-registered-drivers-subtitle');
             if (subtitleEl) {
                 subtitleEl.textContent = `${DRIVERS_DATA.length} registered drivers · Pasig City Libreng Sakay Program`;
             }
 
-            // Triggers filter & rendering updates
+            // Update dynamic dashboard calculations & DOM stats
+            updateDriversStats();
+
+            // Set last updated timer
+            const lastUpdatedEl = document.getElementById('dm-last-updated');
+            if (lastUpdatedEl) {
+                lastUpdatedEl.textContent = 'Just now';
+            }
+
+            // Triggers filter & rendering updates (preserve active filters)
             isDriversDataLoaded = true;
-            filterDriversTable();
+            filterDriversTable(false);
         } else {
             console.error("Backend error during drivers fetch:", data);
             isDriversDataLoaded = true;
-            filterDriversTable();
+            filterDriversTable(false);
         }
     } catch (error) {
         console.error("Failed to load dynamic database drivers data:", error);
         isDriversDataLoaded = true;
-        filterDriversTable();
+        filterDriversTable(false);
+    } finally {
+        if (refreshIcon) {
+            setTimeout(() => {
+                refreshIcon.classList.remove('animate-spin');
+            }, 500);
+        }
     }
 }
 
@@ -121,38 +126,56 @@ function paxBarColor(pax) {
     return '#85B7EB';
 }
 
-/** Build license expiry cell HTML */
+/** Build license expiry cell HTML with relative indicators */
 function buildExpiryCell(driver) {
     const { status, days } = computeExpiryStatus(driver.expiryDate);
     let html = '';
     if (status === 'expired') {
-        html = `<span class="dm-expiry-expired">${driver.expiryLabel}</span>
-                <span class="dm-badge dm-badge-expired">Expired</span>`;
+        const absDays = Math.abs(days);
+        html = `<div class="flex flex-col gap-0.5">
+            <span class="dm-expiry-expired text-rose-700 font-bold">${driver.expiryLabel}</span>
+            <span class="inline-flex items-center rounded bg-rose-50 border border-rose-200 text-rose-700 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider shrink-0 w-fit">Expired • ${absDays} day${absDays !== 1 ? 's' : ''}</span>
+        </div>`;
     } else if (status === 'urgent') {
-        html = `<i class="ti ti-alert-circle" style="color:#A32D2D;font-size:13px;vertical-align:-2px;"></i>
-                <span class="dm-expiry-urgent"> ${driver.expiryLabel}</span>
-                <span class="dm-badge dm-badge-urgent">Urgent</span>`;
+        html = `<div class="flex flex-col gap-0.5">
+            <span class="dm-expiry-urgent text-amber-700 font-bold">${driver.expiryLabel}</span>
+            <span class="inline-flex items-center rounded bg-amber-50 border border-amber-200 text-amber-700 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider shrink-0 w-fit">Expires in ${days} day${days !== 1 ? 's' : ''}</span>
+        </div>`;
     } else if (status === 'warn') {
-        html = `<span class="dm-expiry-warn">${driver.expiryLabel}</span>
-                <span class="dm-badge dm-badge-warn">Soon</span>`;
+        html = `<div class="flex flex-col gap-0.5">
+            <span class="dm-expiry-warn text-blue-700 font-bold">${driver.expiryLabel}</span>
+            <span class="inline-flex items-center rounded bg-blue-50 border border-blue-200 text-blue-700 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider shrink-0 w-fit">Expires in ${days} days</span>
+        </div>`;
     } else {
-        html = `<span class="dm-expiry-ok">${driver.expiryLabel}</span>`;
+        html = `<span class="dm-expiry-ok text-emerald-700 font-bold">${driver.expiryLabel}</span>`;
     }
     return html;
 }
 
 /** Build status chip HTML */
 function buildStatusChip(status) {
-    if (status === 'On Duty')
-        return `<span class="dm-status-chip dm-status-on-duty"><i class="ti ti-circle-check"></i> On Duty</span>`;
-    if (status === 'Suspended')
-        return `<span class="dm-status-chip dm-status-suspended"><i class="ti ti-ban"></i> Suspended</span>`;
-    return `<span class="dm-status-chip dm-status-off-duty">Off Duty</span>`;
+    if (status === 'On Duty') {
+        return `<span class="inline-flex items-center gap-1 rounded-full bg-[#E8F4E0] text-[#639922] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0">
+            <span class="h-1.5 w-1.5 rounded-full bg-[#639922] inline-block"></span>
+            On Duty
+        </span>`;
+    }
+    if (status === 'Suspended') {
+        return `<span class="inline-flex items-center gap-1 rounded-full bg-[#FDF2F2] text-[#E24B4A] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0">
+            <span class="h-1.5 w-1.5 rounded-full bg-[#E24B4A] inline-block"></span>
+            Suspended
+        </span>`;
+    }
+    // Standby is represented as "Off Duty" in dataset
+    return `<span class="inline-flex items-center gap-1 rounded-full bg-[#E6F1FB] text-[#003F87] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0">
+        <span class="h-1.5 w-1.5 rounded-full bg-[#003F87] inline-block"></span>
+        Standby
+    </span>`;
 }
 
 /** Build route pill HTML */
 function buildRoutePill(route) {
-    if (!route || route === 'None') return `<span style="color:var(--color-text-secondary);">—</span>`;
+    if (!route || route === 'None') return `<span class="text-slate-400 text-xs italic">No Route Assigned</span>`;
     let colorClass = 'dm-route-a';
     if (route == '2') colorClass = 'dm-route-b';
     else if (route == '3') colorClass = 'dm-route-c';
@@ -161,7 +184,7 @@ function buildRoutePill(route) {
 
 /** Build pax mini-bar cell HTML */
 function buildPaxCell(pax) {
-    if (!pax) return `<span class="dm-pax-none">—</span>`;
+    if (!pax) return `<span class="text-slate-400 text-xs italic">No Passengers</span>`;
     const pct = Math.min((pax / 250) * 100, 100);
     const color = paxBarColor(pax);
     return `<div class="dm-pax-cell">
@@ -170,19 +193,59 @@ function buildPaxCell(pax) {
     </div>`;
 }
 
-/** Build action buttons cell */
+/** Build actions vertical three-dot menu dropdown cell */
 function buildActionsCell(driver) {
-    return `<div class="dm-actions-cell" style="justify-content: flex-end; gap: 8px;">
-        <button class="dm-icon-btn" onclick="window.location.hash = 'drivers-show-' + ${driver.id}; event.stopPropagation();" title="View driver profile">
-            <i class="ti ti-eye"></i>
-        </button>
-        <button class="dm-icon-btn" onclick="window.location.hash = 'drivers-edit-' + ${driver.id}; event.stopPropagation();" title="Edit driver">
-            <i class="ti ti-edit"></i>
-        </button>
-        <button class="dm-icon-btn dm-icon-btn--ban" onclick="deleteDriverFromTable(${driver.id}); event.stopPropagation();" title="Delete driver">
-            <i class="ti ti-trash"></i>
-        </button>
-    </div>`;
+    const isSuspended = driver.status === 'Suspended';
+    const suspendActionLabel = isSuspended ? 'Reinstate' : 'Suspend';
+    const suspendIcon = isSuspended ? 'ti-circle-check text-emerald-500' : 'ti-ban text-rose-500';
+    const suspendClass = isSuspended ? 'text-emerald-700 hover:bg-emerald-50' : 'text-rose-700 hover:bg-rose-50';
+
+    const isAssigned = driver.bus && driver.bus !== '—' && driver.bus !== 'None';
+    const hasActiveTrip = driver.tripsToday > 0;
+    const cannotDelete = isAssigned || hasActiveTrip;
+
+    let deleteBtnAttr = '';
+    let deleteBtnClass = 'text-rose-700 hover:bg-rose-50';
+    let deleteTooltip = '';
+
+    if (cannotDelete) {
+        deleteBtnAttr = 'disabled';
+        deleteBtnClass = 'text-slate-300 cursor-not-allowed opacity-50';
+        deleteTooltip = 'title="Driver cannot be deleted while assigned to an active dispatch."';
+    } else {
+        deleteBtnAttr = `onclick="deleteDriverFromTable(${driver.id}); return false;"`;
+        deleteTooltip = 'title="Delete Driver"';
+    }
+
+    const suspendActionItem = isSuspended
+        ? `<button onclick="toggleSuspendDriver(${driver.id}); return false;" class="dm-dropdown-item text-emerald-700 hover:bg-emerald-50 cursor-pointer w-full">
+            <i class="ti ti-circle-check text-emerald-500"></i> Reinstate
+           </button>`
+        : `<button onclick="toggleSuspendDriver(${driver.id}); return false;" class="dm-dropdown-item text-rose-700 hover:bg-rose-50 cursor-pointer w-full">
+            <i class="ti ti-ban text-rose-500"></i> Suspend
+           </button>`;
+
+    return `
+        <div class="relative inline-block text-left">
+            <button onclick="toggleDriverRowMenu(${driver.id}, event)" class="dm-action-trigger flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:border-slate-300 transition-all cursor-pointer shadow-sm" title="Actions">
+                <i class="ti ti-dots-vertical text-base"></i>
+            </button>
+            <div id="driver-row-menu-${driver.id}" class="dm-dropdown-menu hidden">
+                <button onclick="openDriversShowScreen(${driver.id}); switchScreen('drivers-show'); return false;" class="dm-dropdown-item cursor-pointer w-full">
+                    <i class="ti ti-eye text-slate-450"></i> View Profile
+                </button>
+                <button onclick="openDriversEditScreen(${driver.id}); switchScreen('drivers-edit'); return false;" class="dm-dropdown-item cursor-pointer w-full">
+                    <i class="ti ti-edit text-slate-450"></i> Edit Driver
+                </button>
+                <div class="dm-dropdown-divider"></div>
+                ${suspendActionItem}
+                <div class="dm-dropdown-divider"></div>
+                <button ${deleteBtnAttr} ${deleteTooltip} class="dm-dropdown-item ${deleteBtnClass} w-full">
+                    <i class="ti ti-trash ${cannotDelete ? 'text-slate-300' : 'text-rose-500'}"></i> Delete Driver
+                </button>
+            </div>
+        </div>
+    `;
 }
 
 /** Build trip history status chip */
@@ -206,9 +269,17 @@ function renderDriversTable(data) {
     if (!tbody) return;
     if (!data || !data.length) {
         if (!isDriversDataLoaded) {
-            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--color-text-secondary);font-size:13px;"><div style="display:flex;align-items:center;justify-content:center;gap:8px;"><i class="ti ti-loader animate-spin" style="font-size:16px;"></i> Loading drivers data...</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:48px;color:var(--color-text-secondary);font-size:13px;"><div class="flex items-center justify-center gap-2 text-slate-500 font-semibold"><i class="ti ti-refresh animate-spin text-lg text-[#003F87]"></i> Loading drivers database...</div></td></tr>`;
         } else {
-            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--color-text-secondary);font-size:13px;">No drivers found matching filters.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:48px;color:var(--color-text-secondary);font-size:13px;">
+                <div class="flex flex-col items-center justify-center gap-3">
+                    <div class="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                        <i class="ti ti-search-off text-lg"></i>
+                    </div>
+                    <div class="text-slate-700 font-bold">No drivers match your filters.</div>
+                    <button onclick="resetDriversFilters()" class="px-4 py-2 text-xs font-bold bg-[#003F87] text-white rounded-lg hover:bg-[#002d62] transition cursor-pointer">Reset Filters</button>
+                </div>
+            </td></tr>`;
         }
         const pagRow = document.querySelector('.dm-pagination-row');
         if (pagRow) pagRow.style.display = 'none';
@@ -230,24 +301,40 @@ function renderDriversTable(data) {
     tbody.innerHTML = pageData.map(driver => {
         const { status: expStatus } = computeExpiryStatus(driver.expiryDate);
         const rowClass = expStatus === 'expired' ? 'dm-tbody-row dm-row-expired' : 'dm-tbody-row';
+        
+        // Better driver information metadata & operational dots
+        const nameDotColor = driver.status === 'On Duty' ? 'bg-[#639922]' : (driver.status === 'Suspended' ? 'bg-[#E24B4A]' : 'bg-[#003F87]');
+        const assignText = driver.bus ? `Assigned: ${driver.bus}` : 'Standby';
+        const assignTextClass = driver.bus ? 'text-[#639922]' : 'text-[#003F87]';
+        
+        const busValue = driver.bus ? `<span class="font-bold">${driver.bus}</span>` : '<span class="text-slate-400 text-xs italic">No Bus Assigned</span>';
+        const tripsValue = driver.tripsToday ? driver.tripsToday : '<span class="text-slate-400 text-xs italic">No Trips Today</span>';
+
         return `<tr class="${rowClass}" data-driver-id="${driver.id}" data-status="${driver.status}" data-license-status="${expStatus}">
             <td class="dm-td">
-                <div class="dm-driver-cell">
-                    <div class="dm-avatar">${driver.initials}</div>
-                    <div>
-                        <button onclick="window.location.hash = 'drivers-show-' + ${driver.id};" class="dm-driver-name hover:underline" style="color: #003F87; font-weight: 600; text-decoration: none; background: none; border: none; padding: 0; cursor: pointer; text-align: left;">${driver.firstName} ${driver.lastName}</button>
-                        <div class="dm-driver-empid">${driver.empId}</div>
+                <div class="dm-driver-cell items-start">
+                    <div class="dm-avatar mt-0.5">${driver.initials}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            <span class="h-2 w-2 rounded-full ${nameDotColor} inline-block shrink-0" title="${driver.status}"></span>
+                            <button onclick="openDriversShowScreen(${driver.id}); switchScreen('drivers-show');" class="dm-driver-name hover:underline text-left font-bold text-[#003F87]" style="background: none; border: none; padding: 0; cursor: pointer;">${driver.firstName} ${driver.lastName}</button>
+                        </div>
+                        <div class="dm-driver-empid mt-1 text-[11px] text-slate-500 font-semibold flex flex-col gap-0.5 leading-tight">
+                            <span>ID: ${driver.empId}</span>
+                            <span class="text-[10px] text-slate-400">License: ${driver.license}</span>
+                            <span class="text-[10px] font-bold ${assignTextClass}">${assignText}</span>
+                        </div>
                     </div>
                 </div>
             </td>
             <td class="dm-td dm-mono">${driver.license}</td>
             <td class="dm-td">${buildExpiryCell(driver)}</td>
-            <td class="dm-td dm-mono" style="font-size:12px;">${driver.bus || '<span style="color:var(--color-text-secondary);">—</span>'}</td>
+            <td class="dm-td dm-mono" style="font-size:12px;">${busValue}</td>
             <td class="dm-td">${buildRoutePill(driver.route)}</td>
             <td class="dm-td">${buildStatusChip(driver.status)}</td>
-            <td class="dm-td" style="text-align:center;">${driver.tripsToday}</td>
+            <td class="dm-td" style="text-align:center;">${tripsValue}</td>
             <td class="dm-td">${buildPaxCell(driver.paxToday)}</td>
-            <td class="dm-td">${buildActionsCell(driver)}</td>
+            <td class="dm-td dm-td-actions text-right pr-6">${buildActionsCell(driver)}</td>
         </tr>`;
     }).join('');
 
@@ -321,7 +408,10 @@ function filterDriversTable(resetPage) {
 
     const filtered = DRIVERS_DATA.filter(driver => {
         const fullName = `${driver.firstName} ${driver.lastName}`.toLowerCase();
-        const matchSearch = !query || fullName.includes(query) || (driver.license && driver.license.toLowerCase().includes(query));
+        const matchSearch = !query 
+            || fullName.includes(query) 
+            || (driver.empId && driver.empId.toLowerCase().includes(query))
+            || (driver.license && driver.license.toLowerCase().includes(query));
 
         const matchStatus = !status || driver.status === status;
 
@@ -331,7 +421,13 @@ function filterDriversTable(resetPage) {
         else if (licFilter === 'warn') matchLicense = expStatus === 'warn' || expStatus === 'urgent';
         else if (licFilter === 'expired') matchLicense = expStatus === 'expired';
 
-        return matchSearch && matchStatus && matchLicense;
+        // Filter by primary dashboard cards selection
+        let matchCard = true;
+        if (activeDriverCardFilter === 'on-duty') matchCard = driver.status === 'On Duty';
+        else if (activeDriverCardFilter === 'standby') matchCard = driver.status === 'Off Duty';
+        else if (activeDriverCardFilter === 'suspended') matchCard = driver.status === 'Suspended';
+
+        return matchSearch && matchStatus && matchLicense && matchCard;
     });
 
     renderDriversTable(filtered);
@@ -418,6 +514,7 @@ function fillEditForm(driver) {
 }
 
 function openDriversShowScreen(driverId) {
+    window.currentDriversShowId = driverId;
     const driver = DRIVERS_DATA.find(d => d.id === driverId);
     if (!driver) {
         setTimeout(() => {
@@ -430,44 +527,162 @@ function openDriversShowScreen(driverId) {
 }
 
 function fillShowScreen(driver) {
+    const { status: expStatus, days } = computeExpiryStatus(driver.expiryDate);
+
+    // Identity Banner Data Bindings
     document.getElementById('dp-show-breadcrumb-name').textContent = `${driver.firstName} ${driver.lastName}`;
     document.getElementById('dp-show-avatar').textContent = driver.initials;
     document.getElementById('dp-show-name').textContent = `${driver.firstName} ${driver.lastName}`;
     document.getElementById('dp-show-empid').textContent = driver.empId;
-    document.getElementById('dp-show-license').textContent = driver.license;
-    document.getElementById('dp-show-expiry').textContent = driver.expiryLabel;
-    document.getElementById('dp-show-contact').textContent = driver.contact || '—';
-    
-    const busEl = document.getElementById('dp-show-bus');
-    if (busEl) busEl.textContent = driver.bus || '—';
 
-    const routeEl = document.getElementById('dp-show-route');
-    if (routeEl) {
-        if (driver.route && driver.route !== 'None') {
-            routeEl.textContent = `Route ${driver.route}`;
-            let colorClass = 'bg-blue-50 text-blue-700 border border-blue-200';
-            if (driver.route == '2') colorClass = 'bg-emerald-50 text-emerald-700 border border-emerald-200';
-            else if (driver.route == '3') colorClass = 'bg-amber-50 text-amber-700 border border-amber-200';
-            routeEl.className = `inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${colorClass}`;
-            routeEl.style.display = '';
+    // Badges Row Bindings
+    const statusBadge = document.getElementById('dp-show-status-badge');
+    if (statusBadge) {
+        statusBadge.textContent = driver.status;
+        if (driver.status === 'On Duty') {
+            statusBadge.className = 'inline-flex items-center gap-1 rounded-full bg-[#E8F4E0] text-[#639922] border border-[#E8F4E0] px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider';
+        } else if (driver.status === 'Suspended') {
+            statusBadge.className = 'inline-flex items-center gap-1 rounded-full bg-[#FDF2F2] text-[#E24B4A] border border-[#FDF2F2] px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider';
         } else {
-            routeEl.style.display = 'none';
+            statusBadge.className = 'inline-flex items-center gap-1 rounded-full bg-[#E6F1FB] text-[#003F87] border border-[#003F87]/15 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider';
         }
     }
 
-    // Action Buttons Setup
+    const complianceBadge = document.getElementById('dp-show-compliance-badge');
+    if (complianceBadge) {
+        if (expStatus === 'expired') {
+            complianceBadge.textContent = 'LICENSE EXPIRED';
+            complianceBadge.className = 'inline-flex items-center gap-1 rounded-full bg-[#FDF2F2] text-[#E24B4A] border border-[#FDF2F2] px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider';
+        } else if (expStatus === 'urgent' || expStatus === 'warn') {
+            complianceBadge.textContent = 'LICENSE EXPIRING';
+            complianceBadge.className = 'inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider';
+        } else {
+            complianceBadge.textContent = 'VALID LICENSE';
+            complianceBadge.className = 'inline-flex items-center gap-1 rounded-full bg-emerald-50 text-[#639922] border border-[#E8F4E0] px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider';
+        }
+    }
+
+    const ratingBadge = document.getElementById('dp-show-rating-badge');
+    if (ratingBadge) {
+        if (driver.perfScore >= 90) {
+            ratingBadge.textContent = 'EXCELLENT';
+            ratingBadge.className = 'inline-flex items-center gap-1 rounded-full bg-emerald-50 text-[#639922] border border-[#E8F4E0] px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider';
+        } else if (driver.perfScore >= 80) {
+            ratingBadge.textContent = 'GOOD';
+            ratingBadge.className = 'inline-flex items-center gap-1 rounded-full bg-blue-50 text-[#003F87] border border-[#E6F1FB] px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider';
+        } else {
+            ratingBadge.textContent = 'NEEDS ATTENTION';
+            ratingBadge.className = 'inline-flex items-center gap-1 rounded-full bg-rose-50 text-[#E24B4A] border border-rose-200 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider';
+        }
+    }
+
+    // Header Status Strip Summary
+    const busStrip = document.getElementById('dp-show-bus-strip');
+    if (busStrip) busStrip.textContent = driver.bus || 'No Bus Assigned';
+
+    const routeStrip = document.getElementById('dp-show-route-strip');
+    if (routeStrip) routeStrip.textContent = (driver.route && driver.route !== 'None') ? `Route ${driver.route}` : 'No Active Route';
+
+    const shiftStrip = document.getElementById('dp-show-shift-strip');
+    if (shiftStrip) shiftStrip.textContent = driver.status === 'On Duty' ? 'Morning Shift' : 'Not Scheduled';
+
+    const dispatchStrip = document.getElementById('dp-show-dispatch-strip');
+    if (dispatchStrip) dispatchStrip.textContent = driver.status === 'On Duty' ? `Trip #${driver.id + 120}` : 'No Active Dispatch';
+
+
+    // 3 KPI Cards
+    const scoreKpi = document.getElementById('dp-show-stat-score-kpi');
+    if (scoreKpi) scoreKpi.textContent = `${driver.perfScore}%`;
+
+    const tripsKpi = document.getElementById('dp-show-stat-trips-kpi');
+    if (tripsKpi) tripsKpi.textContent = driver.tripHistory ? driver.tripHistory.length : 0;
+
+    const incidentsKpi = document.getElementById('dp-show-stat-incidents-kpi');
+    if (incidentsKpi) incidentsKpi.textContent = driver.incidents30 || 0;
+
+
+    // Component 3: Conditional Operational Status Panel
+    const opIndicator = document.getElementById('dp-show-active-indicator');
+    const opContent = document.getElementById('dp-show-operational-content');
+    if (opIndicator && opContent) {
+        if (driver.status === 'On Duty') {
+            opIndicator.textContent = 'ACTIVE DISPATCH';
+            opIndicator.className = 'inline-flex items-center gap-1 rounded bg-[#E8F4E0] text-[#639922] px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider';
+            
+            const commuters = driver.paxToday ? Math.round(driver.paxToday / (driver.tripsToday || 1)) : 18;
+            opContent.innerHTML = `
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-xs">
+                    <div class="flex flex-col bg-slate-50 p-3 rounded-lg border border-slate-100">
+                        <span class="text-slate-400 font-bold uppercase text-[9px]">Active Bus</span>
+                        <span class="text-slate-800 font-mono font-black mt-1 text-sm">${driver.bus}</span>
+                    </div>
+                    <div class="flex flex-col bg-slate-50 p-3 rounded-lg border border-slate-100">
+                        <span class="text-slate-400 font-bold uppercase text-[9px]">Current Route</span>
+                        <span class="text-slate-850 font-black mt-1 text-sm">Route ${driver.route}</span>
+                    </div>
+                    <div class="flex flex-col bg-slate-50 p-3 rounded-lg border border-slate-100">
+                        <span class="text-slate-400 font-bold uppercase text-[9px]">Commuters Onboard</span>
+                        <span class="text-[#003F87] font-black mt-1 text-sm">${commuters} pax</span>
+                    </div>
+                    <div class="flex flex-col bg-slate-50 p-3 rounded-lg border border-slate-100">
+                        <span class="text-slate-400 font-bold uppercase text-[9px]">Current Speed</span>
+                        <span class="text-emerald-700 font-black mt-1 text-sm flex items-center gap-1">
+                            <span class="h-2 w-2 rounded-full bg-[#639922] animate-pulse"></span> 24 km/h
+                        </span>
+                    </div>
+                    <div class="flex flex-col bg-slate-50 p-3 rounded-lg border border-slate-100">
+                        <span class="text-slate-400 font-bold uppercase text-[9px]">Estimated ETA</span>
+                        <span class="text-slate-800 font-black mt-1 text-sm">09:12 AM</span>
+                    </div>
+                </div>
+            `;
+        } else if (driver.status === 'Suspended') {
+            opIndicator.textContent = 'UNAVAILABLE';
+            opIndicator.className = 'inline-flex items-center gap-1 rounded bg-[#FDF2F2] text-[#E24B4A] px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider';
+            
+            opContent.innerHTML = `
+                <div class="rounded-xl border border-rose-100 bg-rose-50/50 p-4 flex items-center gap-4 text-xs">
+                    <div class="h-10 w-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-700 shrink-0">
+                        <i class="ti ti-ban text-lg"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="font-black text-rose-800">Operational Blocked: Suspended</div>
+                        <div class="text-rose-600 font-medium mt-0.5">Reason: Account Suspended. The driver has been suspended by dispatch administrative settings and cannot be assigned to any bus or route schedule.</div>
+                    </div>
+                </div>
+            `;
+        } else {
+            opIndicator.textContent = 'READY FOR DISPATCH';
+            opIndicator.className = 'inline-flex items-center gap-1 rounded bg-[#E6F1FB] text-[#003F87] px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider';
+            
+            opContent.innerHTML = `
+                <div class="rounded-xl border border-blue-100 bg-[#E6F1FB]/30 p-4 flex items-center gap-4 text-xs">
+                    <div class="h-10 w-10 rounded-full bg-[#E6F1FB] flex items-center justify-center text-[#003F87] shrink-0">
+                        <i class="ti ti-circle-check text-lg"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="font-black text-slate-800">Standby Status: Ready for Dispatch</div>
+                        <div class="text-slate-500 font-medium mt-0.5">No active bus assignments or dispatches registered for today. Driver is eligible and available to be scheduled for active route coverage.</div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+
+    // Component 7: Quick Actions Categorization Trigger Bindings
     const editBtn = document.getElementById('dp-show-edit-btn');
     if (editBtn) {
-        editBtn.setAttribute('onclick', `window.location.hash = 'drivers-edit-${driver.id}'; return false;`);
+        editBtn.setAttribute('onclick', `openDriversEditScreen(${driver.id}); switchScreen('drivers-edit'); return false;`);
     }
     const suspBtn = document.getElementById('dp-show-suspend-btn');
     if (suspBtn) {
         if (driver.status === 'Suspended') {
-            suspBtn.innerHTML = '<i class="ti ti-circle-check"></i> Unsuspend';
-            suspBtn.className = 'flex-1 rounded-lg border py-2 text-xs font-bold transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-none';
+            suspBtn.innerHTML = '<i class="ti ti-circle-check text-sm"></i> Reinstate Driver';
+            suspBtn.className = 'flex w-full items-center justify-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-xs font-bold transition shadow-sm cursor-pointer select-none border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100';
         } else {
-            suspBtn.innerHTML = '<i class="ti ti-ban"></i> Suspend';
-            suspBtn.className = 'flex-1 rounded-lg border py-2 text-xs font-bold transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5 border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 border-none';
+            suspBtn.innerHTML = '<i class="ti ti-ban text-sm"></i> Suspend Driver';
+            suspBtn.className = 'flex w-full items-center justify-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-xs font-bold transition shadow-sm cursor-pointer select-none border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100';
         }
         suspBtn.setAttribute('onclick', `toggleSuspendDriver(${driver.id})`);
     }
@@ -477,32 +692,274 @@ function fillShowScreen(driver) {
     document.getElementById('dp-show-stat-pax').textContent = driver.paxToday;
     const avg = driver.tripsToday > 0 ? (driver.paxToday / driver.tripsToday).toFixed(1) : '0.0';
     document.getElementById('dp-show-stat-avg').textContent = avg;
-    document.getElementById('dp-show-stat-incidents').textContent = driver.incidents30;
 
-    // Perf Index
-    document.getElementById('dp-show-perf-label').textContent = `${driver.perfScore} / 100`;
+    // Perf Index Breakdown with color indicators
+    let ratingText = 'Needs Attention';
+    let ratingColorClass = 'bg-rose-50 text-rose-700 border border-rose-200';
+    let barColor = '#E24B4A';
+    if (driver.perfScore >= 90) {
+        ratingText = 'Excellent';
+        ratingColorClass = 'bg-emerald-50 text-[#639922] border border-[#E8F4E0]';
+        barColor = '#639922';
+    } else if (driver.perfScore >= 80) {
+        ratingText = 'Good';
+        ratingColorClass = 'bg-blue-50 text-[#003F87] border border-[#E6F1FB]';
+        barColor = '#003F87';
+    }
+    document.getElementById('dp-show-perf-label').innerHTML = `
+        <span class="font-extrabold">${driver.perfScore}%</span> 
+        <span class="ml-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${ratingColorClass}">${ratingText}</span>
+    `;
     document.getElementById('dp-show-perf-bar').style.width = `${driver.perfScore}%`;
+    document.getElementById('dp-show-perf-bar').style.backgroundColor = barColor;
 
-    // Trip History list
+    // Derived values for schedule compliance and commuter feedback bars
+    const complianceVal = Math.min(100, Math.max(70, driver.perfScore + 2));
+    const feedbackVal = (driver.perfScore / 20).toFixed(1);
+    const feedbackPct = Math.min(100, Math.max(60, driver.perfScore - 4));
+
+    document.getElementById('dp-show-perf-adherence').textContent = `${complianceVal}%`;
+    document.getElementById('dp-show-adherence-bar').style.width = `${complianceVal}%`;
+    document.getElementById('dp-show-feedback-label').textContent = `${feedbackVal} / 5.0`;
+    document.getElementById('dp-show-feedback-bar').style.width = `${feedbackPct}%`;
+
+
+    // Component 5: Recent Driver Activity Timeline Date headers
+    const timelineWrapper = document.getElementById('dp-show-timeline-wrapper');
+    if (timelineWrapper) {
+        if (driver.status === 'On Duty') {
+            const activeBus = driver.bus || 'PAS-003';
+            timelineWrapper.innerHTML = `
+                <!-- TODAY -->
+                <div class="relative pl-4 mb-4 select-none">
+                    <span class="absolute left-[-29px] top-1 px-1 py-0.5 rounded text-[8px] font-black uppercase tracking-widest text-[#003F87] bg-[#E6F1FB] border border-[#003F87]/10">Today</span>
+                    <div class="space-y-4">
+                        <div class="flex items-start gap-3">
+                            <span class="h-2 w-2 rounded-full bg-[#003F87] mt-1 shrink-0"></span>
+                            <div>
+                                <span class="text-[10px] font-mono text-slate-400 font-bold">08:15</span>
+                                <p class="text-xs text-slate-700 font-bold mt-0.5">Assigned to Bus ${activeBus}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="h-2 w-2 rounded-full bg-[#003F87] mt-1 shrink-0"></span>
+                            <div>
+                                <span class="text-[10px] font-mono text-slate-400 font-bold">08:18</span>
+                                <p class="text-xs text-slate-700 font-bold mt-0.5">Dispatch Created</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="h-2 w-2 rounded-full bg-[#003F87] mt-1 shrink-0"></span>
+                            <div>
+                                <span class="text-[10px] font-mono text-slate-400 font-bold">08:30</span>
+                                <p class="text-xs text-slate-700 font-bold mt-0.5">Trip Started</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="h-2 w-2 rounded-full bg-[#003F87] mt-1 shrink-0"></span>
+                            <div>
+                                <span class="text-[10px] font-mono text-slate-400 font-bold">09:05</span>
+                                <p class="text-xs text-slate-700 font-bold mt-0.5">Reached Stop 4</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="h-2 w-2 rounded-full bg-[#639922] mt-1 shrink-0"></span>
+                            <div>
+                                <span class="text-[10px] font-mono text-slate-400 font-bold">09:42</span>
+                                <p class="text-xs text-[#639922] font-black mt-0.5">Trip Completed</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="h-2 w-2 rounded-full bg-slate-400 mt-1 shrink-0"></span>
+                            <div>
+                                <span class="text-[10px] font-mono text-slate-400 font-bold">11:10</span>
+                                <p class="text-xs text-slate-500 font-semibold mt-0.5">Returned to Standby</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- YESTERDAY -->
+                <div class="relative pl-4 mt-6 select-none">
+                    <span class="absolute left-[-29px] top-1 px-1 py-0.5 rounded text-[8px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 border border-slate-200">Yest</span>
+                    <div class="space-y-4">
+                        <div class="flex items-start gap-3">
+                            <span class="h-2 w-2 rounded-full bg-slate-400 mt-1 shrink-0"></span>
+                            <div>
+                                <span class="text-[10px] font-mono text-slate-400 font-semibold">16:00</span>
+                                <p class="text-xs text-slate-600 font-medium mt-0.5">Completed Route 2 dispatch shift</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            timelineWrapper.innerHTML = `
+                <!-- TODAY -->
+                <div class="relative pl-4 mb-4 select-none">
+                    <span class="absolute left-[-29px] top-1 px-1 py-0.5 rounded text-[8px] font-black uppercase tracking-widest text-[#003F87] bg-[#E6F1FB] border border-[#003F87]/10">Today</span>
+                    <div class="space-y-4">
+                        <div class="flex items-start gap-3">
+                            <span class="h-2 w-2 rounded-full bg-slate-400 mt-1 shrink-0"></span>
+                            <div>
+                                <span class="text-[10px] font-mono text-slate-400 font-semibold">08:00</span>
+                                <p class="text-xs text-slate-500 font-semibold mt-0.5">Clocked In (Standby Duty)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- YESTERDAY -->
+                <div class="relative pl-4 mt-6 select-none">
+                    <span class="absolute left-[-29px] top-1 px-1 py-0.5 rounded text-[8px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 border border-slate-200">Yest</span>
+                    <div class="space-y-4">
+                        <div class="flex items-start gap-3">
+                            <span class="h-2 w-2 rounded-full bg-slate-400 mt-1 shrink-0"></span>
+                            <div>
+                                <span class="text-[10px] font-mono text-slate-400 font-semibold">17:15</span>
+                                <p class="text-xs text-slate-500 font-semibold mt-0.5">Shift Closed</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="h-2 w-2 rounded-full bg-slate-400 mt-1 shrink-0"></span>
+                            <div>
+                                <span class="text-[10px] font-mono text-slate-400 font-semibold">16:20</span>
+                                <p class="text-xs text-slate-600 font-medium mt-0.5">Completed Route coverage</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+
+    // Component 6: Priority-Grouped Alerts Panel Bindings
+    const criticalSec = document.getElementById('dp-show-alert-section-critical');
+    const warningSec = document.getElementById('dp-show-alert-section-warning');
+    const criticalBody = document.getElementById('dp-show-alert-critical-body');
+    const warningBody = document.getElementById('dp-show-alert-warning-body');
+    const eligibilityLabel = document.getElementById('dp-show-dispatch-eligibility');
+
+    if (criticalSec && warningSec && criticalBody && warningBody) {
+        // Evaluate License Expiry
+        if (expStatus === 'expired') {
+            criticalSec.style.display = 'block';
+            criticalBody.innerHTML = `
+                <i class="ti ti-alert-circle text-rose-600 text-base shrink-0 mt-0.5"></i>
+                <div class="flex-1">
+                    <div class="font-extrabold">License Expired</div>
+                    <div class="text-[10px] text-rose-500 font-medium mt-0.5">Driver license expired ${Math.abs(days)} day(s) ago. Renew immediately before dispatching.</div>
+                </div>
+            `;
+        } else {
+            criticalSec.style.display = 'none';
+        }
+
+        // Evaluate Warning triggers
+        let warnHtml = '';
+        if (expStatus === 'urgent' || expStatus === 'warn') {
+            warnHtml += `
+                <div class="flex items-start gap-2.5">
+                    <i class="ti ti-alert-triangle text-amber-600 text-base shrink-0 mt-0.5"></i>
+                    <div class="flex-1">
+                        <div class="font-extrabold">License Expiring Soon</div>
+                        <div class="text-[10px] text-amber-600 font-medium mt-0.5">License expires in ${days} days. Notify driver to renew.</div>
+                    </div>
+                </div>
+            `;
+        }
+        if (driver.perfScore < 80) {
+            warnHtml += `
+                <div class="flex items-start gap-2.5 mt-2">
+                    <i class="ti ti-alert-triangle text-amber-600 text-base shrink-0 mt-0.5"></i>
+                    <div class="flex-1">
+                        <div class="font-extrabold">Under Observation</div>
+                        <div class="text-[10px] text-amber-600 font-medium mt-0.5">Performance Score index has dropped below 80%. Review trip compliance checks.</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (warnHtml) {
+            warningSec.style.display = 'block';
+            warningBody.innerHTML = warnHtml;
+        } else {
+            warningSec.style.display = 'none';
+        }
+
+        // Eligibility Check in Alerts Panel
+        if (eligibilityLabel) {
+            if (driver.status === 'Suspended' || expStatus === 'expired') {
+                eligibilityLabel.className = 'flex items-center gap-2 text-xs text-slate-700 font-semibold bg-rose-50 border border-rose-100 rounded-lg p-2.5';
+                eligibilityLabel.innerHTML = `
+                    <i class="ti ti-x text-rose-600 text-sm"></i>
+                    <span>Blocked from active dispatches</span>
+                `;
+            } else {
+                eligibilityLabel.className = 'flex items-center gap-2 text-xs text-slate-700 font-semibold bg-[#E6F1FB] border border-[#003F87]/10 rounded-lg p-2.5';
+                eligibilityLabel.innerHTML = `
+                    <i class="ti ti-circle-check text-[#003F87] text-sm"></i>
+                    <span>Eligible for Dispatch</span>
+                `;
+            }
+        }
+    }
+
+
+    // Component 8: Compliance Checklist Card indicators checkmarks
+    const complianceLicWrapper = document.getElementById('dp-show-compliance-license-check-wrapper');
+    const complianceLicValue = document.getElementById('dp-show-compliance-license-check-value');
+    if (complianceLicWrapper && complianceLicValue) {
+        if (expStatus === 'expired') {
+            complianceLicWrapper.className = 'flex items-center justify-between text-xs p-2 rounded-lg bg-rose-50 text-rose-700';
+            complianceLicValue.innerHTML = `<i class="ti ti-x text-rose-600 text-sm"></i> Expired`;
+        } else if (expStatus === 'urgent' || expStatus === 'warn') {
+            complianceLicWrapper.className = 'flex items-center justify-between text-xs p-2 rounded-lg bg-amber-50 text-amber-800';
+            complianceLicValue.innerHTML = `<i class="ti ti-alert-triangle text-amber-600 text-sm"></i> Expiring`;
+        } else {
+            complianceLicWrapper.className = 'flex items-center justify-between text-xs p-2 rounded-lg bg-emerald-50 text-[#639922]';
+            complianceLicValue.innerHTML = `<i class="ti ti-circle-check text-emerald-500 text-sm"></i> Valid`;
+        }
+    }
+
+    const complianceDispWrapper = document.getElementById('dp-show-compliance-dispatch-check-wrapper');
+    const complianceDispValue = document.getElementById('dp-show-compliance-dispatch-check-value');
+    if (complianceDispWrapper && complianceDispValue) {
+        if (driver.status === 'Suspended' || expStatus === 'expired') {
+            complianceDispWrapper.className = 'flex items-center justify-between text-xs p-2 rounded-lg bg-rose-50 text-rose-700';
+            complianceDispValue.innerHTML = `<i class="ti ti-x text-rose-600 text-sm"></i> Ineligible`;
+        } else {
+            complianceDispWrapper.className = 'flex items-center justify-between text-xs p-2 rounded-lg bg-emerald-50 text-[#639922]';
+            complianceDispValue.innerHTML = `<i class="ti ti-circle-check text-emerald-500 text-sm"></i> Eligible`;
+        }
+    }
+
+    document.getElementById('dp-show-license').textContent = driver.license;
+    document.getElementById('dp-show-expiry').textContent = driver.expiryLabel;
+
+
+    // Component 9: Trip History list and count displays
     const tripTbody = document.getElementById('dp-show-trip-tbody');
     const countLabel = document.getElementById('dp-show-trip-count');
     if (driver.tripHistory && driver.tripHistory.length) {
-        countLabel.textContent = `${driver.tripHistory.length} record${driver.tripHistory.length !== 1 ? 's' : ''}`;
+        countLabel.textContent = `Showing ${driver.tripHistory.length} of ${driver.tripHistory.length} Trips`;
         tripTbody.innerHTML = driver.tripHistory.map(trip => `
             <tr class="hover:bg-slate-50/40 transition">
                 <td class="px-6 py-4 font-semibold text-slate-700">${trip.date}</td>
-                <td class="px-6 py-4 font-mono font-bold text-slate-600">${trip.bus}</td>
+                <td class="px-6 py-4 font-mono font-bold text-slate-650">${trip.bus}</td>
                 <td class="px-6 py-4">${buildTripRoutePill(trip.route)}</td>
-                <td class="px-6 py-4 text-center font-bold text-slate-600">${trip.trips}</td>
+                <td class="px-6 py-4 text-center font-bold text-slate-650">${trip.trips}</td>
                 <td class="px-6 py-4 text-center font-bold text-[#003F87]">${trip.pax}</td>
                 <td class="px-6 py-4">${buildTripStatusChip(trip.status)}</td>
             </tr>
         `).join('');
     } else {
-        countLabel.textContent = '0 records';
+        countLabel.textContent = 'Showing 0 of 0 Trips';
         tripTbody.innerHTML = `<tr><td colspan="6" class="px-6 py-12 text-center text-slate-400 font-semibold">No trip logs recorded in the system.</td></tr>`;
     }
 
+    document.getElementById('dp-show-contact').textContent = driver.contact || 'No contact number registered.';
     document.getElementById('dp-show-address').textContent = driver.address || 'No address registered.';
     document.getElementById('dp-show-emergency').textContent = driver.emergency || 'No emergency contact registered.';
 }
@@ -532,8 +989,7 @@ async function toggleSuspendDriver(driverId) {
             await loadDatabaseDriversData();
 
             // Refresh Profile screen if currently opened
-            const activeHash = window.location.hash;
-            if (activeHash === `#drivers-show-${driverId}`) {
+            if (window.currentDriversShowId === driverId && !document.getElementById('screen-drivers-show').classList.contains('hidden')) {
                 openDriversShowScreen(driverId);
             }
         } else {
@@ -669,7 +1125,7 @@ async function handleDriverCreateSubmit(event) {
 
         if (response.ok && data.success) {
             alert(data.message);
-            window.location.hash = 'drivers';
+            switchScreen('drivers');
             await loadDatabaseDriversData();
         } else {
             alert(data.message || 'Validation error. Please verify input data.');
@@ -813,7 +1269,7 @@ async function handleDriverEditSubmit(event) {
 
         if (response.ok && data.success) {
             alert(data.message);
-            window.location.hash = 'drivers';
+            switchScreen('drivers');
             await loadDatabaseDriversData();
         } else {
             alert(data.message || 'Validation error. Please verify input data.');
@@ -856,7 +1312,7 @@ async function handleEditDeleteDriver() {
 
         if (response.ok && data.success) {
             alert(data.message);
-            window.location.hash = 'drivers';
+            switchScreen('drivers');
             await loadDatabaseDriversData();
         } else {
             alert(data.message || 'Failed to delete driver.');
@@ -954,9 +1410,153 @@ if (document.readyState === 'complete' || document.readyState === 'interactive')
 // Close driver sub-screens on Escape key press
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-        const activeHash = window.location.hash;
-        if (activeHash === '#drivers-create' || activeHash.startsWith('#drivers-edit-') || activeHash.startsWith('#drivers-show-')) {
-            window.location.hash = 'drivers';
+        const createScreen = document.getElementById('screen-drivers-create');
+        const editScreen = document.getElementById('screen-drivers-edit');
+        const showScreen = document.getElementById('screen-drivers-show');
+        
+        const isCreateOpen = createScreen && !createScreen.classList.contains('hidden');
+        const isEditOpen = editScreen && !editScreen.classList.contains('hidden');
+        const isShowOpen = showScreen && !showScreen.classList.contains('hidden');
+
+        if (isCreateOpen || isEditOpen || isShowOpen) {
+            switchScreen('drivers');
         }
     }
 });
+
+// ── ADDITIONAL DYNAMIC STATS CARD FILTER & RECALCULATOR HELPERS ──
+let activeDriverCardFilter = 'all';
+
+function toggleDriverCardFilter(statusType, cardElement) {
+    // Remove active styling classes
+    document.querySelectorAll('[data-driver-card-filter]').forEach(el => {
+        el.classList.remove('ring-2', 'ring-[#003F87]', 'shadow-md', 'bg-blue-50/10');
+    });
+
+    if (activeDriverCardFilter === statusType) {
+        activeDriverCardFilter = 'all';
+    } else {
+        activeDriverCardFilter = statusType;
+        cardElement.classList.add('ring-2', 'ring-[#003F87]', 'shadow-md', 'bg-blue-50/10');
+    }
+
+    filterDriversTable();
+}
+
+function resetDriversFilters() {
+    const searchEl = document.getElementById('driver-search');
+    if (searchEl) searchEl.value = '';
+    const statusEl = document.getElementById('driver-status-filter');
+    if (statusEl) statusEl.value = '';
+    const licenseEl = document.getElementById('driver-license-filter');
+    if (licenseEl) licenseEl.value = '';
+
+    activeDriverCardFilter = 'all';
+    document.querySelectorAll('[data-driver-card-filter]').forEach(el => {
+        el.classList.remove('ring-2', 'ring-[#003F87]', 'shadow-md', 'bg-blue-50/10');
+    });
+
+    filterDriversTable();
+}
+
+function updateDriversStats() {
+    const onDuty = DRIVERS_DATA.filter(d => d.status === 'On Duty').length;
+    const standby = DRIVERS_DATA.filter(d => d.status === 'Off Duty').length;
+    const suspended = DRIVERS_DATA.filter(d => d.status === 'Suspended').length;
+
+    const attention = DRIVERS_DATA.filter(d => {
+        const { status } = computeExpiryStatus(d.expiryDate);
+        return status === 'expired' || status === 'urgent' || status === 'warn';
+    }).length;
+
+    const assigned = DRIVERS_DATA.filter(d => d.bus && d.bus !== '—' && d.bus !== 'None').length;
+    const highPerformers = DRIVERS_DATA.filter(d => d.perfScore >= 85).length;
+    const expired = DRIVERS_DATA.filter(d => {
+        const { status } = computeExpiryStatus(d.expiryDate);
+        return status === 'expired';
+    }).length;
+    const noTrips = DRIVERS_DATA.filter(d => d.status === 'Off Duty' && d.tripsToday === 0).length;
+
+    const dutyEl = document.getElementById('dm-stat-on-duty');
+    if (dutyEl) dutyEl.textContent = onDuty;
+
+    const standbyEl = document.getElementById('dm-stat-standby');
+    if (standbyEl) standbyEl.textContent = standby;
+
+    const suspendedEl = document.getElementById('dm-stat-suspended');
+    if (suspendedEl) suspendedEl.textContent = suspended;
+
+    const attentionEl = document.getElementById('dm-stat-attention');
+    if (attentionEl) attentionEl.textContent = attention;
+
+    const assignedEl = document.getElementById('dm-health-assigned');
+    if (assignedEl) assignedEl.textContent = assigned;
+
+    const highEl = document.getElementById('dm-health-high-performers');
+    if (highEl) highEl.textContent = highPerformers;
+
+    const expiredEl = document.getElementById('dm-health-expired');
+    if (expiredEl) expiredEl.textContent = expired;
+
+    const noTripsEl = document.getElementById('dm-health-no-trips');
+    if (noTripsEl) noTripsEl.textContent = noTrips;
+}
+
+// ── ROW ACTION CONTEXT OVERFLOW MENU CONTROLLER ──
+let activeDriverRowMenuId = null;
+
+function toggleDriverRowMenu(id, event) {
+    event.stopPropagation();
+
+    // Close any other open actions menus
+    if (activeDriverRowMenuId && activeDriverRowMenuId !== id) {
+        const otherMenu = document.getElementById(`driver-row-menu-${activeDriverRowMenuId}`);
+        if (otherMenu) otherMenu.classList.add('hidden');
+        const otherTrigger = document.querySelector(`tr[data-driver-id="${activeDriverRowMenuId}"] .dm-action-trigger`);
+        if (otherTrigger) otherTrigger.classList.remove('active');
+    }
+
+    const menu = document.getElementById(`driver-row-menu-${id}`);
+    const trigger = event.currentTarget;
+
+    if (menu) {
+        menu.classList.toggle('hidden');
+        if (!menu.classList.contains('hidden')) {
+            activeDriverRowMenuId = id;
+            if (trigger) trigger.classList.add('active');
+
+            // --- Smart positioning check ---
+            const triggerRect = trigger.getBoundingClientRect();
+            const viewportHeight = window.innerHeight;
+            const dropdownHeight = 220; // 190px menu height + some padding safety
+            const spaceBelow = viewportHeight - triggerRect.bottom;
+
+            if (spaceBelow < dropdownHeight) {
+                // Not enough room below trigger -> render above
+                menu.style.bottom = 'calc(100% + 6px)';
+                menu.style.top = 'auto';
+            } else {
+                // Renders normally below trigger
+                menu.style.top = 'calc(100% + 6px)';
+                menu.style.bottom = 'auto';
+            }
+
+            window.addEventListener('click', closeDriverRowMenuOutside);
+        } else {
+            activeDriverRowMenuId = null;
+            if (trigger) trigger.classList.remove('active');
+            window.removeEventListener('click', closeDriverRowMenuOutside);
+        }
+    }
+}
+
+function closeDriverRowMenuOutside() {
+    if (activeDriverRowMenuId) {
+        const menu = document.getElementById(`driver-row-menu-${activeDriverRowMenuId}`);
+        if (menu) menu.classList.add('hidden');
+        const trigger = document.querySelector(`tr[data-driver-id="${activeDriverRowMenuId}"] .dm-action-trigger`);
+        if (trigger) trigger.classList.remove('active');
+        activeDriverRowMenuId = null;
+        window.removeEventListener('click', closeDriverRowMenuOutside);
+    }
+}

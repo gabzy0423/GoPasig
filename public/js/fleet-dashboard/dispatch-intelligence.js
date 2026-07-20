@@ -120,13 +120,13 @@ function updateDemandBoardDOM(routesData) {
     routesData.forEach(r => {
         let borderClass = 'border-slate-200 border-t-[4px] border-t-[#003F87]';
         let badgeClass = 'bg-[#EAF3DE] text-[#3B6D11]';
-        let badgeText = '🟢 Normal';
+        let badgeText = 'Normal';
         let progressBarColor = 'bg-[#003F87]';
 
         if (r.status === 'red') {
             borderClass = 'border-[#E24B4A] border-t-[4px]';
             badgeClass = 'bg-[#FCEBEB] text-[#A32D2D]';
-            badgeText = '🔴 Dispatch Now';
+            badgeText = 'Dispatch Now';
             progressBarColor = 'bg-[#E24B4A]';
 
             // Trigger push notification once
@@ -143,7 +143,7 @@ function updateDemandBoardDOM(routesData) {
         } else if (r.status === 'yellow') {
             borderClass = 'border-[#BA7517] border-t-[4px]';
             badgeClass = 'bg-[#FAEEDA] text-[#854F0B]';
-            badgeText = '🟡 Standby (High)';
+            badgeText = 'Standby (High)';
             progressBarColor = 'bg-[#BA7517]';
             delete notifiedRoutes[r.id];
         } else {

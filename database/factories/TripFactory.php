@@ -19,6 +19,7 @@ class TripFactory extends Factory
             'driver_id' => Driver::factory(),
             'route_id' => Route::factory(),
             'status' => 'ongoing',
+            'gps_session' => 'ACTIVE',
             'peak_passengers' => $this->faker->numberBetween(0, 150),
             'started_at' => $this->faker->dateTime(),
             'ended_at' => null,

@@ -23,6 +23,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
+use App\Services\BusStateService;
 
 class DispatchIntelligenceController extends Controller
 {
@@ -270,6 +271,7 @@ class DispatchIntelligenceController extends Controller
                     'origin_stop_id' => $routeStops->first()->id,
                     'destination_stop_id' => $routeStops->last()->id,
                     'status' => 'WAITING',
+                    'is_simulated' => true,
                     'created_at' => now()->subMinutes(rand(1, 5)),
                 ]);
             }
@@ -306,67 +308,54 @@ class DispatchIntelligenceController extends Controller
             return response()->json(['success' => false, 'message' => 'Route not found.'], 404);
         }
 
-        // Prefer a bus already assigned to this route; fall back to any inactive bus.
-        $bus = Bus::where('status', 'inactive')->where('route_id', $routeId)->first()
-            ?? Bus::where('status', 'inactive')->whereNull('route_id')->first()
-            ?? Bus::where('status', 'inactive')->first();
+        $activeBusIds = Trip::whereIn('status', ['dispatched', 'ongoing'])->pluck('bus_id')->toArray();
+        $activeTripDriverIds = Trip::whereIn('status', ['dispatched', 'ongoing'])->pluck('driver_id')->toArray();
 
-        // Prefer a driver whose assigned_route matches this route; fall back to any inactive driver.
-        $driver = Driver::where('status', 'inactive')->where('assigned_route', (string) $routeId)->first()
-            ?? Driver::where('status', 'inactive')->whereNull('assigned_route')->first()
-            ?? Driver::where('status', 'inactive')->first();
+        // Available buses: available status, not currently on a trip
+        $availableBuses = Bus::where('status', 'available')
+            ->whereNotIn('id', $activeBusIds)
+            ->get();
 
-        if (!$bus || !$driver) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No available buses or drivers. All fleet units are currently active.'
-            ], 422);
-        }
+        $bus = $availableBuses->where('route_id', $routeId)->first()
+            ?? $availableBuses->whereNull('route_id')->first()
+            ?? $availableBuses->first();
 
-        $fallbackTerminal = $this->getSimulationDefault(
-            'default_terminal',
-            SystemSetting::get('default_terminal_name', Terminal::getDefaultName())
-        );
+        // Available drivers: active account, operational status available, license not expired, not on an ongoing/dispatched trip
+        $availableDrivers = Driver::where('status', 'active')
+            ->where('operational_status', 'available')
+            ->whereNotIn('id', $activeTripDriverIds)
+            ->get()
+            ->filter(function($d) {
+                return Carbon::parse($d->license_expiry)->endOfDay()->gt(now());
+            });
 
-        DB::beginTransaction();
+        $driver = $availableDrivers->where('assigned_route', (string) $routeId)->first()
+            ?? $availableDrivers->whereNull('assigned_route')->first()
+            ?? $availableDrivers->first();
+
         try {
-            // Activate bus
-            $bus->update([
-                'status' => 'active',
-                'route_id' => $routeId,
-                'driver_name' => "{$driver->first_name} {$driver->last_name}",
-                'passengers' => 0,
-                'next_stop' => Stop::where('route_id', $routeId)->orderBy('sequence')->first()->name ?? $fallbackTerminal,
-                'eta' => (int) SystemSetting::get('default_dispatch_eta_minutes', 5),
-            ]);
+            if (!$bus) {
+                throw new \App\Exceptions\BusUnavailableException("No available buses. All fleet units are currently active.");
+            }
 
-            // Activate driver
-            $driver->update([
-                'status' => 'active',
-                'assigned_bus' => $bus->plate_number,
-                'assigned_route' => (string) $routeId,
-            ]);
+            if (!$driver) {
+                throw new \App\Exceptions\DriverUnavailableException("No available drivers. All fleet units are currently active.");
+            }
 
-            // Create trip
-            $tripId = DB::table('trips')->insertGetId([
-                'bus_id' => $bus->id,
-                'driver_id' => $driver->id,
-                'route_id' => $routeId,
-                'status' => 'ongoing',
-                'started_at' => now(),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            $route = Route::findOrFail($routeId);
 
-            // Create Dispatch Log
-            DispatchLog::create([
-                'trip_id' => $tripId,
-                'dispatched_by' => Auth::id(), // NULL when system-triggered (no active session)
-                'dispatched_at' => now(),
-                'notes' => 'Automatic dispatch triggered by Dispatch Intelligence (Phase ' . $phase . ').',
-            ]);
+            DB::beginTransaction();
 
-            // Mark check-ins as boarded
+            // Call orchestration service to handle validations, transaction, locks, trip & log creation, state transitions
+            \App\Services\SimulationDispatchService::dispatch(
+                $bus,
+                $driver,
+                $route,
+                Auth::id(),
+                'Automatic dispatch triggered by Dispatch Intelligence (Phase ' . $phase . ').'
+            );
+
+            // Mark check-ins as boarded (Simulator specific side-effects)
             CommuterTrip::where('route_id', $routeId)
                 ->where('status', 'WAITING')
                 ->update([
@@ -383,8 +372,18 @@ class DispatchIntelligenceController extends Controller
                 'success' => true,
                 'message' => 'Bus successfully dispatched to ' . $route->name . '! Check-ins boarding...'
             ]);
+        } catch (\App\Exceptions\DispatchException $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            return response()->json([
+                'success' => false,
+                'message' => 'Dispatch failed: ' . $e->getMessage()
+            ], 422);
         } catch (\Exception $e) {
-            DB::rollBack();
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
             return response()->json([
                 'success' => false,
                 'message' => 'Dispatch failed: ' . $e->getMessage()
@@ -496,10 +495,10 @@ class DispatchIntelligenceController extends Controller
             $suggestedBusData = null;
             if ($status === 'red') {
                 $firstStop = Stop::where('route_id', $route->id)->orderBy('sequence')->first();
-                $firstLat = $firstStop ? (float) $firstStop->lat : 14.5593;
-                $firstLng = $firstStop ? (float) $firstStop->lng : 121.0805;
+                $firstLat = $firstStop ? (float) $firstStop->lat : (float) SystemSetting::get('map_default_latitude', 14.5593);
+                $firstLng = $firstStop ? (float) $firstStop->lng : (float) SystemSetting::get('map_default_longitude', 121.0805);
 
-                $inactiveBuses = Bus::where('status', 'inactive')->get();
+                $inactiveBuses = Bus::where('status', 'available')->get();
                 $minDist = null;
                 $bestBus = null;
 

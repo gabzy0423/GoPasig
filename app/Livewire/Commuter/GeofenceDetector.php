@@ -21,8 +21,17 @@ class GeofenceDetector extends Component
 
     protected $listeners = ['updateLocation' => 'updateLocation'];
 
-    public function updateLocation($lat, $lng)
+    public function updateLocation($lat, $lng, $accuracy = null)
     {
+        // Reject coordinates with poor GPS accuracy
+        $maxAccuracy = \Illuminate\Support\Facades\Cache::remember('gps_max_accuracy_meters', 60, function() {
+            return (int) SystemSetting::get('gps_max_accuracy_meters', 20);
+        });
+        if ($accuracy !== null && $accuracy > $maxAccuracy) {
+            // GPS signal too inaccurate — skip boarding check
+            return;
+        }
+
         $this->lat = floatval($lat);
         $this->lng = floatval($lng);
 
@@ -33,6 +42,10 @@ class GeofenceDetector extends Component
         // Fetch all route stops once, then do geofence math in memory.
         $dbStops = app(CommuterDashboardCacheService::class)->routeStops();
 
+        $defaultAmenity = \Illuminate\Support\Facades\Cache::remember('default_amenity_setting', 60, function() {
+            return \App\Models\SystemSetting::get('default_amenity', 'Shelter');
+        });
+
         foreach ($dbStops as $dbStop) {
             $dist = $this->calculateDistance($this->lat, $this->lng, $dbStop->lat, $dbStop->lng); // in meters
 
@@ -41,7 +54,7 @@ class GeofenceDetector extends Component
                 'name' => $dbStop->name,
                 'lat' => floatval($dbStop->lat),
                 'lng' => floatval($dbStop->lng),
-                'amenities' => $dbStop->amenities ?: \App\Models\SystemSetting::get('default_amenity', 'Shelter'),
+                'amenities' => $dbStop->amenities ?: $defaultAmenity,
                 'schedule' => $this->getCombinedSchedule($dbStop),
                 'route_id' => $dbStop->route_id,
                 'sequence' => $dbStop->sequence
@@ -122,11 +135,12 @@ class GeofenceDetector extends Component
                     ?->route
                     ?->buses ?? collect();
 
+                $boardingRadius = \Illuminate\Support\Facades\Cache::remember('boarding_geofence_radius_meters', 60, function() {
+                    return (int) SystemSetting::get('boarding_geofence_radius_meters', 15);
+                });
+
                 foreach ($activeBuses as $bus) {
                     $dist = $this->calculateDistance($this->lat, $this->lng, $bus->lat, $bus->lng);
-                    // ISSUE-036 FIX: Geofence boarding radius is now read from SystemSetting
-                    // instead of the hardcoded 15 meters. Adjust via 'boarding_geofence_radius_meters'.
-                    $boardingRadius = (int) SystemSetting::get('boarding_geofence_radius_meters', 15);
                     if ($dist <= $boardingRadius) {
                         $trip->update([
                             'status' => 'ON_BUS',

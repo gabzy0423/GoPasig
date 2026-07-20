@@ -26,9 +26,14 @@ class BusinessLogicService
         $departureMinutes = intval($timeParts[0]) * 60 + intval($timeParts[1]);
         $tripEndMinutes = $departureMinutes + $tripDurationMinutes;
 
-        // Get all schedules for this driver today
-        $today = \Carbon\Carbon::today()->toDateString();
-        $schedules = Schedule::where('driver_id', $driverId)->get();
+        // Get all schedules for this driver on the target date
+        $targetDate = $serviceDate ?? \Carbon\Carbon::today()->toDateString();
+        $schedules = Schedule::where('driver_id', $driverId)
+            ->whereDate('service_date', $targetDate)
+            ->when($excludeScheduleId, function ($query) use ($excludeScheduleId) {
+                return $query->where('id', '!=', $excludeScheduleId);
+            })
+            ->get();
 
         $totalMinutesScheduled = 0;
         foreach ($schedules as $schedule) {
@@ -82,77 +87,14 @@ class BusinessLogicService
      */
     public static function validateCoordinates(float $lat, float $lng): array
     {
-        $northBound = (float) SystemSetting::get('coordinates_bounds_north_latitude', 14.85);
-        $southBound = (float) SystemSetting::get('coordinates_bounds_south_latitude', 14.30);
-        $eastBound = (float) SystemSetting::get('coordinates_bounds_east_longitude', 121.20);
-        $westBound = (float) SystemSetting::get('coordinates_bounds_west_longitude', 120.95);
-
-        if ($lat < $southBound || $lat > $northBound) {
-            return [
-                'valid' => false,
-                'error' => "Latitude {$lat} is outside service area bounds ({$southBound} to {$northBound})"
-            ];
-        }
-
-        if ($lng < $westBound || $lng > $eastBound) {
-            return [
-                'valid' => false,
-                'error' => "Longitude {$lng} is outside service area bounds ({$westBound} to {$eastBound})"
-            ];
-        }
-
-        return ['valid' => true];
+        $coord = new \App\Services\ValueObjects\Coordinate($lat, $lng);
+        return app(\App\Services\Contracts\GeometryValidatorInterface::class)->validateCoordinates($coord);
     }
 
-    /**
-     * Validate route polyline forms a valid path
-     * Issue 3.2.1: Route polyline not validated
-     */
     public static function validateRoutePolyline(array $polyline): array
     {
-        if (empty($polyline)) {
-            return [
-                'valid' => false,
-                'error' => 'Route polyline cannot be empty'
-            ];
-        }
-
-        if (count($polyline) < 2) {
-            return [
-                'valid' => false,
-                'error' => 'Route polyline must have at least 2 points (origin and destination)'
-            ];
-        }
-
-        // Validate each coordinate pair
-        foreach ($polyline as $index => $point) {
-            if (!is_array($point) || count($point) !== 2) {
-                return [
-                    'valid' => false,
-                    'error' => "Invalid coordinate format at point {$index}"
-                ];
-            }
-
-            $coordValidation = self::validateCoordinates($point[0], $point[1]);
-            if (!$coordValidation['valid']) {
-                return [
-                    'valid' => false,
-                    'error' => "Point {$index}: " . $coordValidation['error']
-                ];
-            }
-        }
-
-        // Check for duplicate consecutive points
-        for ($i = 0; $i < count($polyline) - 1; $i++) {
-            if ($polyline[$i] === $polyline[$i + 1]) {
-                return [
-                    'valid' => false,
-                    'error' => "Duplicate consecutive points at index {$i} and " . ($i + 1)
-                ];
-            }
-        }
-
-        return ['valid' => true];
+        $poly = \App\Services\ValueObjects\Polyline::fromArray($polyline);
+        return app(\App\Services\Contracts\GeometryValidatorInterface::class)->validatePolyline($poly);
     }
 
     /**
@@ -338,8 +280,8 @@ class BusinessLogicService
         }
 
         // Check license expiry
-        $licenseExpiry = \Carbon\Carbon::parse($driver->license_expiry);
-        if ($licenseExpiry->isPast()) {
+        $licenseExpiry = \Carbon\Carbon::parse($driver->license_expiry)->endOfDay();
+        if (now()->greaterThan($licenseExpiry)) {
             return [
                 'available' => false,
                 'error' => 'Driver license has expired'

@@ -101,7 +101,7 @@ class DriverController extends Controller
             ], 422);
         }
 
-        if ($request->status === 'active' && Carbon::parse($request->license_expiry)->isPast()) {
+        if ($request->status === 'active' && now('Asia/Manila')->greaterThan(Carbon::parse($request->license_expiry)->timezone('Asia/Manila')->endOfDay())) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cannot set driver active: license is expired.',
@@ -120,11 +120,13 @@ class DriverController extends Controller
             $counter++;
         }
 
+        $defaultPassword = SystemSetting::get('driver_default_password', 'password123');
+
         $user = \App\Models\User::create([
             'name' => trim($request->first_name . ' ' . $request->last_name),
             'email' => $email,
             'role' => 'driver',
-            'password' => \Illuminate\Support\Facades\Hash::make(\Illuminate\Support\Str::random(16)),
+            'password' => \Illuminate\Support\Facades\Hash::make($defaultPassword),
             'email_verified_at' => now(),
         ]);
 
@@ -148,7 +150,11 @@ class DriverController extends Controller
         return response()->json([
             'success' => true,
             'message' => "Driver {$driver->first_name} {$driver->last_name} registered successfully!",
-            'driver' => $driver
+            'driver' => $driver,
+            'login_credentials' => [
+                'email'    => $email,
+                'password' => $defaultPassword,
+            ],
         ]);
     }
 
@@ -184,7 +190,7 @@ class DriverController extends Controller
             ], 422);
         }
 
-        if ($request->status === 'active' && Carbon::parse($request->license_expiry)->isPast()) {
+        if ($request->status === 'active' && now('Asia/Manila')->greaterThan(Carbon::parse($request->license_expiry)->timezone('Asia/Manila')->endOfDay())) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cannot set driver active: license is expired.',
@@ -201,6 +207,13 @@ class DriverController extends Controller
             'address' => $request->address,
             'emergency_contact' => $request->emergency_contact,
         ]);
+
+        // Keep the linked users record in sync with the driver's display name
+        if ($driver->user_id) {
+            \App\Models\User::where('id', $driver->user_id)->update([
+                'name' => trim($request->first_name . ' ' . $request->last_name),
+            ]);
+        }
 
         return response()->json([
             'success' => true,
@@ -220,6 +233,26 @@ class DriverController extends Controller
                 'success' => false,
                 'message' => 'Unauthorized: Only administrators can delete drivers.'
             ], 403);
+        }
+
+        // Check for ongoing trip
+        $hasOngoingTrip = \App\Models\Trip::where('driver_id', $driver->id)
+            ->where('status', 'ongoing')
+            ->exists();
+
+        if ($hasOngoingTrip) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot delete driver with an ongoing trip. End the trip first.'
+            ], 422);
+        }
+
+        // Also check active status
+        if ($driver->status === 'active') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot delete an active driver. Set status to inactive first.'
+            ], 422);
         }
 
         $name = "{$driver->first_name} {$driver->last_name}";

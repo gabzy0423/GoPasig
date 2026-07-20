@@ -10,6 +10,8 @@ use App\Models\Route;
 use App\Models\ServiceAlert;
 use App\Models\Stop;
 use App\Models\User;
+use App\Models\Trip;
+use App\Models\Schedule;
 use App\Services\DriverPerformanceService;
 use App\Services\ValidationService;
 use App\Services\BusStateService;
@@ -175,6 +177,131 @@ class Phase5UnfixedIssuesTest extends TestCase
         
         $bus->refresh();
         $this->assertEquals('maintenance', $bus->status);
+    }
+
+    /** @test */
+    public function test_inactive_status_clears_assignments_and_cancels_trips()
+    {
+        $route = Route::factory()->create();
+        $driver = Driver::factory()->create([
+            'status' => 'active',
+            'assigned_bus' => 'PLATE123',
+            'assigned_route' => $route->id,
+        ]);
+        $bus = Bus::factory()->create([
+            'status' => 'active',
+            'plate_number' => 'PLATE123',
+            'driver_name' => $driver->first_name . ' ' . $driver->last_name,
+            'route_id' => $route->id,
+            'next_stop' => 'Some Stop',
+            'passengers' => 20,
+            'speed' => 45,
+            'eta' => 10,
+        ]);
+
+        $trip = Trip::factory()->create([
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $route->id,
+            'status' => 'ongoing',
+        ]);
+
+        $schedule = Schedule::factory()->create([
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $route->id,
+            'status' => 'scheduled',
+        ]);
+
+        // Act: Transition to inactive
+        BusStateService::transition($bus, 'inactive', 'End of service');
+
+        // Assert: Bus properties are cleaned up
+        $bus->refresh();
+        $this->assertEquals('inactive', $bus->status);
+        $this->assertEquals(Bus::DEFAULT_DRIVER_NAME, $bus->driver_name);
+        $this->assertNull($bus->route_id);
+        $this->assertNull($bus->next_stop);
+        $this->assertEquals(0, $bus->passengers);
+        $this->assertEquals(0, $bus->speed);
+        $this->assertNull($bus->eta);
+
+        // Assert: Driver is unassigned and active account but available operationally (standby)
+        $driver->refresh();
+        $this->assertEquals('active', $driver->status);
+        $this->assertEquals('available', $driver->operational_status);
+        $this->assertNull($driver->assigned_bus);
+        $this->assertNull($driver->assigned_route);
+
+        // Assert: Trip is cancelled
+        $trip->refresh();
+        $this->assertEquals('cancelled', $trip->status);
+        $this->assertNotNull($trip->ended_at);
+
+        // Assert: Schedule is cancelled
+        $schedule->refresh();
+        $this->assertEquals(Schedule::STATUS_CANCELLED, $schedule->status);
+    }
+
+    /** @test */
+    public function test_admin_updating_bus_to_inactive_syncs_driver_and_clears_assignments_via_controller()
+    {
+        $route = Route::factory()->create();
+        $driver = Driver::factory()->create([
+            'status' => 'active',
+            'assigned_bus' => 'PLATE777',
+            'assigned_route' => $route->id,
+        ]);
+        $bus = Bus::factory()->create([
+            'status' => 'active',
+            'plate_number' => 'PLATE777',
+            'driver_name' => $driver->first_name . ' ' . $driver->last_name,
+            'route_id' => $route->id,
+            'next_stop' => 'Some Stop',
+            'passengers' => 20,
+            'speed' => 45,
+            'eta' => 10,
+        ]);
+
+        $trip = Trip::factory()->create([
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $route->id,
+            'status' => 'ongoing',
+        ]);
+
+        $response = $this->putJson("/admin/api/buses/{$bus->id}", [
+            'fleet_number' => 'BUS-777',
+            'manufacturer' => 'BYD',
+            'model' => 'K9',
+            'year_model' => 2024,
+            'battery_capacity_kwh' => 350.00,
+            'charging_port_type' => 'CCS2',
+            'max_charging_power_kw' => 150.00,
+            'driver_name' => $driver->first_name . ' ' . $driver->last_name,
+            'capacity' => 45,
+            'route_id' => $route->id,
+            'status' => 'inactive',
+        ]);
+
+        $response->assertStatus(200);
+
+        // Assert: Bus properties are cleaned up
+        $bus->refresh();
+        $this->assertEquals('inactive', $bus->status);
+        $this->assertEquals(Bus::DEFAULT_DRIVER_NAME, $bus->driver_name);
+        $this->assertNull($bus->route_id);
+
+        // Assert: Driver is unassigned and active account but available operationally (standby)
+        $driver->refresh();
+        $this->assertEquals('active', $driver->status);
+        $this->assertEquals('available', $driver->operational_status);
+        $this->assertNull($driver->assigned_bus);
+        $this->assertNull($driver->assigned_route);
+
+        // Assert: Trip is cancelled
+        $trip->refresh();
+        $this->assertEquals('cancelled', $trip->status);
     }
 
     /** @test */

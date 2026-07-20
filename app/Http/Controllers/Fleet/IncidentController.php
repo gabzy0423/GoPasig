@@ -97,7 +97,7 @@ class IncidentController extends Controller
     {
         $validated = $request->validate([
             'trip_id' => 'required|exists:trips,id',
-            'type' => 'required|string',
+            'type' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Models\Incident::getTypes())],
             'description' => 'required|string|min:5',
             'status' => 'required|in:reported,under_review,resolved',
         ]);
@@ -113,11 +113,22 @@ class IncidentController extends Controller
             'reported_at' => now(),
         ]);
 
-        // If the incident type matches the configured breakdown type, flag bus for maintenance
-        $breakdownType = \App\Models\SystemSetting::get('incident_breakdown_type', 'Breakdown');
-        if ($validated['type'] === $breakdownType) {
+        // If the incident type matches Breakdown or Accident, flag bus for breakdown status
+        if (Incident::isBreakdown($validated['type']) || Incident::isAccident($validated['type'])) {
             if ($trip && $trip->bus) {
-                $trip->bus->lockToMaintenance();
+                \App\Services\BusStateService::transition($trip->bus, \App\Models\Bus::STATUS_BREAKDOWN, 'Incident Report: ' . $validated['type']);
+            }
+        } else {
+            // For other incidents, create an informational audit log without status change
+            if ($trip && $trip->bus) {
+                $driver = \App\Models\Driver::find($trip->driver_id);
+                \App\Models\BusStatusAuditLog::create([
+                    'bus_id'     => $trip->bus->id,
+                    'old_status' => $trip->bus->status,
+                    'new_status' => $trip->bus->status,
+                    'reason'     => 'Incident Report: ' . $validated['type'],
+                    'changed_by' => $driver ? $driver->user_id : auth()->id(),
+                ]);
             }
         }
 
@@ -150,24 +161,6 @@ class IncidentController extends Controller
         $newStatus = $validated['status'];
 
         $incident->update(['status' => $newStatus]);
-
-        // Resolve the breakdown sentinel from settings once
-        $breakdownType = \App\Models\SystemSetting::get('incident_breakdown_type', 'Breakdown');
-
-        // If resolved: restore bus status
-        if ($newStatus === 'resolved' && $oldStatus !== 'resolved' && $oldType === $breakdownType) {
-            if ($incident->trip && $incident->trip->bus) {
-                $bus = $incident->trip->bus;
-                $restoreStatus = $bus->previous_status ?? 'active';
-                $bus->update(['status' => $restoreStatus, 'previous_status' => null]);
-            }
-        }
-        // If reopened: re-apply maintenance status
-        elseif ($newStatus !== 'resolved' && $oldStatus === 'resolved' && $oldType === $breakdownType) {
-            if ($incident->trip && $incident->trip->bus) {
-                $incident->trip->bus->lockToMaintenance();
-            }
-        }
 
         return response()->json([
             'success' => true,
@@ -278,7 +271,9 @@ class IncidentController extends Controller
             $query->whereIn('status', ['reported', 'under_review']);
             
             if ($activeSort === 'priority') {
-                $query->orderByRaw("CASE WHEN type IN ('Accident', 'Breakdown') THEN 0 ELSE 1 END")
+                $breakdownType = Incident::getBreakdownType();
+                $accidentType = Incident::getAccidentType();
+                $query->orderByRaw("CASE WHEN type IN (?, ?) THEN 0 ELSE 1 END", [$accidentType, $breakdownType])
                       ->orderByRaw("CASE WHEN status = 'reported' THEN 0 ELSE 1 END")
                       ->orderByDesc('reported_at');
             } else {

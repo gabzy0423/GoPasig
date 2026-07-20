@@ -16,7 +16,7 @@ class IncidentFactory extends Factory
         return [
             'driver_id' => Driver::factory(),
             'trip_id' => Trip::factory(),
-            'type' => $this->faker->randomElement(['Breakdown', 'Accident', 'Heavy Traffic Delay', 'Passenger Concern']),
+            'type' => $this->faker->randomElement(['Breakdown', 'Accident']),
             'description' => $this->faker->sentence(),
             'status' => 'reported',
             'reported_at' => $this->faker->dateTime(),

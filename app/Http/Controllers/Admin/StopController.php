@@ -92,12 +92,11 @@ class StopController extends Controller
             'name' => $name,
             'lat' => $lat,
             'lng' => $lng,
-            'radius_meters' => 50,
+            'radius_meters' => (int) \App\Models\SystemSetting::get('stop_default_radius_meters', 50),
             'sequence' => $sequence
         ]);
 
-        // Recalculate route polyline coordinates
-        $this->updateRoutePolyline($routeId);
+        // Polyline update decoupled in Phase 1
 
         return response()->json([
             'success' => true,
@@ -140,7 +139,7 @@ class StopController extends Controller
             ]);
         }
 
-        $this->updateRoutePolyline($route->id);
+        // Polyline update decoupled in Phase 1
 
         return response()->json([
             'success' => true,
@@ -169,7 +168,7 @@ class StopController extends Controller
             $s->update(['sequence' => $index + 1]);
         }
 
-        $this->updateRoutePolyline($routeId);
+        // Polyline update decoupled in Phase 1
 
         return response()->json([
             'success' => true,

@@ -4,12 +4,13 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Route extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
-    protected $fillable = ['name', 'color', 'description', 'polyline_coordinates', 'status', 'travel_time_minutes', 'delay_threshold_minutes', 'min_speed', 'max_speed', 'target_on_time_rate', 'target_headway_minutes', 'min_buses_required'];
+    protected $fillable = ['name', 'color', 'description', 'polyline_coordinates', 'geometry_version', 'status', 'travel_time_minutes', 'delay_threshold_minutes', 'min_speed', 'max_speed', 'target_on_time_rate', 'target_headway_minutes', 'min_buses_required'];
 
     protected $casts = [
         'polyline_coordinates' => 'array',
@@ -19,12 +20,18 @@ class Route extends Model
     {
         parent::boot();
 
-        static::saved(function () {
+        static::saved(function ($route) {
             \Illuminate\Support\Facades\Cache::forget('routes_all');
+            try {
+                app(\App\Repositories\Contracts\RouteGeometryRepositoryInterface::class)->clearAll($route->id);
+            } catch (\Exception $e) {}
         });
 
-        static::deleted(function () {
+        static::deleted(function ($route) {
             \Illuminate\Support\Facades\Cache::forget('routes_all');
+            try {
+                app(\App\Repositories\Contracts\RouteGeometryRepositoryInterface::class)->clearAll($route->id);
+            } catch (\Exception $e) {}
         });
     }
 

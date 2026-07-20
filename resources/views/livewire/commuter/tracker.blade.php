@@ -22,6 +22,17 @@
         }
     }"
     x-init="requestLocation()">
+ 
+    <!-- Toast Notification for suspended route -->
+    <div x-data="{ showToast: false, toastMessage: '' }"
+         x-on:route-suspended.window="toastMessage = $event.detail[0].message; showToast = true; setTimeout(() => { showToast = false }, 5000)"
+         x-show="showToast"
+         x-transition
+         class="fixed top-20 left-1/2 transform -translate-x-1/2 z-[100] bg-rose-600 text-white text-xs font-bold px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 max-w-[90%] border border-rose-500"
+         style="display: none;">
+        <i class="ti ti-ban text-sm flex-shrink-0"></i>
+        <span x-text="toastMessage"></span>
+    </div>
 
 
     @if($breakdownAlert)

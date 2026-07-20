@@ -134,12 +134,7 @@ class Module6MaintenanceTest extends TestCase
             'cost_php' => 1500,
         ]);
 
-        $response->assertStatus(200);
-        $record->refresh();
-        $this->assertEquals('Tech Master', $record->technician_name);
-        $this->assertEquals('Updated notes for in progress record', $record->technician_notes);
-        $this->assertEquals(1500, $record->cost_php);
-        $this->assertEquals('in_progress', $record->status);
+        $response->assertStatus(422);
     }
 
     public function test_escalation_mechanism_on_repeated_failed_inspections(): void

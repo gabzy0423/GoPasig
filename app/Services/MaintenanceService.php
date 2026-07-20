@@ -32,7 +32,7 @@ class MaintenanceService
             $bus = Bus::find($record->getRawOriginal('bus_id'));
             if ($bus) {
                 $restoreStatus = $bus->previous_status ?? 'active';
-                $bus->update(['status' => $restoreStatus, 'previous_status' => null]);
+                \App\Services\BusStateService::transition($bus, $restoreStatus, 'Maintenance completed');
             }
         });
 
@@ -53,10 +53,10 @@ class MaintenanceService
         if (!$bus) return;
 
         if (in_array($newStatus, ['scheduled', 'in_progress'])) {
-            $bus->lockToMaintenance();
+            \App\Services\BusStateService::transition($bus, \App\Models\Bus::STATUS_MAINTENANCE, 'Maintenance scheduled');
         } elseif ($newStatus === 'completed') {
-            $restoreStatus = $bus->previous_status ?? 'active';
-            $bus->update(['status' => $restoreStatus, 'previous_status' => null]);
+            $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_ACTIVE;
+            \App\Services\BusStateService::transition($bus, $restoreStatus, 'Maintenance completed');
         } elseif ($newStatus === 'cancelled') {
             $query = MaintenanceRecord::where('bus_id', $busId)
                 ->whereIn('status', ['scheduled', 'in_progress']);
@@ -67,7 +67,7 @@ class MaintenanceService
 
             if (!$query->exists()) {
                 $restoreStatus = $bus->previous_status ?? 'active';
-                $bus->update(['status' => $restoreStatus, 'previous_status' => null]);
+                \App\Services\BusStateService::transition($bus, $restoreStatus, 'Maintenance cancelled');
             }
         }
     }
@@ -97,6 +97,18 @@ class MaintenanceService
             ];
         }
 
+        $completionTime = null;
+        if ($record->scheduled_at && $record->expected_duration_minutes) {
+            $completionTime = $record->scheduled_at->copy()
+                ->addMinutes($record->expected_duration_minutes)
+                ->timezone('Asia/Manila')
+                ->format('h:i A');
+        } elseif ($record->scheduled_at) {
+            $completionTime = $record->scheduled_at
+                ->timezone('Asia/Manila')
+                ->format('h:i A') . ' (+?m)';
+        }
+
         return [
             'in_maintenance' => true,
             'status' => 'maintenance',
@@ -104,43 +116,56 @@ class MaintenanceService
             'maintenance_status' => $record->status,
             'inspection_status' => $record->getInspectionStatus(),
             'inspection_passed' => $record->inspection_passed,
-            'completion_time' => $record->scheduled_at
-                ->addMinutes($record->expected_duration_minutes)
-                ->timezone('Asia/Manila')
-                ->format('h:i A')
+            'completion_time' => $completionTime
         ];
     }
 
     /**
-     * Sync maintenance record with bus status
-     * Ensures consistency between record status and bus status
+     * Sync maintenance record with bus status.
+     * Maintenance Result is the single source of truth:
+     *   Passed Inspection       → inactive, has_observation = false
+     *   Passed with Observation → inactive, has_observation = true
+     *   Failed Inspection       → stays in maintenance, has_observation = false
      */
     public static function syncMaintenanceWithBusStatus(MaintenanceRecord $record): void
     {
         $bus = Bus::find($record->getRawOriginal('bus_id'));
         if (!$bus) return;
 
-        // If maintenance is completed but bus is still in maintenance, fix it
-        if ($record->status === 'completed' && $bus->status === 'maintenance') {
-            $restoreStatus = $bus->previous_status ?? 'active';
-            $bus->update(['status' => $restoreStatus, 'previous_status' => null]);
+        if ($record->status === 'completed') {
+            $result         = $record->maintenance_result;
+            $releaseBus     = $result !== 'Failed Inspection';
+            $hasObservation = $result === 'Passed with Observation';
+
+            if ($releaseBus && $bus->status === \App\Models\Bus::STATUS_MAINTENANCE) {
+                \App\Services\BusStateService::transition(
+                    $bus,
+                    \App\Models\Bus::STATUS_INACTIVE,
+                    "Sync: Maintenance completed ({$result})"
+                );
+            }
+            // Sync observation flag regardless
+            if ($bus->has_observation !== $hasObservation) {
+                $bus->update(['has_observation' => $hasObservation]);
+            }
+            return;
         }
 
-        // If maintenance is scheduled/in_progress but bus is active, lock it
-        if (in_array($record->status, ['scheduled', 'in_progress']) && $bus->status !== 'maintenance') {
-            $bus->lockToMaintenance();
+        // If maintenance is scheduled/in_progress but bus is not in maintenance, lock it
+        if (in_array($record->status, ['scheduled', 'in_progress']) && $bus->status !== \App\Models\Bus::STATUS_MAINTENANCE) {
+            \App\Services\BusStateService::transition($bus, \App\Models\Bus::STATUS_MAINTENANCE, 'Sync: Maintenance active');
         }
 
         // If maintenance is cancelled but bus is in maintenance, check if others exist
-        if ($record->status === 'cancelled' && $bus->status === 'maintenance') {
+        if ($record->status === 'cancelled' && $bus->status === \App\Models\Bus::STATUS_MAINTENANCE) {
             $hasOther = MaintenanceRecord::where('bus_id', $bus->id)
                 ->where('id', '!=', $record->id)
                 ->whereIn('status', ['scheduled', 'in_progress'])
                 ->exists();
 
             if (!$hasOther) {
-                $restoreStatus = $bus->previous_status ?? 'active';
-                $bus->update(['status' => $restoreStatus, 'previous_status' => null]);
+                $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_ACTIVE;
+                \App\Services\BusStateService::transition($bus, $restoreStatus, 'Sync: Maintenance cancelled');
             }
         }
     }

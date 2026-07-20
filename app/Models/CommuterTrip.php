@@ -16,6 +16,7 @@ class CommuterTrip extends Model
         'route_id',
         'bus_id',
         'status',
+        'is_simulated',
         'boarded_at',
         'arrived_at',
     ];

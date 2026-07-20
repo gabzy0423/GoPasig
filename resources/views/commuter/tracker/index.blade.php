@@ -10,7 +10,7 @@
 @section('scripts')
 @php
     // Fetch stops data categorized by route
-    $routes = \App\Models\Route::getAllCached();
+    $routes = \App\Models\Route::getAllCached()->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive']);
     $stops = \App\Models\Stop::getAllCached();
     $stopsByRoute = $stops->groupBy('route_id');
 

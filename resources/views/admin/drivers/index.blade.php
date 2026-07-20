@@ -20,86 +20,220 @@
               <button class="dm-btn-outline" onclick="exportDriversCSV()">
                   <i class="ti ti-download"></i> Export CSV
               </button>
-              <button onclick="window.location.hash = 'drivers-create'; return false;" class="dm-btn-primary" style="display: inline-flex; align-items: center; justify-content: center;">
+              <button onclick="openDriversCreateScreen(); switchScreen('drivers-create'); return false;" class="dm-btn-primary" style="display: inline-flex; align-items: center; justify-content: center;">
                   <i class="ti ti-user-plus"></i> Add driver
               </button>
           </div>
       </div>
   </div>
 
-  {{-- STATS STRIP --}}
-  <div class="dm-stats-strip">
-    <div class="dm-stat-card">
-      <span class="dm-stat-label">On duty</span>
-      <span id="dm-stat-on-duty" class="dm-stat-value" style="color:#003F87;">0</span>
-    </div>
-    <div class="dm-stat-card">
-      <span class="dm-stat-label">Off duty</span>
-      <span id="dm-stat-off-duty" class="dm-stat-value" style="color:var(--color-text-secondary);">0</span>
-    </div>
-    <div class="dm-stat-card">
-      <span class="dm-stat-label">Suspended</span>
-      <span id="dm-stat-suspended" class="dm-stat-value" style="color:#A32D2D;">0</span>
-    </div>
-    <div class="dm-stat-card">
-      <span class="dm-stat-label">License expiring (≤30 days)</span>
-      <span id="dm-stat-expiring" class="dm-stat-value" style="color:#854F0B;">0</span>
-    </div>
+  <!-- Primary Status Cards (4 Columns) -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
+      <!-- Card 1: On Duty -->
+      <div onclick="toggleDriverCardFilter('on-duty', this)" class="relative bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-[92px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-pointer border-l-[3px] border-l-[#639922]" data-driver-card-filter="on-duty">
+          <div class="flex justify-between items-start">
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest truncate">On Duty</span>
+              <div class="h-6 w-6 rounded bg-emerald-50 flex items-center justify-center text-[#639922]">
+                  <i class="ti ti-steering-wheel text-sm"></i>
+              </div>
+          </div>
+          <div class="mt-1 flex items-baseline gap-1.5">
+              <span class="text-[20px] font-black text-slate-900 leading-none" id="dm-stat-on-duty">0</span>
+              <span class="text-[9px] text-slate-500 font-semibold truncate">Currently Driving</span>
+          </div>
+      </div>
+
+      <!-- Card 2: Standby Drivers -->
+      <div onclick="toggleDriverCardFilter('standby', this)" class="relative bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-[92px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-pointer border-l-[3px] border-l-[#003F87]" data-driver-card-filter="standby">
+          <div class="flex justify-between items-start">
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest truncate">Standby Drivers</span>
+              <div class="h-6 w-6 rounded bg-blue-50 flex items-center justify-center text-[#003F87]">
+                  <i class="ti ti-user text-sm"></i>
+              </div>
+          </div>
+          <div class="mt-1 flex items-baseline gap-1.5">
+              <span class="text-[20px] font-black text-slate-900 leading-none" id="dm-stat-standby">0</span>
+              <span class="text-[9px] text-slate-500 font-semibold truncate">Available for Dispatch</span>
+          </div>
+      </div>
+
+      <!-- Card 3: Suspended -->
+      <div onclick="toggleDriverCardFilter('suspended', this)" class="relative bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-[92px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-pointer border-l-[3px] border-l-[#E24B4A]" data-driver-card-filter="suspended">
+          <div class="flex justify-between items-start">
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest truncate">Suspended</span>
+              <div class="h-6 w-6 rounded bg-rose-50 flex items-center justify-center text-[#E24B4A]">
+                  <i class="ti ti-ban text-sm"></i>
+              </div>
+          </div>
+          <div class="mt-1 flex items-baseline gap-1.5">
+              <span class="text-[20px] font-black text-slate-900 leading-none" id="dm-stat-suspended">0</span>
+              <span class="text-[9px] text-slate-500 font-semibold truncate">Unavailable for Assignment</span>
+          </div>
+      </div>
+
+      <!-- Card 4: License Attention (Non-clickable) -->
+      <div class="relative bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-[92px] shadow-sm border-l-[3px] border-l-[#BA7517]" data-driver-card-filter="attention">
+          <div class="flex justify-between items-start">
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest truncate">License Attention</span>
+              <div class="h-6 w-6 rounded bg-amber-50 flex items-center justify-center text-[#BA7517]">
+                  <i class="ti ti-license text-sm"></i>
+              </div>
+          </div>
+          <div class="mt-1 flex items-baseline gap-1.5">
+              <span class="text-[20px] font-black text-slate-900 leading-none" id="dm-stat-attention">0</span>
+              <span class="text-[9px] text-slate-500 font-semibold truncate">Expiring / Expired</span>
+          </div>
+      </div>
   </div>
 
-  {{-- FILTER BAR --}}
-  <div class="dm-filter-bar">
-    <div class="dm-search-wrapper">
-      <i class="ti ti-search dm-search-icon"></i>
-      <input id="driver-search" type="text" class="dm-search-input" placeholder="Search name or license no…"
-        oninput="filterDriversTable()">
-    </div>
-    <select id="driver-status-filter" class="dm-select" onchange="filterDriversTable()">
-      <option value="">All statuses</option>
-      <option value="On Duty">On Duty</option>
-      <option value="Off Duty">Off Duty</option>
-      <option value="Suspended">Suspended</option>
-    </select>
-    <select id="driver-license-filter" class="dm-select" onchange="filterDriversTable()">
-      <option value="">All licenses</option>
-      <option value="ok">Valid</option>
-      <option value="warn">Expiring soon</option>
-      <option value="expired">Expired</option>
-    </select>
-    <span id="driver-showing-count" class="dm-count-label">Showing 8 of 8 drivers</span>
+  <!-- Secondary Driver Health Indicators section -->
+  <div class="space-y-2 mb-6">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 select-none">Driver Health Indicators</h3>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+          <!-- Assigned Drivers -->
+          <div class="relative bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between h-[72px] shadow-sm border-l-[3px] border-l-[#639922]">
+              <div class="flex justify-between items-center">
+                  <span class="text-[9px] text-slate-450 font-bold uppercase tracking-wider truncate">Assigned Drivers</span>
+                  <div class="h-5 w-5 rounded bg-emerald-50 flex items-center justify-center text-[#639922]">
+                      <i class="ti ti-circle-check text-xs"></i>
+                  </div>
+              </div>
+              <div class="flex items-baseline gap-1.5">
+                  <span class="text-[16px] font-black text-slate-800 leading-none" id="dm-health-assigned">0</span>
+                  <span class="text-[9px] text-slate-450 font-medium truncate">Active assignments</span>
+              </div>
+          </div>
+
+          <!-- High Performers -->
+          <div class="relative bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between h-[72px] shadow-sm border-l-[3px] border-l-[#003F87]">
+              <div class="flex justify-between items-center">
+                  <span class="text-[9px] text-slate-450 font-bold uppercase tracking-wider truncate">High Performers</span>
+                  <div class="h-5 w-5 rounded bg-blue-50 flex items-center justify-center text-[#003F87]">
+                      <i class="ti ti-trophy text-xs"></i>
+                  </div>
+              </div>
+              <div class="flex items-baseline gap-1.5">
+                  <span class="text-[16px] font-black text-slate-800 leading-none" id="dm-health-high-performers">0</span>
+                  <span class="text-[9px] text-slate-450 font-medium truncate">Rating &ge; 85%</span>
+              </div>
+          </div>
+
+          <!-- License Expired -->
+          <div class="relative bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between h-[72px] shadow-sm border-l-[3px] border-l-[#E24B4A]">
+              <div class="flex justify-between items-center">
+                  <span class="text-[9px] text-slate-450 font-bold uppercase tracking-wider truncate">License Expired</span>
+                  <div class="h-5 w-5 rounded bg-rose-50 flex items-center justify-center text-[#E24B4A]">
+                      <i class="ti ti-alert-triangle text-xs"></i>
+                  </div>
+              </div>
+              <div class="flex items-baseline gap-1.5">
+                  <span class="text-[16px] font-black text-slate-800 leading-none" id="dm-health-expired">0</span>
+                  <span class="text-[9px] text-slate-450 font-medium truncate">Must renew status</span>
+              </div>
+          </div>
+
+          <!-- No Active Trips -->
+          <div class="relative bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between h-[72px] shadow-sm border-l-[3px] border-l-slate-400">
+              <div class="flex justify-between items-center">
+                  <span class="text-[9px] text-slate-450 font-bold uppercase tracking-wider truncate">No Active Trips</span>
+                  <div class="h-5 w-5 rounded bg-slate-200 flex items-center justify-center text-slate-650">
+                      <i class="ti ti-activity-heartbeat text-xs"></i>
+                  </div>
+              </div>
+              <div class="flex items-baseline gap-1.5">
+                  <span class="text-[16px] font-black text-slate-800 leading-none" id="dm-health-no-trips">0</span>
+                  <span class="text-[9px] text-slate-450 font-medium truncate">Off Duty &amp; 0 trips today</span>
+              </div>
+          </div>
+      </div>
+  </div>
+
+  {{-- STANDARD TOOLBAR --}}
+  <div class="flex flex-col md:flex-row md:items-center gap-4 w-full bg-white p-4 border border-slate-200 rounded-xl shadow-sm select-none mb-6">
+      <!-- Left Region: Search input (only flexible element) -->
+      <div class="relative flex-1 min-w-0">
+          <i class="ti ti-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-base"></i>
+          <input id="driver-search" type="text" 
+                 class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-[#003F87] focus:ring-1 focus:ring-[#003F87] transition-all" 
+                 placeholder="Search driver, employee ID, or license number..."
+                 oninput="filterDriversTable()">
+      </div>
+      
+      <!-- Middle Region: Filters -->
+      <div class="flex flex-wrap items-center gap-3">
+          <select id="driver-status-filter" onchange="filterDriversTable()"
+              class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white cursor-pointer">
+              <option value="">All Statuses</option>
+              <option value="On Duty">On Duty</option>
+              <option value="Off Duty">Off Duty</option>
+              <option value="Suspended">Suspended</option>
+          </select>
+
+          <select id="driver-license-filter" onchange="filterDriversTable()"
+              class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white cursor-pointer">
+              <option value="">All License Statuses</option>
+              <option value="ok">Valid</option>
+              <option value="warn">Expiring Soon</option>
+              <option value="expired">Expired</option>
+          </select>
+      </div>
+
+      <!-- Right Region: Last updated, Refresh, Export -->
+      <div class="flex items-center gap-3 whitespace-nowrap shrink-0 text-xs font-semibold text-slate-500">
+          <div class="flex items-center gap-1 text-slate-400 select-none px-1">
+              <span>Last updated: <span id="dm-last-updated" class="font-mono text-slate-655 font-bold">Just now</span></span>
+          </div>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+          <button onclick="loadDatabaseDriversData(); return false;" class="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-bold transition cursor-pointer shadow-sm">
+              <i class="ti ti-refresh text-slate-550"></i> Refresh
+          </button>
+          <button onclick="exportDriversCSV(); return false;" class="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-bold transition cursor-pointer shadow-sm">
+              <i class="ti ti-download text-slate-550"></i> Export CSV
+          </button>
+      </div>
+  </div>
+
+  <!-- Table Title and Showing Counter -->
+  <div class="flex items-center justify-between mb-3 select-none">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Driver Registry Listing</h3>
+      <span id="driver-showing-count" class="text-xs font-semibold text-slate-500">Showing 0 of 0 drivers</span>
   </div>
 
   {{-- MAIN TABLE CARD --}}
   <div class="dm-table-card">
-    <table class="dm-table">
-      <colgroup>
-        <col style="width:18%">
-        <col style="width:12%">
-        <col style="width:12%">
-        <col style="width:10%">
-        <col style="width:8%">
-        <col style="width:9%">
-        <col style="width:9%">
-        <col style="width:10%">
-        <col style="width:12%">
-      </colgroup>
-      <thead>
-        <tr class="dm-thead-row">
-          <th class="dm-th">Driver</th>
-          <th class="dm-th">License no.</th>
-          <th class="dm-th">License expiry</th>
-          <th class="dm-th">Assigned bus</th>
-          <th class="dm-th">Route</th>
-          <th class="dm-th">Status</th>
-          <th class="dm-th" style="text-align:center;">Trips today</th>
-          <th class="dm-th">Pax today</th>
-          <th class="dm-th" style="text-align: right; padding-right: 16px;">Actions</th>
-        </tr>
-      </thead>
-      <tbody id="drivers-tbody">
-        {{-- Rows populated by drivers.js renderDriversTable() --}}
-      </tbody>
-    </table>
+    <div class="overflow-x-auto w-full">
+      <table class="dm-table">
+        <colgroup>
+          <col style="width:25%">
+          <col style="width:10%">
+          <col style="width:15%">
+          <col style="width:10%">
+          <col style="width:8%">
+          <col style="width:9%">
+          <col style="width:8%">
+          <col style="width:8%">
+          <col style="width:7%">
+        </colgroup>
+        <thead>
+          <tr class="dm-thead-row">
+            <th class="dm-th">Driver</th>
+            <th class="dm-th">License no.</th>
+            <th class="dm-th">License expiry</th>
+            <th class="dm-th">Assigned bus</th>
+            <th class="dm-th">Route</th>
+            <th class="dm-th">Status</th>
+            <th class="dm-th" style="text-align:center;">Trips today</th>
+            <th class="dm-th">Pax today</th>
+            <th class="dm-th" style="text-align: right; padding-right: 16px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="drivers-tbody">
+          {{-- Rows populated by drivers.js renderDriversTable() --}}
+        </tbody>
+      </table>
+    </div>
 
     {{-- PAGINATION ROW --}}
     <div class="dm-pagination-row">
@@ -344,6 +478,10 @@
     border-bottom: 0.5px solid var(--color-border-tertiary);
     text-align: left;
     white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--color-background-secondary);
   }
 
   /* Data rows */
@@ -362,11 +500,7 @@
   }
 
   .dm-tbody-row.dm-row-expired {
-    background: #FFF5F5;
-  }
-
-  .dm-tbody-row.dm-row-expired:hover {
-    background: #FDEAEA;
+    border-left: 4px solid #E24B4A;
   }
 
   .dm-td {
@@ -1083,5 +1217,79 @@
     .dm-search-wrapper {
       width: 100%;
     }
+  }
+
+  /* Floating row dropdown menu actions container */
+  .dm-dropdown-menu {
+      position: absolute;
+      right: 0;
+      z-index: 9999;
+      width: 190px;
+      background-color: #ffffff;
+      border: 1px solid #E8E6DF;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+      padding: 6px 0;
+      animation: dropdownFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @keyframes dropdownFadeIn {
+      from {
+          opacity: 0;
+          transform: scale(0.95) translateY(-5px);
+      }
+      to {
+          opacity: 1;
+          transform: scale(1) translateY(0);
+      }
+  }
+  .dm-dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      height: 40px;
+      padding: 0 16px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #1A1917;
+      text-align: left;
+      transition: background 0.15s ease;
+      text-decoration: none;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+  }
+  .dm-dropdown-item:hover {
+      background-color: #F8F7F4;
+  }
+  .dm-dropdown-item i {
+      font-size: 14px;
+  }
+  .dm-dropdown-divider {
+      height: 1px;
+      background-color: #E8E6DF;
+      margin: 6px 0;
+  }
+
+  /* Actions cell visible overflow style */
+  .dm-td-actions {
+      position: relative;
+      overflow: visible !important;
+  }
+
+  /* Actions trigger button classes */
+  .dm-action-trigger {
+      transition: all 0.2s ease;
+  }
+  .dm-action-trigger:hover {
+      background-color: #F8F7F4;
+      border-color: #D6D3C9;
+      color: #1A1917;
+  }
+  .dm-action-trigger:focus,
+  .dm-action-trigger.active {
+      background-color: #EEF3FF !important;
+      border-color: #003F87 !important;
+      color: #003F87 !important;
   }
 </style>

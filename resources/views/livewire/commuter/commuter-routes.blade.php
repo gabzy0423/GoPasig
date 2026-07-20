@@ -1,5 +1,17 @@
 <div wire:poll.30s x-data="commuterRoutes()"
     class="max-w-[768px] mx-auto w-full min-h-screen bg-slate-50 flex flex-col pb-24 relative select-none">
+    
+    <!-- Toast Notification for suspended route -->
+    <div x-data="{ showToast: false, toastMessage: '' }"
+         x-on:route-suspended.window="toastMessage = $event.detail[0].message; showToast = true; setTimeout(() => { showToast = false }, 5000)"
+         x-show="showToast"
+         x-transition
+         class="fixed top-20 left-1/2 transform -translate-x-1/2 z-[100] bg-rose-600 text-white text-xs font-bold px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 max-w-[90%] border border-rose-500"
+         style="display: none;">
+         <i class="ti ti-ban text-sm flex-shrink-0"></i>
+         <span x-text="toastMessage"></span>
+    </div>
+
     <!-- SECTION 1 — SEARCH BAR ONLY -->
     <div class="px-4 py-3 bg-white border-b border-slate-200 sticky top-0 z-20">
         <div class="relative w-full">

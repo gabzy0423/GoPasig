@@ -5,7 +5,7 @@
 @section('content')
 <div x-data="{ 
     showModal: false, 
-    selectedType: '{{ \App\Models\Incident::TYPES[0] ?? "Breakdown" }}', 
+    selectedType: '{{ \App\Models\Incident::getTypes()[0] ?? "Breakdown" }}', 
     description: '', 
     isSubmitting: false,
     toast: { show: false, message: '', type: 'success' },
@@ -50,8 +50,8 @@
                         layoutText.className = 'status-indicator-text text-rose-500 font-bold';
                     }
                     
-                    if (typeof stopSimulation === 'function') {
-                        stopSimulation();
+                    if (typeof stopTelemetry === 'function') {
+                        stopTelemetry();
                     }
                     
                     isTrackingActive = false;
@@ -106,22 +106,63 @@
         </div>
     </div>
 
+    <!-- Temporary GPS Debug Panel -->
+    <div id="gps-debug-panel" class="bg-slate-900 text-slate-100 rounded-2xl p-4 flex flex-col gap-1.5 text-xs font-mono select-all">
+        <div class="flex justify-between items-center border-b border-slate-700 pb-1.5 mb-1.5">
+            <span class="font-extrabold text-[#003F87] tracking-widest text-[10px]">GPS DEBUG PANEL</span>
+            <span class="text-[9px] text-slate-400">Temporary Debug Panel</span>
+        </div>
+        <div>Protocol: <span id="gps-debug-protocol" class="text-emerald-400 font-bold">Checking...</span></div>
+        <div>Hostname: <span id="gps-debug-hostname" class="text-emerald-400 font-bold">Checking...</span></div>
+        <div>Permission: <span id="gps-debug-permission" class="text-blue-400 font-bold">Checking...</span></div>
+        <div>GPS Status: <span id="gps-debug-status" class="text-amber-400 font-bold">Waiting...</span></div>
+        <div>Last Device Lat/Lng: <span id="gps-debug-coords" class="text-slate-350 font-bold">None</span></div>
+        <div>GPS State: <span id="gps-debug-state" class="text-amber-400 font-bold">Waiting</span></div>
+        <div>Last GPS Success: <span id="gps-debug-last-success" class="text-emerald-400 font-bold">None</span></div>
+        <div>Telemetry Heartbeat: <span id="gps-debug-heartbeat" class="text-emerald-400 font-bold">None</span></div>
+        <div>Packet Type: <span id="gps-debug-packet-type" class="text-violet-400 font-bold">None</span></div>
+        <div>GPS Fix Timestamp: <span id="gps-debug-fix-timestamp" class="text-emerald-400 font-bold">None</span></div>
+        <div>GPS Fix Age: <span id="gps-debug-fix-age" class="text-amber-400 font-bold">None</span></div>
+        <div>Speed Source: <span id="gps-debug-speed-source" class="text-violet-400 font-bold">None</span></div>
+        <div>Last Known Coordinate Age: <span id="gps-debug-coordinate-age" class="text-amber-400 font-bold">None</span></div>
+        <div>Last POST Status: <span id="gps-debug-post-status" class="text-blue-400 font-bold">None</span></div>
+        <div>Current Accuracy Variable: <span id="gps-debug-current-accuracy" class="text-cyan-400 font-bold">None</span></div>
+        <div>Payload Accuracy: <span id="gps-debug-payload-accuracy" class="text-cyan-400 font-bold">None</span></div>
+        <div>Accuracy Trace Build: <span id="gps-debug-accuracy-build" class="text-violet-400 font-bold">accuracy-trace-mobile-v1</span></div>
+        <div>Last Error: <span id="gps-debug-error" class="text-rose-450 font-bold">None</span></div>
+        <div>Watch ID: <span id="gps-debug-watchid" class="text-slate-450 font-bold">None</span></div>
+    </div>
+
     @if($driver && $driver->assigned_bus && $bus)
         <!-- TRIP CONTROL TOGGLE BUTTON -->
         <div class="bg-white border border-slate-100 rounded-2xl p-5 shadow-[0_4px_24px_rgba(15,23,42,0.02)] flex flex-col gap-4">
             <div class="flex justify-between items-start">
                 <div class="flex flex-col gap-0.5">
                     <span class="text-xs font-black text-slate-700 uppercase tracking-wider">Tracking Session</span>
-                    <span class="text-[11px] text-slate-450 font-semibold" id="tracking-desc-text">Offline — coordinates are frozen.</span>
+                    <span class="text-[11px] text-slate-450 font-semibold" id="tracking-desc-text">
+                        {{ $bus->status === 'operating' ? 'LIVE — GPS coordinates are actively transmitting.' : 'Offline — coordinates are frozen.' }}
+                    </span>
                 </div>
-                <div class="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-450">
-                    <i class="ti ti-satellite text-lg" id="satellite-icon"></i>
+                <div class="flex flex-col items-end gap-1">
+                    <div class="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-450">
+                        <i class="ti ti-satellite text-lg" id="satellite-icon"></i>
+                    </div>
+                    {{-- GPS source indicator: updated dynamically by updateGpsSourceBadge() JS --}}
+                    <span id="gps-source-badge" class="text-[9px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full bg-slate-100 text-slate-400 border border-slate-200">
+                        ◌ WAITING
+                    </span>
                 </div>
             </div>
 
             <button id="btn-toggle-tracking" onclick="toggleTracking()" class="w-full py-4 rounded-xl font-black text-[15px] tracking-wide shadow-md border premium-transition active:scale-[0.98]
-                {{ $bus->status === 'active' ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500/20 shadow-[0_4px_16px_rgba(225,29,72,0.2)]' : 'bg-[#003F87] hover:bg-[#0050a3] text-white border-[#003F87]/15 shadow-[0_4px_16px_rgba(0,63,135,0.15)]' }}">
-                {{ $bus->status === 'active' ? 'STOP LIVE TRIP SESSION' : 'START LIVE TRIP SESSION' }}
+                {{ $bus->status === 'operating' ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500/20 shadow-[0_4px_16px_rgba(225,29,72,0.2)]' : 'bg-[#003F87] hover:bg-[#0050a3] text-white border-[#003F87]/15 shadow-[0_4px_16px_rgba(0,63,135,0.15)]' }}">
+                @if($bus->status === 'operating')
+                    STOP LIVE TRIP SESSION
+                @elseif($bus->status === 'ready')
+                    START LIVE TRIP SESSION
+                @else
+                    START LIVE TRIP SESSION
+                @endif
             </button>
         </div>
 
@@ -341,13 +382,13 @@
             <div class="flex flex-col gap-1.5 mt-1 shrink-0">
                 <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Select Incident Type</span>
                 <div class="grid grid-cols-2 gap-2.5">
-                    @foreach(\App\Models\Incident::TYPES_METADATA as $typeName => $meta)
+                    @foreach(\App\Models\Incident::getTypesMetadata() as $typeName => $meta)
                         <button type="button" @click="selectedType = '{{ $typeName }}'" 
                                 class="p-3.5 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all duration-200 active:scale-95 text-center cursor-pointer font-sans"
                                 :class="selectedType === '{{ $typeName }}' ? '{{ $meta['active_class'] }} shadow-sm' : 'bg-slate-55/50 border-slate-100 text-slate-500 hover:bg-slate-50 hover:border-slate-200'">
                             <i class="ti {{ $meta['icon'] }} text-2xl" :class="selectedType === '{{ $typeName }}' ? '{{ $meta['icon_active'] }}' : 'text-slate-400'"></i>
                             <span class="text-xs font-black uppercase tracking-wide">
-                                {{ $typeName === 'Heavy Traffic Delay' ? 'Traffic Delay' : ($typeName === 'Passenger Concern' ? 'Concern' : $typeName) }}
+                                {{ \App\Models\Incident::isTrafficDelay($typeName) ? 'Traffic Delay' : (\App\Models\Incident::isPassengerConcern($typeName) ? 'Concern' : $typeName) }}
                             </span>
                         </button>
                     @endforeach
@@ -411,11 +452,26 @@
 
 @section('scripts')
 <script>
+    /**
+     * TECHNICAL DEBT NOTE — Driver Dashboard JavaScript
+     * ---------------------------------------------------
+     * All GPS telemetry logic, UI state management, and tracking business rules
+     * currently reside in this Blade template as inline JavaScript.
+     *
+     * Future refactor target (when complexity grows beyond ~1500 lines):
+     *   - resources/js/driver/gps-service.js       — GPS acquisition, watchPosition, retry logic
+     *   - resources/js/driver/telemetry-service.js — Transmission loop, hold logic, coord validation
+     *   - resources/js/driver/driver-ui.js         — Badge updates, stop UI, speed display
+     *
+     * This keeps concerns separated and makes each module independently testable.
+     */
+
     // Dynamic config constants from database models
     const warningLimit = {{ \App\Models\Bus::getOccupancyWarningThreshold() }};
     const criticalLimit = {{ \App\Models\Bus::getOccupancyCriticalThreshold() }};
     const fastSpeedThreshold = {{ \App\Models\Bus::getSpeedFastThreshold() }};
     const gpsSyncInterval = {{ \App\Models\Bus::getGpsSyncIntervalMs() }};
+    const gpsExtendedStaleThresholdMs = {{ (int) \App\Models\SystemSetting::get('gps_extended_stale_threshold_ms', 600000) }};
     const speedSimInterval = {{ \App\Models\Bus::getSpeedSimulationIntervalMs() }};
     const simSpeedMin = {{ $bus ? $bus->getMinSpeed() : \App\Models\Bus::getSimSpeedMin() }};
     const simSpeedMax = {{ $bus ? $bus->getMaxSpeed() : \App\Models\Bus::getSimSpeedMax() }};
@@ -429,8 +485,8 @@
     const fallbackLng = {{ $fallbackLng }};
 
     // State indicators
-    let isTrackingActive = "{{ isset($bus) && $bus->status === 'active' ? 'true' : 'false' }}" === 'true';
-    let simulationTimer = null;
+    let isTrackingActive = "{{ isset($bus) && $bus->status === 'operating' ? 'true' : 'false' }}" === 'true';
+    let telemetryTimer = null;
     let speedTimer = null;
     let currentSpeed = 0;
     let targetSpeed = 0;
@@ -440,18 +496,99 @@
     let isRealSpeedActive = false;
     let lastDeviceLat = null;
     let lastDeviceLng = null;
+    let lastDeviceAccuracy = null;
+    let lastDeviceSpeedMps = 0;
+    let lastDeviceHeading = null;
+    let lastGpsSuccessAt = null;
+    let lastGpsFixTimestamp = null;
+    let lastGpsFixSequence = 0;
+    let lastSentGpsFixSequence = null;
+    let lastSentGpsFixTimestamp = null;
+    let lastDeviceSpeedSource = 'native';
+    let lastPacketType = 'None';
+    let lastPacketSpeedSource = 'None';
+    let lastPacketGpsFixAgeMs = null;
+    let telemetryHeartbeatAt = null;
+    let gpsState = 'GPS ACQUIRING';
+    let gpsWatchFailureCount = 0;
+    let lastPostStatus = 'None';
     let prevLat = null;
     let prevLng = null;
     let lastCoordTime = null;
     let gpsRetryTimeout = null;
 
+    // GPS acquisition state — prevents simulation fallback during GPS hardware cold-start.
+    // Set to false on start; becomes true only after the FIRST real position fix arrives.
+    // While false (and permission not denied), the simulation timer HOLDS and does not
+    // transmit fake route coordinates.
+    let gpsAcquired = false;
+    let gpsPermissionDenied = false;
+    // Maximum ms to wait for first GPS fix before allowing simulation fallback
+    const GPS_WARMUP_TIMEOUT_MS = 20000;
+
+    function getPositionTimestamp(position) {
+        const timestamp = Number(position && position.timestamp);
+        return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : Date.now();
+    }
+
+    function formatTelemetryAgeMs(ageMs) {
+        return Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 1000)) + 's' : 'None';
+    }
+
+    function formatTelemetryTime(timestamp) {
+        return timestamp ? new Date(timestamp).toLocaleTimeString() : 'None';
+    }
+
+    function formatTelemetryAge(timestamp) {
+        if (!timestamp) return 'None';
+        const ageSeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+        return ageSeconds + 's';
+    }
+
+    function updateTelemetryDebug() {
+        const stateEl = document.getElementById('gps-debug-state');
+        const successEl = document.getElementById('gps-debug-last-success');
+        const heartbeatEl = document.getElementById('gps-debug-heartbeat');
+        const ageEl = document.getElementById('gps-debug-coordinate-age');
+        const postEl = document.getElementById('gps-debug-post-status');
+        const packetTypeEl = document.getElementById('gps-debug-packet-type');
+        const fixTimestampEl = document.getElementById('gps-debug-fix-timestamp');
+        const fixAgeEl = document.getElementById('gps-debug-fix-age');
+        const speedSourceEl = document.getElementById('gps-debug-speed-source');
+
+        if (stateEl) stateEl.innerText = gpsState;
+        if (successEl) successEl.innerText = formatTelemetryTime(lastGpsSuccessAt);
+        if (heartbeatEl) heartbeatEl.innerText = formatTelemetryTime(telemetryHeartbeatAt);
+        if (ageEl) ageEl.innerText = formatTelemetryAge(lastGpsSuccessAt);
+        if (postEl) postEl.innerText = lastPostStatus;
+        if (packetTypeEl) packetTypeEl.innerText = lastPacketType;
+        if (fixTimestampEl) fixTimestampEl.innerText = formatTelemetryTime(lastGpsFixTimestamp);
+        if (fixAgeEl) fixAgeEl.innerText = formatTelemetryAgeMs(lastPacketGpsFixAgeMs);
+        if (speedSourceEl) speedSourceEl.innerText = lastPacketSpeedSource;
+    }
+
+    function updateAccuracyDebug(currentAccuracy, payloadAccuracy = null) {
+        const currentEl = document.getElementById('gps-debug-current-accuracy');
+        const payloadEl = document.getElementById('gps-debug-payload-accuracy');
+        if (currentEl) currentEl.innerText = Number.isFinite(currentAccuracy) ? currentAccuracy + 'm' : 'null';
+        if (payloadEl) payloadEl.innerText = Number.isFinite(payloadAccuracy) ? payloadAccuracy + 'm' : 'null';
+        updateTelemetryDebug();
+    }
     // Dynamic Coordinates Path array from database (with fallback integrated)
     const mockRouteCoords = @json($gpsCoords);
     let mockCoordIndex = 0;
 
     document.addEventListener("DOMContentLoaded", function() {
         if (isTrackingActive) {
-            startSimulation();
+            startTelemetry();
+            const btn = document.getElementById('btn-toggle-tracking');
+            if (btn) btn.innerText = 'STOP LIVE TRIP SESSION';
+        } else if ("{{ $bus ? $bus->status : '' }}" === 'operating') {
+            const btn = document.getElementById('btn-toggle-tracking');
+            if (btn) {
+                btn.innerText = 'RESUME TRACKING';
+                btn.className = "w-full py-4 rounded-xl font-black text-[15px] tracking-wide shadow-md border premium-transition active:scale-[0.98] bg-[#003F87] hover:bg-[#0050a3] text-white border-[#003F87]/15 shadow-[0_4px_16px_rgba(0,63,135,0.15)]";
+            }
         }
         // Initialize passed stops styling on load
         const initialNextStop = document.getElementById('active-stop-label')?.innerText?.trim();
@@ -589,132 +726,332 @@
         return R * c; // in meters
     }
 
-    function startGPSWatch() {
-        if ("geolocation" in navigator) {
-            isRealSpeedActive = true; // Assume GPS is active and we want real speed
-            geoWatchId = navigator.geolocation.watchPosition(
-                (position) => {
-                    const currentLat = position.coords.latitude;
-                    const currentLng = position.coords.longitude;
-                    const nowTime = Date.now();
-                    
-                    lastDeviceLat = currentLat;
-                    lastDeviceLng = currentLng;
-                    
-                    // Hide the alert banner and clear reconnect timeout
-                    const weakAlert = document.getElementById('gps-signal-weak-alert');
-                    if (weakAlert) {
-                        weakAlert.classList.add('hidden');
-                    }
-                    if (gpsRetryTimeout) {
-                        clearTimeout(gpsRetryTimeout);
-                        gpsRetryTimeout = null;
-                    }
-                    
-                    let speedKmh = 0;
-                    let speedMps = position.coords.speed;
-                    
-                    if (speedMps !== null && speedMps >= 0) {
-                        isRealSpeedActive = true;
-                        let rawKmh = speedMps * 3.6;
-                        speedKmh = rawKmh < 3 ? 0 : Math.round(rawKmh);
-                    } else {
-                        // Fallback: Compute speed from coordinates difference
-                        if (prevLat !== null && prevLng !== null && lastCoordTime !== null) {
-                            let distanceMeters = calculateDistanceInMeters(prevLat, prevLng, currentLat, currentLng);
-                            // Filter GPS jitter (ignore movements < 2 meters while stationary)
-                            if (distanceMeters < 2.0) {
-                                distanceMeters = 0;
-                            }
-                            const timeSeconds = (nowTime - lastCoordTime) / 1000;
-                            if (timeSeconds > 0.5) {
-                                const computedSpeedMps = distanceMeters / timeSeconds;
-                                let computedKmh = computedSpeedMps * 3.6;
-                                // Filter out low-speed GPS drift/jitter (speeds < 3 km/h are treated as stationary)
-                                if (computedKmh < 3) {
-                                    computedKmh = 0;
-                                }
-                                // Cap speed at 120 km/h to filter out telemetry teleportation spikes
-                                if (computedKmh < 120) {
-                                    speedKmh = Math.round(computedKmh);
-                                }
-                            }
-                        }
-                        isRealSpeedActive = true;
-                    }
-                    
-                    // Keep track of last coordinate and time
-                    prevLat = currentLat;
-                    prevLng = currentLng;
-                    lastCoordTime = nowTime;
-                    
-                    currentSpeed = speedKmh;
-                    document.getElementById('speed-display').innerText = currentSpeed;
-                    
-                    const speedStatus = document.getElementById('speed-status-text');
-                    if (currentSpeed === 0) {
-                        speedStatus.innerText = "SHUTTLE IDLE";
-                        speedStatus.className = "text-[10px] font-semibold text-slate-400 mt-0.5";
-                    } else if (currentSpeed > fastSpeedThreshold) {
-                        speedStatus.innerText = "CRUISING FAST";
-                        speedStatus.className = "text-[10px] font-semibold text-amber-600 mt-0.5";
-                    } else {
-                        speedStatus.innerText = "DRIVING SLOW";
-                        speedStatus.className = "text-[10px] font-semibold text-emerald-600 mt-0.5";
-                    }
-                },
-                (error) => {
-                    console.warn("Geolocation watch warning: ", error);
-                    
-                    // Show the alert banner
-                    const weakAlert = document.getElementById('gps-signal-weak-alert');
-                    if (weakAlert) {
-                        weakAlert.classList.remove('hidden');
-                    }
+    function normalizeHeading(heading) {
+        return Number.isFinite(heading) && heading >= 0 && heading <= 360 ? heading : null;
+    }
 
-                    // Set 30-second timeout to retry tracking
-                    if (!gpsRetryTimeout) {
-                        gpsRetryTimeout = setTimeout(() => {
-                            gpsRetryTimeout = null;
-                            console.log("Retrying GPS watch connection...");
-                            stopGPSWatch();
-                            startGPSWatch();
-                        }, 30000);
-                    }
-                    
-                    // Only disable real speed if permission is denied, 
-                    // or if we have never received a valid coordinate lock.
-                    // This prevents timeouts (common when stationary) from activating the simulation loop.
-                    if (error.code === error.PERMISSION_DENIED || lastDeviceLat === null) {
-                        isRealSpeedActive = false;
-                    }
-                },
-                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-            );
+    function updateSpeedDisplay(speedMps) {
+        const speedKmh = Math.max(0, speedMps) * 3.6;
+        currentSpeed = speedKmh < 3 ? 0 : Math.round(speedKmh);
+
+        const display = document.getElementById('speed-display');
+        if (display) {
+            display.innerText = currentSpeed;
+        }
+
+        const speedStatus = document.getElementById('speed-status-text');
+        if (!speedStatus) return;
+
+        if (currentSpeed === 0) {
+            speedStatus.innerText = "SHUTTLE IDLE";
+            speedStatus.className = "text-[10px] font-semibold text-slate-400 mt-0.5";
+        } else if (currentSpeed > fastSpeedThreshold) {
+            speedStatus.innerText = "CRUISING FAST";
+            speedStatus.className = "text-[10px] font-semibold text-amber-600 mt-0.5";
+        } else {
+            speedStatus.innerText = "DRIVING SLOW";
+            speedStatus.className = "text-[10px] font-semibold text-emerald-600 mt-0.5";
         }
     }
 
-    function stopGPSWatch() {
-        if (gpsRetryTimeout) {
-            clearTimeout(gpsRetryTimeout);
-            gpsRetryTimeout = null;
+    // Update the GPS source badge shown to the driver
+    function updateGpsSourceBadge(state, accuracy) {
+        gpsState = state || gpsState;
+        updateTelemetryDebug();
+        const badge = document.getElementById('gps-source-badge');
+        if (!badge) return;
+        
+        const accuracyText = (accuracy !== undefined && accuracy !== null) ? ` · ${Math.round(accuracy)}m` : '';
+
+        if (state === 'REAL GPS') {
+            badge.textContent = `REAL GPS${accuracyText}`;
+            badge.className = 'text-[9px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/20';
+        } else if (state === 'GPS ACQUIRING...') {
+            badge.textContent = 'ACQUIRING...';
+            badge.className = 'text-[9px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-600 border border-blue-500/20 animate-pulse';
+        } else if (state === 'GPS WEAK') {
+            badge.textContent = `GPS WEAK${accuracyText}`;
+            badge.className = 'text-[9px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-600 border border-rose-500/20';
+        } else if (state === 'GPS DEGRADED') {
+            badge.textContent = `GPS DEGRADED${accuracyText}`;
+            badge.className = 'text-[9px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 border border-amber-500/20';
+        } else if (state === 'GPS STALE') {
+            badge.textContent = 'GPS STALE';
+            badge.className = 'text-[9px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full bg-rose-600/20 text-rose-700 border border-rose-600/30';
+        } else if (state === 'GPS LOST') {
+            badge.textContent = 'GPS LOST';
+            badge.className = 'text-[9px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full bg-rose-600/20 text-rose-700 border border-rose-600/30';
+        } else if (state === 'GPS BLOCKED') {
+            badge.textContent = 'GPS BLOCKED';
+            badge.className = 'text-[9px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-600 border border-slate-500/20';
+        } else {
+            badge.textContent = state || 'UNKNOWN';
+            badge.className = 'text-[9px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200';
         }
+    }
+
+    let gpsRetryCount = 0;
+    const GPS_MAX_RETRIES = 5;
+
+    function acquireGPS() {
+        // Update protocol and hostname in debug panel
+        const protoEl = document.getElementById('gps-debug-protocol');
+        if (protoEl) protoEl.innerText = window.location.protocol;
+        const hostEl = document.getElementById('gps-debug-hostname');
+        if (hostEl) hostEl.innerText = window.location.hostname;
+
+        // Check Permissions API
+        if (navigator.permissions && navigator.permissions.query) {
+            navigator.permissions.query({name: 'geolocation'}).then(function(result) {
+                const pEl = document.getElementById('gps-debug-permission');
+                if (pEl) pEl.innerText = result.state;
+                result.onchange = function() {
+                    if (pEl) pEl.innerText = result.state;
+                };
+            }).catch(function(err) {
+                const pEl = document.getElementById('gps-debug-permission');
+                if (pEl) pEl.innerText = 'Error: ' + err.message;
+            });
+        } else {
+            const pEl = document.getElementById('gps-debug-permission');
+            if (pEl) pEl.innerText = 'Not Supported';
+        }
+
+        const statusEl = document.getElementById('gps-debug-status');
+
+        if ("geolocation" in navigator) {
+            if (statusEl) statusEl.innerText = "Acquiring initial lock (Attempt " + (gpsRetryCount + 1) + ")...";
+            updateGpsSourceBadge('GPS ACQUIRING...');
+
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const currentLat = position.coords.latitude;
+                    const currentLng = position.coords.longitude;
+                    const accuracy = position.coords.accuracy;
+                    const fixTimestamp = getPositionTimestamp(position);
+                    const nativeSpeedMps = position.coords.speed;
+                    const hasNativeSpeed = Number.isFinite(nativeSpeedMps) && nativeSpeedMps >= 0;
+                    console.log('GPS acquire getCurrentPosition SUCCESS:', currentLat, currentLng);
+                    
+                    gpsAcquired = true;
+                    lastDeviceLat = currentLat;
+                    lastDeviceLng = currentLng;
+                    lastDeviceAccuracy = Number.isFinite(accuracy) ? accuracy : null;
+                    lastDeviceSpeedMps = hasNativeSpeed ? nativeSpeedMps : 0;
+                    lastDeviceSpeedSource = hasNativeSpeed ? 'native' : 'calculated';
+                    lastDeviceHeading = normalizeHeading(position.coords.heading);
+                    lastGpsFixTimestamp = fixTimestamp;
+                    lastGpsSuccessAt = fixTimestamp;
+                    lastGpsFixSequence++;
+                    gpsWatchFailureCount = 0;
+                    gpsPermissionDenied = false;
+                    updateSpeedDisplay(lastDeviceSpeedMps);
+                    updateAccuracyDebug(lastDeviceAccuracy);
+                    updateGpsSourceBadge('REAL GPS', accuracy);
+                    
+                    const coordsEl = document.getElementById('gps-debug-coords');
+                    if (coordsEl) coordsEl.innerText = currentLat.toFixed(6) + ', ' + currentLng.toFixed(6) + ' (Acc: ' + accuracy.toFixed(1) + 'm)';
+                    if (statusEl) statusEl.innerText = "Initial Lock Acquired. Starting watch...";
+                    
+                    startContinuousWatch();
+                },
+                function(error) {
+                    console.warn("GPS acquire getCurrentPosition ERROR code:", error.code, "message:", error.message);
+                    
+                    const errEl = document.getElementById('gps-debug-error');
+                    if (errEl) errEl.innerText = "Attempt " + (gpsRetryCount + 1) + " error: Code " + error.code + " - " + error.message;
+
+                    if (error.code === error.PERMISSION_DENIED) {
+                        gpsPermissionDenied = true;
+                        updateGpsSourceBadge('GPS BLOCKED');
+                        if (statusEl) statusEl.innerText = "Permission Denied — GPS access blocked. Telemetry on hold.";
+                    } else {
+                        gpsRetryCount++;
+                        if (gpsRetryCount <= GPS_MAX_RETRIES) {
+                            const delay = gpsRetryCount * 3000; // 3s, 6s, 9s, 12s, 15s
+                            console.log('GPS timeout/error — retry', gpsRetryCount, 'in', delay, 'ms');
+                            if (statusEl) statusEl.innerText = "Retry " + gpsRetryCount + " in " + (delay / 1000) + "s...";
+                            setTimeout(acquireGPS, delay);
+                        } else {
+                            // All retries exhausted — hold transmission, show GPS LOST
+                            console.log('GPS failed after', GPS_MAX_RETRIES, 'retries. Holding telemetry.');
+                            updateGpsSourceBadge('GPS LOST');
+                            if (statusEl) statusEl.innerText = "GPS signal lost. Telemetry on hold. Retrying on next fix.";
+                        }
+                    }
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 20000, // 20 seconds per attempt
+                    maximumAge: 0
+                }
+            );
+        } else {
+            gpsAcquired = false;
+            gpsPermissionDenied = true;
+            updateGpsSourceBadge('GPS BLOCKED');
+            if (statusEl) statusEl.innerText = "Geolocation NOT supported by browser. Telemetry on hold.";
+        }
+    }
+
+    function startContinuousWatch() {
+        const statusEl = document.getElementById('gps-debug-status');
+        if (statusEl) statusEl.innerText = "Starting watchPosition...";
+
+        geoWatchId = navigator.geolocation.watchPosition(
+            function(position) {
+                const currentLat = position.coords.latitude;
+                const currentLng = position.coords.longitude;
+                const accuracy = position.coords.accuracy;
+                const nowTime = Date.now();
+                const fixTimestamp = getPositionTimestamp(position);
+                const maxAccuracy = 50; // Accept readings under 50m accuracy
+
+                const coordsEl = document.getElementById('gps-debug-coords');
+                if (coordsEl) coordsEl.innerText = currentLat.toFixed(6) + ', ' + currentLng.toFixed(6) + ' (Acc: ' + accuracy.toFixed(1) + 'm)';
+
+                if (accuracy <= maxAccuracy) {
+                    lastDeviceLat = currentLat;
+                    lastDeviceLng = currentLng;
+                    lastDeviceAccuracy = Number.isFinite(accuracy) ? accuracy : null;
+                    lastDeviceSpeedMps = Number.isFinite(position.coords.speed) && position.coords.speed >= 0 ? position.coords.speed : 0;
+                    lastDeviceHeading = normalizeHeading(position.coords.heading);
+                    lastGpsFixTimestamp = fixTimestamp;
+                    lastGpsSuccessAt = fixTimestamp;
+                    lastGpsFixSequence++;
+                    gpsWatchFailureCount = 0;
+                    gpsPermissionDenied = false;
+                    updateSpeedDisplay(lastDeviceSpeedMps);
+                    updateAccuracyDebug(lastDeviceAccuracy);
+                    gpsAcquired = true; // double-ensure
+                    updateGpsSourceBadge('REAL GPS', accuracy);
+                    if (statusEl) statusEl.innerText = "Receiving Live Updates";
+                } else {
+                    // Poor accuracy — keep last good reading
+                    updateGpsSourceBadge('GPS WEAK', accuracy);
+                    if (statusEl) statusEl.innerText = "Skipped low accuracy: " + Math.round(accuracy) + "m";
+                    console.log('Skipping low accuracy reading:', accuracy, 'm');
+                    return; // Skip update but keep watch alive
+                }
+
+                // Hide the alert banner if visible
+                const weakAlert = document.getElementById('gps-signal-weak-alert');
+                if (weakAlert) {
+                    weakAlert.classList.add('hidden');
+                }
+
+                let speedMps = position.coords.speed;
+                let speedSource = 'native';
+
+                if (Number.isFinite(speedMps) && speedMps >= 0) {
+                    isRealSpeedActive = true;
+                } else {
+                    speedSource = 'calculated';
+                    speedMps = 0;
+                    // Fallback: Compute speed from coordinates difference
+                    if (prevLat !== null && prevLng !== null && lastCoordTime !== null) {
+                        let distanceMeters = calculateDistanceInMeters(prevLat, prevLng, currentLat, currentLng);
+                        if (distanceMeters < 2.0) {
+                            distanceMeters = 0;
+                        }
+                        const timeSeconds = (nowTime - lastCoordTime) / 1000;
+                        if (timeSeconds > 0.5) {
+                            const computedSpeedMps = distanceMeters / timeSeconds;
+                            if (computedSpeedMps * 3.6 < 120) {
+                                speedMps = computedSpeedMps;
+                            }
+                        }
+                    }
+                    isRealSpeedActive = true;
+                }
+
+                prevLat = currentLat;
+                prevLng = currentLng;
+                lastCoordTime = nowTime;
+
+                lastDeviceSpeedMps = Math.max(0, speedMps);
+                lastDeviceSpeedSource = speedSource;
+                lastDeviceHeading = normalizeHeading(position.coords.heading);
+                updateSpeedDisplay(lastDeviceSpeedMps);
+            },
+            function(error) {
+                console.log('GPS watchPosition signal lost temporarily:', error.code, error.message);
+                
+                const errEl = document.getElementById('gps-debug-error');
+                if (errEl) errEl.innerText = "Watch error: Code " + error.code + " - " + error.message;
+
+                if (error.code === error.PERMISSION_DENIED) {
+                    gpsPermissionDenied = true;
+                    lastPostStatus = 'GPS permission blocked';
+                    updateGpsSourceBadge('GPS BLOCKED');
+                    if (statusEl) statusEl.innerText = "Permission denied. Telemetry on hold.";
+                } else {
+                    gpsWatchFailureCount++;
+                    // Transient watch errors can happen while stationary. Keep the last real fix
+                    // and continue heartbeat telemetry unless failures remain extended.
+                    updateGpsSourceBadge('GPS DEGRADED', lastDeviceAccuracy);
+                    if (statusEl) statusEl.innerText = "GPS signal degraded. Continuing heartbeat from last real fix.";
+                }
+
+                const weakAlert = document.getElementById('gps-signal-weak-alert');
+                if (weakAlert) {
+                    weakAlert.classList.remove('hidden');
+                }
+                isRealSpeedActive = false;
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 30000,
+                maximumAge: 5000  // Accept 5s old fix
+            }
+        );
+
+        const watchIdEl = document.getElementById('gps-debug-watchid');
+        if (watchIdEl) watchIdEl.innerText = geoWatchId;
+    }
+
+    function stopGPSWatch() {
         if (geoWatchId) {
             navigator.geolocation.clearWatch(geoWatchId);
             geoWatchId = null;
         }
         isRealSpeedActive = false;
+        gpsAcquired = false;
+        gpsPermissionDenied = false;
+        gpsRetryCount = 0;
         lastDeviceLat = null;
         lastDeviceLng = null;
+        lastDeviceAccuracy = null;
+        lastDeviceSpeedMps = 0;
+        lastDeviceHeading = null;
+        lastGpsSuccessAt = null;
+        lastGpsFixTimestamp = null;
+        lastGpsFixSequence = 0;
+        lastSentGpsFixSequence = null;
+        lastSentGpsFixTimestamp = null;
+        lastDeviceSpeedSource = 'native';
+        lastPacketType = 'None';
+        lastPacketSpeedSource = 'None';
+        lastPacketGpsFixAgeMs = null;
+        telemetryHeartbeatAt = null;
+        gpsState = 'GPS ACQUIRING';
+        gpsWatchFailureCount = 0;
+        lastPostStatus = 'None';
         prevLat = null;
         prevLng = null;
         lastCoordTime = null;
-        
-        // Hide the weak signal alert when stopping tracking manually
+
         const weakAlert = document.getElementById('gps-signal-weak-alert');
         if (weakAlert) {
             weakAlert.classList.add('hidden');
         }
+
+        const statusEl = document.getElementById('gps-debug-status');
+        if (statusEl) statusEl.innerText = "Stopped";
+        const coordsEl = document.getElementById('gps-debug-coords');
+        if (coordsEl) coordsEl.innerText = "None";
+        const watchIdEl = document.getElementById('gps-debug-watchid');
+        if (watchIdEl) watchIdEl.innerText = "None";
     }
 
     function toggleTracking() {
@@ -760,7 +1097,7 @@
                     if (statsTrips && data.trips_today) {
                         statsTrips.innerText = data.trips_today;
                     }
-                    startSimulation();
+                    startTelemetry();
                 } else {
                     btn.innerText = 'START LIVE TRIP SESSION';
                     btn.className = "w-full py-4 rounded-xl font-black text-[15px] tracking-wide shadow-md border premium-transition active:scale-[0.98] bg-[#003F87] hover:bg-[#0050a3] text-white border-[#003F87]/15 shadow-[0_4px_16px_rgba(0,63,135,0.15)]";
@@ -773,97 +1110,175 @@
                         layoutDot.className = "relative inline-flex rounded-full h-2 w-2 bg-slate-400 status-indicator-dot";
                         layoutText.innerText = "OFFLINE";
                     }
-                    stopSimulation();
+                    stopTelemetry();
+                }
+            } else {
+                // Surface the backend error message to the driver
+                const msg = data.message || 'Failed to update trip session. Please try again.';
+                // Use Alpine toast if available, otherwise fallback to native alert
+                const toastEl = document.querySelector('[x-data]')?.__x;
+                if (toastEl) {
+                    toastEl.$data.triggerToast(msg, 'error');
+                } else {
+                    alert(msg);
                 }
             }
+        })
+        .catch(err => {
+            console.error('toggleTracking error:', err);
+            alert('Connection error — could not update trip session. Please check your internet connection.');
         });
     }
 
-    // Coordinates Simulation Loop & Mock Speed Updates
-    function startSimulation() {
+    // GPS Telemetry Transmission Loop
+    function startTelemetry() {
         // Clear any existing intervals/watches to prevent duplicates
-        stopSimulation();
+        stopTelemetry();
 
-        startGPSWatch();
+        acquireGPS();
 
-        speedTimer = setInterval(() => {
-            if (isRealSpeedActive) return; // Skip simulated speed if real telemetry is active
-            
-            if (Math.random() > 0.7) {
-                targetSpeed = Math.floor(Math.random() * 8);
-            } else {
-                targetSpeed = simSpeedMin + Math.floor(Math.random() * (simSpeedMax - simSpeedMin));
-            }
-            
-            let speedDiff = targetSpeed - currentSpeed;
-            currentSpeed += Math.sign(speedDiff) * Math.min(Math.abs(speedDiff), 5);
-            
-            const display = document.getElementById('speed-display');
-            if (display) {
-                display.innerText = currentSpeed;
-            }
-            
-            const speedStatus = document.getElementById('speed-status-text');
-            if (speedStatus) {
-                if (currentSpeed === 0) {
-                    speedStatus.innerText = "SHUTTLE IDLE";
-                    speedStatus.className = "text-[10px] font-semibold text-slate-400 mt-0.5";
-                } else if (currentSpeed > fastSpeedThreshold) {
-                    speedStatus.innerText = "CRUISING FAST";
-                    speedStatus.className = "text-[10px] font-semibold text-amber-600 mt-0.5";
-                } else {
-                    speedStatus.innerText = "DRIVING SLOW";
-                    speedStatus.className = "text-[10px] font-semibold text-emerald-600 mt-0.5";
-                }
-            }
-        }, speedSimInterval);
 
-        simulationTimer = setInterval(() => {
+        telemetryTimer = setInterval(() => {
             if (!isTrackingActive) return;
-            
-            let coord;
-            let isSim = false;
-            // Use real device GPS coords if available, otherwise fall back to route simulation path
-            if (lastDeviceLat !== null && lastDeviceLng !== null) {
-                coord = { lat: lastDeviceLat, lng: lastDeviceLng };
-                isSim = false;
-                console.log(`Real GPS Transmit: Lat: ${coord.lat}, Lng: ${coord.lng}`);
-            } else {
-                // Ensure array has values
-                if (mockRouteCoords.length > 0) {
-                    const currentPoint = mockRouteCoords[mockCoordIndex];
-                    coord = {
-                        lat: Array.isArray(currentPoint) ? currentPoint[0] : currentPoint.lat,
-                        lng: Array.isArray(currentPoint) ? currentPoint[1] : currentPoint.lng
-                    };
-                    mockCoordIndex = (mockCoordIndex + 1) % mockRouteCoords.length;
-                    isSim = true;
-                    console.log(`Simulated GPS Transmit: Lat: ${coord.lat}, Lng: ${coord.lng}`);
-                } else {
-                    coord = { lat: fallbackLat, lng: fallbackLng }; // Default fallback
-                    isSim = true;
-                }
+
+            // ── Only transmit if real device GPS coordinates are available ────────
+            // If GPS is still acquiring, blocked, or lost: hold transmission.
+            // Never transmit mock route coordinates or stale fallback coordinates.
+            if (lastDeviceLat === null || lastDeviceLng === null) {
+                // GPS not yet acquired, lost, or blocked — hold this tick silently
+                lastPostStatus = 'Held - no real GPS fix';
+                updateTelemetryDebug();
+                console.log('[GPS] Holding telemetry — no real fix available.');
+                return;
             }
 
-            // Perform real-time GPS telemetry updates to the Laravel server MySQL database
+            if (gpsPermissionDenied) {
+                lastPostStatus = 'Held - GPS permission blocked';
+                updateGpsSourceBadge('GPS BLOCKED');
+                console.log('[GPS] Holding telemetry - GPS permission blocked.');
+                updateTelemetryDebug();
+                return;
+            }
+
+            const gpsAgeMs = lastGpsSuccessAt !== null ? Date.now() - lastGpsSuccessAt : Number.POSITIVE_INFINITY;
+            const extendedFailure = gpsWatchFailureCount >= GPS_MAX_RETRIES && gpsAgeMs > gpsExtendedStaleThresholdMs;
+            if (extendedFailure) {
+                lastPostStatus = 'Held - extended GPS failure';
+                updateGpsSourceBadge('GPS STALE');
+                const statusEl = document.getElementById('gps-debug-status');
+                if (statusEl) statusEl.innerText = "Extended GPS failure. Telemetry on hold until a new real fix arrives.";
+                console.log('[GPS] Holding telemetry - extended GPS failure.', {
+                    gps_age_ms: gpsAgeMs,
+                    stale_threshold_ms: gpsExtendedStaleThresholdMs,
+                    failure_count: gpsWatchFailureCount
+                });
+                updateTelemetryDebug();
+                return;
+            }
+
+            const sendTimeMs = Date.now();
+            const hasUnsentGpsCallback = lastSentGpsFixSequence !== lastGpsFixSequence
+                || lastSentGpsFixTimestamp !== lastGpsFixTimestamp;
+            const isCachedFix = !hasUnsentGpsCallback;
+            const gpsFixAgeMs = lastGpsFixTimestamp !== null ? Math.max(0, Math.round(sendTimeMs - lastGpsFixTimestamp)) : null;
+            const packetSpeedSource = isCachedFix ? 'cached' : lastDeviceSpeedSource;
+            const payloadGpsFixSequence = lastGpsFixSequence;
+            const payloadGpsFixTimestamp = lastGpsFixTimestamp;
+
+            lastPacketType = isCachedFix ? 'CACHED HEARTBEAT' : 'FRESH FIX';
+            lastPacketSpeedSource = packetSpeedSource;
+            lastPacketGpsFixAgeMs = gpsFixAgeMs;
+            updateTelemetryDebug();
+
+            const coord = { lat: lastDeviceLat, lng: lastDeviceLng };
+            const telemetryPayload = {
+                lat: coord.lat,
+                lng: coord.lng,
+                speed: lastDeviceSpeedMps,
+                heading: lastDeviceHeading,
+                is_simulated: false,
+                accuracy: lastDeviceAccuracy,
+                gps_fix_timestamp: lastGpsFixTimestamp !== null ? new Date(lastGpsFixTimestamp).toISOString() : null,
+                gps_fix_age_ms: gpsFixAgeMs,
+                is_cached_fix: isCachedFix,
+                speed_source: packetSpeedSource
+            };
+            console.log(`[GPS] REAL: ${coord.lat}, ${coord.lng}`);
+            console.log('[GPS_ACCURACY_TRACE] browser_accuracy', {
+                position_accuracy: lastDeviceAccuracy,
+                last_device_lat: lastDeviceLat,
+                last_device_lng: lastDeviceLng
+            });
+            updateAccuracyDebug(lastDeviceAccuracy, telemetryPayload.accuracy);
+            console.log('[GPS_ACCURACY_TRACE] final_fetch_payload', telemetryPayload);
+            console.log('[GPS_ACCURACY_TRACE] mobile_before_fetch', {
+                positionAccuracy: lastDeviceAccuracy,
+                lastDeviceAccuracy: lastDeviceAccuracy,
+                payloadAccuracy: telemetryPayload.accuracy
+            });
+
+            // Transmit coordinates to the server
             fetch("{{ route('driver.trip.gps') }}", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                 },
-                body: JSON.stringify({
-                    lat: coord.lat,
-                    lng: coord.lng,
-                    speed: currentSpeed,
-                    is_simulated: isSim
-                })
+                body: JSON.stringify(telemetryPayload)
             })
-            .then(res => res.json())
+            .then(async response => {
+                const contentType = response.headers.get('content-type') || 'none';
+                const rawBody = await response.text();
+                const truncatedBody = rawBody.length > 500 ? rawBody.slice(0, 500) + '...' : rawBody;
+                const responseDiagnostics = {
+                    status: response.status,
+                    statusText: response.statusText,
+                    contentType: contentType,
+                    body: truncatedBody
+                };
+                console.log('[GPS] DB Sync HTTP response:', responseDiagnostics);
+
+                if (!contentType.toLowerCase().includes('application/json')) {
+                    lastPostStatus = `HTTP ${response.status} ${response.statusText} non-JSON ${contentType}: ${truncatedBody.slice(0, 120)}`;
+                    updateTelemetryDebug();
+                    return null;
+                }
+
+                let data;
+                try {
+                    data = JSON.parse(rawBody);
+                } catch (parseError) {
+                    lastPostStatus = `HTTP ${response.status} JSON parse error: ${parseError.message}`;
+                    updateTelemetryDebug();
+                    console.error('[GPS] DB Sync JSON parse error:', {
+                        ...responseDiagnostics,
+                        error: parseError.message
+                    });
+                    return null;
+                }
+
+                if (!response.ok) {
+                    lastPostStatus = `HTTP ${response.status} ${response.statusText}: ${data.message || data.error || 'request failed'}`;
+                    updateTelemetryDebug();
+                    console.warn('[GPS] DB Sync HTTP error:', {
+                        ...responseDiagnostics,
+                        json: data
+                    });
+                    return null;
+                }
+
+                return data;
+            })
             .then(data => {
+                if (!data) return;
+
                 if (data.success) {
-                    console.log('Database GPS Sync Success:', data);
-                    // Update current stop display dynamically if updated by backend progression
+                    telemetryHeartbeatAt = Date.now();
+                    lastSentGpsFixSequence = payloadGpsFixSequence;
+                    lastSentGpsFixTimestamp = payloadGpsFixTimestamp;
+                    lastPostStatus = 'OK - ' + formatTelemetryTime(telemetryHeartbeatAt);
+                    updateTelemetryDebug();
+                    console.log('[GPS] DB Sync OK:', data.lat, data.lng);
                     if (data.next_stop) {
                         const stopLabel = document.getElementById('active-stop-label');
                         if (stopLabel) {
@@ -871,9 +1286,16 @@
                             updatePassedStopsUI(data.next_stop);
                         }
                     }
+                } else {
+                    lastPostStatus = 'Rejected - ' + (data.message || 'unknown');
+                    updateTelemetryDebug();
                 }
             })
-            .catch(err => console.error('Database GPS Sync Error:', err));
+            .catch(err => {
+                lastPostStatus = 'Fetch error - ' + err.message;
+                updateTelemetryDebug();
+                console.error('[GPS] DB Sync Fetch Error:', err);
+            });
         }, gpsSyncInterval);
         
         const livePing = document.getElementById('live-trip-ping');
@@ -887,11 +1309,11 @@
         }
     }
 
-    function stopSimulation() {
+    function stopTelemetry() {
         stopGPSWatch();
-        if (simulationTimer) {
-            clearInterval(simulationTimer);
-            simulationTimer = null;
+        if (telemetryTimer) {
+            clearInterval(telemetryTimer);
+            telemetryTimer = null;
         }
         if (speedTimer) {
             clearInterval(speedTimer);
@@ -921,10 +1343,23 @@
 
     // Stop intervals and GPS watch on beforeunload/pagehide to prevent memory leaks or running background tasks
     window.addEventListener('beforeunload', () => {
-        stopSimulation();
+        stopTelemetry();
     });
     window.addEventListener('pagehide', () => {
-        stopSimulation();
+        stopTelemetry();
     });
 </script>
 @endsection
+
+
+
+
+
+
+
+
+
+
+
+
+

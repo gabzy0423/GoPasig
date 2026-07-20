@@ -15,7 +15,9 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call([
+            SystemSettingSeeder::class,
             UserSeeder::class,
+            BusSeeder::class,
             RouteSeeder::class,
             TerminalSeeder::class,
             DriverSeeder::class,
@@ -23,10 +25,10 @@ class DatabaseSeeder extends Seeder
             ServiceAlertSeeder::class,
             TripSeeder::class,
             DemandIntelligenceSeeder::class,
-            SystemSettingSeeder::class,
             ColorPaletteSeeder::class,
             TimeSlotConfigurationSeeder::class,
             DispatchSimulationDefaultsSeeder::class,
+            DriverUserSeeder::class,
         ]);
     }
 }

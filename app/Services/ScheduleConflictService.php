@@ -167,7 +167,7 @@ class ScheduleConflictService
         }
 
         // Check license expiry
-        if ($driver->license_expiry && Carbon::parse($driver->license_expiry)->isPast()) {
+        if ($driver->license_expiry && now()->greaterThan(Carbon::parse($driver->license_expiry)->endOfDay())) {
             return [
                 'available' => false,
                 'message' => "Driver {$driver->first_name} {$driver->last_name} license has expired"

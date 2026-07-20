@@ -36,11 +36,16 @@ class AdminBusCapacityTest extends TestCase
         $this->actingAsAdmin();
 
         $response = $this->postJson(route('admin.api.buses.store'), [
-            'plate_number' => 'PAS-001',
-            'driver_name' => 'John Doe',
-            'capacity' => 45,
-            'status' => 'active',
-            'route_id' => null
+            'plate_number'          => 'PAS-001',
+            'fleet_number'          => 'BUS-001',
+            'vin'                   => '1234567890ABCDEF1',
+            'manufacturer'          => 'BYD',
+            'model'                 => 'K9',
+            'year_model'            => 2024,
+            'battery_capacity_kwh'  => 350.00,
+            'charging_port_type'    => 'CCS2',
+            'max_charging_power_kw' => 150.00,
+            'capacity'              => 45,
         ]);
 
         $response->assertStatus(201);
@@ -60,11 +65,16 @@ class AdminBusCapacityTest extends TestCase
         $this->actingAsAdmin();
 
         $response = $this->postJson(route('admin.api.buses.store'), [
-            'plate_number' => 'PAS-120',
-            'driver_name' => 'Maria Cruz',
-            'capacity' => 120,
-            'status' => 'active',
-            'route_id' => null
+            'plate_number'          => 'PAS-120',
+            'fleet_number'          => 'BUS-120',
+            'vin'                   => '1234567890ABCDEF2',
+            'manufacturer'          => 'BYD',
+            'model'                 => 'K9',
+            'year_model'            => 2024,
+            'battery_capacity_kwh'  => 350.00,
+            'charging_port_type'    => 'CCS2',
+            'max_charging_power_kw' => 150.00,
+            'capacity'              => 120,
         ]);
 
         $response->assertStatus(201);
@@ -84,11 +94,16 @@ class AdminBusCapacityTest extends TestCase
         $this->actingAsAdmin();
 
         $response = $this->postJson(route('admin.api.buses.store'), [
-            'plate_number' => 'PAS-150',
-            'driver_name' => 'Pedro Santos',
-            'capacity' => 150,
-            'status' => 'active',
-            'route_id' => null
+            'plate_number'          => 'PAS-150',
+            'fleet_number'          => 'BUS-150',
+            'vin'                   => '1234567890ABCDEF3',
+            'manufacturer'          => 'BYD',
+            'model'                 => 'K9',
+            'year_model'            => 2024,
+            'battery_capacity_kwh'  => 350.00,
+            'charging_port_type'    => 'CCS2',
+            'max_charging_power_kw' => 150.00,
+            'capacity'              => 150,
         ]);
 
         $response->assertStatus(201);
@@ -108,11 +123,16 @@ class AdminBusCapacityTest extends TestCase
         $this->actingAsAdmin();
 
         $response = $this->postJson(route('admin.api.buses.store'), [
-            'plate_number' => 'PAS-010',
-            'driver_name' => 'Jose Rizal',
-            'capacity' => 10,
-            'status' => 'inactive',
-            'route_id' => null
+            'plate_number'          => 'PAS-010',
+            'fleet_number'          => 'BUS-010',
+            'vin'                   => '1234567890ABCDEF4',
+            'manufacturer'          => 'BYD',
+            'model'                 => 'K9',
+            'year_model'            => 2024,
+            'battery_capacity_kwh'  => 350.00,
+            'charging_port_type'    => 'CCS2',
+            'max_charging_power_kw' => 150.00,
+            'capacity'              => 10,
         ]);
 
         $response->assertStatus(201);
@@ -132,11 +152,16 @@ class AdminBusCapacityTest extends TestCase
         $this->actingAsAdmin();
 
         $response = $this->postJson(route('admin.api.buses.store'), [
-            'plate_number' => 'PAS-005',
-            'driver_name' => 'Invalid Test',
-            'capacity' => 5,
-            'status' => 'active',
-            'route_id' => null
+            'plate_number'          => 'PAS-005',
+            'fleet_number'          => 'BUS-005',
+            'vin'                   => '1234567890ABCDEF5',
+            'manufacturer'          => 'BYD',
+            'model'                 => 'K9',
+            'year_model'            => 2024,
+            'battery_capacity_kwh'  => 350.00,
+            'charging_port_type'    => 'CCS2',
+            'max_charging_power_kw' => 150.00,
+            'capacity'              => 5,
         ]);
 
         $response->assertStatus(422);
@@ -152,11 +177,16 @@ class AdminBusCapacityTest extends TestCase
         $this->actingAsAdmin();
 
         $response = $this->postJson(route('admin.api.buses.store'), [
-            'plate_number' => 'PAS-200',
-            'driver_name' => 'Invalid Test',
-            'capacity' => 200,
-            'status' => 'active',
-            'route_id' => null
+            'plate_number'          => 'PAS-200',
+            'fleet_number'          => 'BUS-200',
+            'vin'                   => '1234567890ABCDEF6',
+            'manufacturer'          => 'BYD',
+            'model'                 => 'K9',
+            'year_model'            => 2024,
+            'battery_capacity_kwh'  => 350.00,
+            'charging_port_type'    => 'CCS2',
+            'max_charging_power_kw' => 150.00,
+            'capacity'              => 200,
         ]);
 
         $response->assertStatus(422);
@@ -174,11 +204,17 @@ class AdminBusCapacityTest extends TestCase
         $bus = Bus::factory()->create(['capacity' => 45]);
 
         $response = $this->putJson(route('admin.api.buses.update', $bus->id), [
-            'plate_number' => $bus->plate_number,
-            'driver_name' => $bus->driver_name,
-            'capacity' => 120,
-            'status' => $bus->status,
-            'route_id' => $bus->route_id
+            'fleet_number'          => $bus->fleet_number,
+            'manufacturer'          => $bus->manufacturer,
+            'model'                 => $bus->model,
+            'year_model'            => $bus->year_model,
+            'battery_capacity_kwh'  => $bus->battery_capacity_kwh,
+            'charging_port_type'    => $bus->charging_port_type,
+            'max_charging_power_kw' => $bus->max_charging_power_kw,
+            'driver_name'           => $bus->driver_name,
+            'capacity'              => 120,
+            'status'                => $bus->status,
+            'route_id'              => $bus->route_id
         ]);
 
         $response->assertStatus(200);
@@ -202,19 +238,5 @@ class AdminBusCapacityTest extends TestCase
         $this->assertEquals(10, $minCapacity);
         $this->assertEquals(150, $maxCapacity);
         $this->assertEquals(45, $defaultCapacity);
-    }
-
-    /**
-     * Test 9: Create endpoint returns proper constraints in response
-     */
-    public function test_create_view_passes_capacity_constraints()
-    {
-        $this->actingAsAdmin();
-
-        $response = $this->get(route('admin.buses.create'));
-
-        $response->assertViewHas('minCapacity', 10);
-        $response->assertViewHas('maxCapacity', 150);
-        $response->assertViewHas('defaultCapacity', 45);
     }
 }

@@ -2,6 +2,8 @@
 
 let overviewMapInstance = null;
 const overviewMarkersMap = {};
+let overviewPolylines = [];
+let overviewStops = [];
 
 // Expose dynamic rendering globally so it can be re-triggered by dashboard-data.js
 function renderOverviewBuses() {
@@ -13,6 +15,7 @@ function renderOverviewBuses() {
     }
 
     fleetData.forEach(bus => {
+        if (!bus.has_active_trip) return;
         // Only map active, delayed, or breakdown buses (skip inactive)
         if (bus.status === 'Inactive') return;
 
@@ -41,6 +44,49 @@ function renderOverviewBuses() {
         }).addTo(overviewMapInstance);
 
         overviewMarkersMap[bus.id] = marker;
+    });
+}
+
+function renderOverviewPolylines() {
+    if (overviewMapInstance === null) return;
+    overviewPolylines.forEach(layer => overviewMapInstance.removeLayer(layer));
+    overviewPolylines = [];
+
+    routesDataDb.forEach(route => {
+        if (route.polyline_coordinates && route.polyline_coordinates.length > 0) {
+            const color = routeColors[route.id.toString()] || '#003F87';
+            const polyline = L.polyline(route.polyline_coordinates, {
+                color: color,
+                weight: 4,
+                opacity: 0.85
+            }).addTo(overviewMapInstance);
+            overviewPolylines.push(polyline);
+        }
+    });
+}
+
+function renderOverviewStops() {
+    if (overviewMapInstance === null) return;
+    overviewStops.forEach(layer => overviewMapInstance.removeLayer(layer));
+    overviewStops = [];
+
+    routesDataDb.forEach(route => {
+        if (route.stops && route.stops.length > 0) {
+            const strokeColor = routeColors[route.id.toString()] || '#003F87';
+            route.stops.forEach(stop => {
+                const marker = L.circleMarker([parseFloat(stop.lat), parseFloat(stop.lng)], {
+                    radius: 4.5,
+                    fillColor: '#FFFFFF',
+                    fillOpacity: 1,
+                    color: strokeColor,
+                    weight: 2
+                }).bindTooltip(stop.name, {
+                    direction: 'top',
+                    className: 'font-sans font-bold text-[9px] px-1.5 py-0.5 rounded shadow-sm border border-slate-100'
+                }).addTo(overviewMapInstance);
+                overviewStops.push(marker);
+            });
+        }
     });
 }
 
@@ -80,35 +126,10 @@ function initOverviewMap() {
     L.control.zoom({ position: 'bottomright' }).addTo(overviewMapInstance);
 
     // 1. Draw all operational routes polylines from database
-    routesDataDb.forEach(route => {
-        if (route.polyline_coordinates && route.polyline_coordinates.length > 0) {
-            const color = routeColors[route.id.toString()] || '#003F87';
-            L.polyline(route.polyline_coordinates, {
-                color: color,
-                weight: 4,
-                opacity: 0.85
-            }).addTo(overviewMapInstance);
-        }
-    });
+    renderOverviewPolylines();
 
     // 2. Draw all stops dynamically from database
-    routesDataDb.forEach(route => {
-        if (route.stops && route.stops.length > 0) {
-            const strokeColor = routeColors[route.id.toString()] || '#003F87';
-            route.stops.forEach(stop => {
-                L.circleMarker([parseFloat(stop.lat), parseFloat(stop.lng)], {
-                    radius: 4.5,
-                    fillColor: '#FFFFFF',
-                    fillOpacity: 1,
-                    color: strokeColor,
-                    weight: 2
-                }).bindTooltip(stop.name, {
-                    direction: 'top',
-                    className: 'font-sans font-bold text-[9px] px-1.5 py-0.5 rounded shadow-sm border border-slate-100'
-                }).addTo(overviewMapInstance);
-            });
-        }
-    });
+    renderOverviewStops();
 
     // Render buses immediately
     renderOverviewBuses();
@@ -119,7 +140,7 @@ function initOverviewMap() {
     // 3. Real-time DB position refresh — polls the fleet API every N milliseconds
     //    Fetches real lat/lng from the database (written by active driver sessions).
     //    No random jitter — all movement reflects genuine GPS telemetry.
-    const refreshInterval = (typeof pollingInterval !== 'undefined') ? pollingInterval : 10000;
+    const refreshInterval = (typeof pollingInterval !== 'undefined') ? pollingInterval : 5000;
 
     setInterval(async () => {
         if (typeof loadDatabaseFleetData === 'function') {

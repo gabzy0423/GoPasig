@@ -17,17 +17,32 @@ use Illuminate\Validation\Rule;
 class MaintenanceManagementController extends Controller
 {
     /**
-     * Display the Maintenance dashboard.
+     * Display the Fleet Maintenance logs.
      */
-    public function index(Request $request)
+    public function indexPage(Request $request)
     {
         $logTypeFilter = $request->input('type', 'all');
         $logStatusFilter = $request->input('status', 'all');
+        $search = $request->input('search', '');
 
         $maintenanceSummary = $this->getMaintenanceSummary();
         $busHealth = $this->getBusHealth();
         $upcomingSchedule = $this->getUpcomingSchedule();
-        $maintenanceLogs = $this->getFilteredLogsQuery($logTypeFilter, $logStatusFilter)->paginate(15);
+
+        $query = $this->getFilteredLogsQuery($logTypeFilter, $logStatusFilter);
+
+        if ($request->filled('search')) {
+            $query->where(function ($q) use ($search) {
+                $q->where('ticket_number', 'like', "%{$search}%")
+                  ->orWhere('technician_name', 'like', "%{$search}%")
+                  ->orWhere('inspector_name', 'like', "%{$search}%")
+                  ->orWhereHas('bus', function ($bq) use ($search) {
+                      $bq->where('plate_number', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $maintenanceLogs = $query->paginate(15)->withQueryString();
 
         return view('fleet.maintenance.index', compact(
             'maintenanceSummary',
@@ -35,8 +50,275 @@ class MaintenanceManagementController extends Controller
             'upcomingSchedule',
             'maintenanceLogs',
             'logTypeFilter',
-            'logStatusFilter'
+            'logStatusFilter',
+            'search'
         ));
+    }
+
+    /**
+     * Display a specific maintenance record.
+     */
+    public function showPage($id)
+    {
+        $record = MaintenanceRecord::with('bus')->findOrFail($id);
+        
+        $previousTickets = MaintenanceRecord::where('bus_id', $record->getRawOriginal('bus_id'))
+            ->where('id', '!=', $record->id)
+            ->latest('created_at')
+            ->take(5)
+            ->get();
+
+        return view('fleet.maintenance.view', compact('record', 'previousTickets'));
+    }
+
+    /**
+     * Start confirmation page.
+     */
+    public function startPage($id)
+    {
+        $record = MaintenanceRecord::with('bus')->findOrFail($id);
+        if ($record->status !== 'scheduled') {
+            return redirect()->route('fleet.maintenance')->with('error', 'Only scheduled maintenance tickets can be started.');
+        }
+        return view('fleet.maintenance.start', compact('record'));
+    }
+
+    /**
+     * Complete checklist form page.
+     */
+    public function completePage($id)
+    {
+        $record = MaintenanceRecord::with('bus')->findOrFail($id);
+        if ($record->status !== 'in_progress') {
+            return redirect()->route('fleet.maintenance')->with('error', 'Only in progress maintenance tickets can be completed.');
+        }
+        return view('fleet.maintenance.complete', compact('record'));
+    }
+
+    /**
+     * Start service action.
+     */
+    public function startService($id)
+    {
+        $record = MaintenanceRecord::findOrFail($id);
+        if ($record->status !== 'scheduled') {
+            return redirect()->route('fleet.maintenance.show', $id)->with('error', 'Only scheduled maintenance tickets can be started.');
+        }
+
+        DB::transaction(function () use ($record) {
+            $record->update(['status' => 'in_progress']);
+            MaintenanceService::syncMaintenanceWithBusStatus($record);
+        });
+
+        return redirect()->route('fleet.maintenance.show', $id)->with('success', 'Maintenance service started successfully.');
+    }
+
+    /**
+     * Complete service action.
+     */
+    public function completeService($id, Request $request)
+    {
+        $record = MaintenanceRecord::with(['bus', 'inspectionAttempts'])->findOrFail($id);
+
+        // Immutability guard — completed records cannot be modified
+        if ($record->status === 'completed') {
+            return redirect()->route('fleet.maintenance.show', $id)
+                ->with('error', 'This maintenance record is already completed and is immutable. To address remaining issues, the Admin should create a new maintenance ticket.');
+        }
+
+        if ($record->status !== 'in_progress') {
+            return redirect()->route('fleet.maintenance.show', $id)
+                ->with('error', 'Only in-progress maintenance tickets can be submitted for inspection.');
+        }
+
+        $validated = $request->validate([
+            'inspector_name'       => 'required|string|max:255',
+            'bus_condition'        => 'required|in:Excellent,Good,Fair,Needs Follow-up',
+            'maintenance_result'   => 'required|in:Passed Inspection,Passed with Observation,Failed Inspection',
+            'inspection_checklist' => 'required|array',
+            'parts_replaced'       => 'nullable|string',
+            'labor_cost'           => 'nullable|numeric|min:0',
+            'parts_cost'           => 'nullable|numeric|min:0',
+            'other_cost'           => 'nullable|numeric|min:0',
+            'technician_notes'     => 'required|string',
+            'recommendation'       => 'nullable|string',
+        ]);
+
+        // Backend: Recommendation required for Passed with Observation and Failed Inspection
+        if (in_array($validated['maintenance_result'], ['Passed with Observation', 'Failed Inspection'])
+            && empty(trim($validated['recommendation'] ?? ''))
+        ) {
+            return back()->withInput()->with('error',
+                $validated['maintenance_result'] === 'Passed with Observation'
+                    ? 'Recommendation is required for buses that passed with observations.'
+                    : 'Recommendation is required before recording a failed inspection.'
+            );
+        }
+
+        // All checklist items must be checked
+        $checklist     = $validated['inspection_checklist'];
+        $requiredItems = ['brakes', 'battery', 'tires', 'lights', 'test_drive'];
+        foreach ($requiredItems as $item) {
+            if (empty($checklist[$item])) {
+                return back()->withInput()->with('error', 'Please complete all safety checklist items before submitting.');
+            }
+        }
+
+        // -- Business Rule: derive all downstream fields from maintenance_result --
+        $result           = $validated['maintenance_result'];
+        $roadworthy       = $result !== 'Failed Inspection';
+        $hasObservation   = $result === 'Passed with Observation';
+        $inspectionPassed = $result !== 'Failed Inspection';
+        $releaseBus       = $result !== 'Failed Inspection';
+
+        DB::transaction(function () use ($record, $validated, $roadworthy, $hasObservation, $releaseBus, $inspectionPassed, $result) {
+            $labor          = floatval($validated['labor_cost'] ?? 0);
+            $parts          = floatval($validated['parts_cost'] ?? 0);
+            $other          = floatval($validated['other_cost'] ?? 0);
+            $totalCost      = $labor + $parts + $other;
+
+            // Compute sequential attempt number
+            $attemptNo = (\App\Models\MaintenanceInspection::where('maintenance_record_id', $record->id)->max('attempt_no') ?? 0) + 1;
+
+            // Always record this inspection attempt in the audit trail
+            \App\Models\MaintenanceInspection::create([
+                'maintenance_record_id' => $record->id,
+                'attempt_no'            => $attemptNo,
+                'inspector_name'        => $validated['inspector_name'],
+                'bus_condition'         => $validated['bus_condition'],
+                'maintenance_result'    => $result,
+                'roadworthy'            => $roadworthy,
+                'inspection_passed'     => $inspectionPassed,
+                'inspection_checklist'  => $validated['inspection_checklist'],
+                'parts_replaced'        => $validated['parts_replaced'] ?? null,
+                'labor_cost'            => $labor,
+                'parts_cost'            => $parts,
+                'other_cost'            => $other,
+                'cost_php'              => $totalCost,
+                'technician_notes'      => $validated['technician_notes'],
+                'recommendation'        => $validated['recommendation'] ?? null,
+                'inspected_at'          => now(),
+            ]);
+
+            $bus = Bus::find($record->getRawOriginal('bus_id'));
+
+            if ($inspectionPassed) {
+                // -- PASSED or PASSED WITH OBSERVATION --------------------------
+                // Compute actual duration from scheduled_at to now
+                $scheduledAt    = Carbon::parse($record->scheduled_at);
+                $actualDuration = max(0, $scheduledAt->diffInMinutes(now()));
+
+                // Mark the ticket as completed and copy final result to maintenance_record
+                $record->update([
+                    'status'                  => 'completed',
+                    'completed_at'            => now(),
+                    'inspector_name'          => $validated['inspector_name'],
+                    'bus_condition'           => $validated['bus_condition'],
+                    'roadworthy'              => $roadworthy,
+                    'maintenance_result'      => $result,
+                    'inspection_checklist'    => $validated['inspection_checklist'],
+                    'parts_replaced'          => $validated['parts_replaced'] ?? null,
+                    'labor_cost'              => $labor,
+                    'parts_cost'             => $parts,
+                    'other_cost'              => $other,
+                    'cost_php'               => $totalCost,
+                    'actual_duration_minutes' => $actualDuration,
+                    'technician_notes'        => $validated['technician_notes'],
+                    'recommendation'          => $validated['recommendation'] ?? null,
+                    'inspection_passed'       => true,
+                    'inspected_by'            => $validated['inspector_name'],
+                    'inspected_at'            => now(),
+                ]);
+
+                // Release bus to Standby (inactive) and sync observation flag
+                if ($bus) {
+                    \App\Services\BusStateService::transition(
+                        $bus,
+                        Bus::STATUS_INACTIVE,
+                        "Maintenance completed: {$result}"
+                    );
+                    $bus->update(['has_observation' => $hasObservation]);
+                }
+            } else {
+                // -- FAILED INSPECTION ------------------------------------------
+                // Ticket stays in_progress — the bus remains in maintenance
+                // Record the last failed attempt details on the record for reference
+                $record->update([
+                    'inspection_passed' => false,
+                    'inspected_by'      => $validated['inspector_name'],
+                    'inspected_at'      => now(),
+                    'inspector_name'    => $validated['inspector_name'],
+                    'maintenance_result' => $result,
+                    'recommendation'    => $validated['recommendation'] ?? null,
+                ]);
+                // Bus stays in maintenance — no transition
+                if ($bus) {
+                    $bus->update(['has_observation' => false]);
+                }
+            }
+        });
+
+        if ($inspectionPassed) {
+            $resultLabel = match($result) {
+                'Passed Inspection'       => 'The vehicle passed all inspections and has been returned to Standby.',
+                'Passed with Observation' => 'The vehicle is operational and has been returned to Standby. An observation flag has been attached.',
+                default                   => '',
+            };
+            return redirect()->route('fleet.maintenance.show', $id)
+                ->with('success', "Maintenance completed. {$resultLabel}");
+        } else {
+            return redirect()->route('fleet.maintenance.show', $id)
+                ->with('warning', 'Inspection result recorded: FAILED. The vehicle remains under Maintenance. The bus cannot be dispatched until a subsequent inspection passes. Please address the reported issues and re-inspect.');
+        }
+    }
+
+    /**
+     * Cancel service action.
+     */
+    public function cancelService($id)
+    {
+        $record = MaintenanceRecord::findOrFail($id);
+        if ($record->status !== 'scheduled') {
+            return redirect()->route('fleet.maintenance.show', $id)->with('error', 'Only scheduled maintenance tickets can be cancelled.');
+        }
+
+        DB::transaction(function () use ($record) {
+            $record->update(['status' => 'cancelled']);
+            MaintenanceService::syncMaintenanceWithBusStatus($record);
+        });
+
+        return redirect()->route('fleet.maintenance.show', $id)->with('success', 'Maintenance service cancelled successfully.');
+    }
+
+    /**
+     * Delete service action.
+     */
+    public function destroyWeb($id)
+    {
+        $record = MaintenanceRecord::findOrFail($id);
+        if ($record->status === 'completed') {
+            return redirect()->route('fleet.maintenance')->with('error', 'Completed maintenance records are immutable and cannot be deleted.');
+        }
+
+        $busId = $record->getRawOriginal('bus_id');
+        
+        DB::transaction(function () use ($record) {
+            $bus = Bus::find($record->getRawOriginal('bus_id'));
+            if ($bus) {
+                $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_ACTIVE;
+                if ($bus->status !== $restoreStatus) {
+                    \App\Services\BusStateService::transition($bus, $restoreStatus, 'Maintenance record deleted');
+                }
+            }
+            $record->delete();
+        });
+
+        $bus = Bus::find($busId);
+        if ($bus) {
+            $bus->syncObservationStatus();
+        }
+
+        return redirect()->route('fleet.maintenance')->with('success', 'Maintenance record deleted successfully.');
     }
 
     /**
@@ -116,6 +398,17 @@ class MaintenanceManagementController extends Controller
                 'expected_duration_minutes' => $record->expected_duration_minutes,
                 'inspected_by' => $record->inspected_by ?: '',
                 'inspection_passed' => $record->inspection_passed,
+                'maintenance_result' => $record->maintenance_result ?: '',
+                'inspector_name' => $record->inspector_name ?: '',
+                'bus_condition' => $record->bus_condition ?: '',
+                'roadworthy' => (bool)$record->roadworthy,
+                'recommendation' => $record->recommendation ?: '',
+                'inspection_checklist' => $record->inspection_checklist ?: [],
+                'labor_cost' => $record->labor_cost,
+                'parts_cost' => $record->parts_cost,
+                'other_cost' => $record->other_cost,
+                'parts_replaced' => $record->parts_replaced ?: '',
+                'technician_notes' => $record->technician_notes ?: '',
             ]
         ]);
     }
@@ -148,8 +441,10 @@ class MaintenanceManagementController extends Controller
                 ->whereIn('status', ['scheduled', 'in_progress'])
                 ->orderBy('scheduled_at', 'desc')
                 ->first();
-            if ($maintRecord) {
-                $completionTime = $maintRecord->scheduled_at->addMinutes($maintRecord->expected_duration_minutes)->timezone('Asia/Manila')->format('h:i A');
+            if ($maintRecord && $maintRecord->scheduled_at && $maintRecord->expected_duration_minutes) {
+                $completionTime = $maintRecord->scheduled_at->copy()->addMinutes($maintRecord->expected_duration_minutes)->timezone('Asia/Manila')->format('M d h:i A');
+            } elseif ($maintRecord && $maintRecord->scheduled_at) {
+                $completionTime = $maintRecord->scheduled_at->timezone('Asia/Manila')->format('M d h:i A') . ' (+?m)';
             }
         }
 
@@ -164,6 +459,7 @@ class MaintenanceManagementController extends Controller
                 'passengers' => $bus->passengers,
                 'recent_services' => $recentRecords,
                 'completion_time' => $completionTime,
+                'has_observation' => (bool)$bus->has_observation,
             ]
         ]);
     }
@@ -248,21 +544,141 @@ class MaintenanceManagementController extends Controller
      */
     public function updateStatus($id, Request $request)
     {
-        $validated = $request->validate([
-            'status' => 'required|in:scheduled,in_progress,completed,cancelled'
-        ]);
+        if (empty($id) || $id === 'null' || $id === 'undefined' || !is_numeric($id)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid Maintenance Record ID provided.'
+            ], 400);
+        }
 
-        $record = MaintenanceRecord::findOrFail($id);
+        $record = MaintenanceRecord::find($id);
+        if (!$record) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Maintenance record not found.'
+            ], 404);
+        }
+
         $oldStatus = $record->status;
-        $status = $validated['status'];
+        $status = $request->input('status');
 
-        $record->update(['status' => $status]);
-        MaintenanceService::handleBusStatusSideEffects($record->getRawOriginal('bus_id'), $oldStatus, $status, $id);
+        if ($status === 'completed') {
+            $validated = $request->validate([
+                'status' => 'required|in:completed',
+                'inspector_name' => 'required|string|max:255',
+                'bus_condition' => 'required|in:Excellent,Good,Fair,Needs Follow-up',
+                'roadworthy' => 'required|boolean',
+                'maintenance_result' => 'required|in:Passed Inspection,Passed with Observation,Failed Inspection',
+                'inspection_checklist' => 'required|array',
+                'parts_replaced' => 'nullable|string',
+                'labor_cost' => 'nullable|numeric|min:0',
+                'parts_cost' => 'nullable|numeric|min:0',
+                'other_cost' => 'nullable|numeric|min:0',
+                'technician_notes' => 'required|string',
+                'recommendation' => 'nullable|string',
+            ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Maintenance status updated.'
-        ]);
+            // Enforce conditional validation on recommendation
+            if (in_array($validated['maintenance_result'], ['Passed with Observation', 'Failed Inspection']) && empty($validated['recommendation'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $validated['maintenance_result'] === 'Passed with Observation'
+                        ? 'Recommendation is required for buses with observations.'
+                        : 'Recommendation is required before closing the maintenance record.'
+                ], 422);
+            }
+
+            // Enforce checklist items validation
+            $checklist = $validated['inspection_checklist'];
+            $requiredItems = ['brakes', 'battery', 'tires', 'lights', 'test_drive'];
+            foreach ($requiredItems as $item) {
+                if (empty($checklist[$item])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Please complete all safety checklist items.'
+                    ], 422);
+                }
+            }
+
+            DB::transaction(function () use ($record, $validated, $oldStatus) {
+                $labor = floatval($validated['labor_cost'] ?? 0);
+                $parts = floatval($validated['parts_cost'] ?? 0);
+                $other = floatval($validated['other_cost'] ?? 0);
+                $totalCost = $labor + $parts + $other;
+
+                $scheduledAt = Carbon::parse($record->scheduled_at);
+                $actualDuration = max(0, $scheduledAt->diffInMinutes(now()));
+
+                $record->update([
+                    'status' => 'completed',
+                    'completed_at' => now(),
+                    'inspector_name' => $validated['inspector_name'],
+                    'bus_condition' => $validated['bus_condition'],
+                    'roadworthy' => $validated['roadworthy'],
+                    'maintenance_result' => $validated['maintenance_result'],
+                    'inspection_checklist' => $validated['inspection_checklist'],
+                    'parts_replaced' => $validated['parts_replaced'] ?? null,
+                    'labor_cost' => $labor,
+                    'parts_cost' => $parts,
+                    'other_cost' => $other,
+                    'cost_php' => $totalCost,
+                    'actual_duration_minutes' => $actualDuration,
+                    'technician_notes' => $validated['technician_notes'],
+                    'recommendation' => $validated['recommendation'] ?? null,
+                    // Keep compatibility with legacy fields
+                    'inspection_passed' => $validated['maintenance_result'] !== 'Failed Inspection',
+                    'inspected_by' => $validated['inspector_name'],
+                    'inspected_at' => now(),
+                ]);
+
+                // Transition bus status
+                $bus = Bus::find($record->getRawOriginal('bus_id'));
+                if ($bus) {
+                    if ($validated['maintenance_result'] === 'Failed Inspection') {
+                        // Failed Inspection: bus status remains in maintenance!
+                        $bus->update([
+                            'has_observation' => false
+                        ]);
+
+                        \App\Models\BusStatusAuditLog::logStatusChange(
+                            busId: $bus->id,
+                            newStatus: Bus::STATUS_MAINTENANCE,
+                            oldStatus: Bus::STATUS_MAINTENANCE,
+                            userId: \Illuminate\Support\Facades\Auth::id() ?: 1,
+                            reason: 'Maintenance completed: Failed inspection. Bus remains in maintenance.',
+                        );
+                    } else {
+                        // Passed / Passed with Observation: bus returns to Standby (inactive)
+                        $hasObs = $validated['maintenance_result'] === 'Passed with Observation';
+                        
+                        // First, update has_observation on the bus model
+                        $bus->update([
+                            'has_observation' => $hasObs
+                        ]);
+
+                        // Transition status using BusStateService
+                        \App\Services\BusStateService::transition($bus, Bus::STATUS_INACTIVE, 'Maintenance completed: ' . $validated['maintenance_result']);
+                    }
+                }
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Maintenance status updated.'
+            ]);
+        } else {
+            $validated = $request->validate([
+                'status' => 'required|in:scheduled,in_progress,cancelled'
+            ]);
+
+            $record->update(['status' => $status]);
+            MaintenanceService::handleBusStatusSideEffects($record->getRawOriginal('bus_id'), $oldStatus, $status, $id);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Maintenance status updated.'
+            ]);
+        }
     }
 
     /**
@@ -270,15 +686,41 @@ class MaintenanceManagementController extends Controller
      */
     public function destroy($id)
     {
-        $record = MaintenanceRecord::findOrFail($id);
+        if (empty($id) || $id === 'null' || $id === 'undefined' || !is_numeric($id)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid Maintenance Record ID provided.'
+            ], 400);
+        }
+
+        $record = MaintenanceRecord::find($id);
+        if (!$record) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Maintenance record not found.'
+            ], 404);
+        }
         $busId = $record->getRawOriginal('bus_id');
         $oldStatus = $record->status;
         
+        if ($oldStatus === 'completed') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Completed maintenance records are immutable and cannot be deleted to preserve the audit trail.'
+            ], 422);
+        }
+
         $record->delete();
 
         // Revert bus status if deleted record was in_progress
         if ($oldStatus === 'in_progress') {
             MaintenanceService::handleBusStatusSideEffects($busId, $oldStatus, 'cancelled', $id);
+        }
+
+        // Recalculate observation status for the bus
+        $bus = Bus::find($busId);
+        if ($bus) {
+            $bus->syncObservationStatus();
         }
 
         return response()->json([
@@ -360,14 +802,14 @@ class MaintenanceManagementController extends Controller
 
         return Bus::with('route')->get()->map(function ($bus) use ($palette) {
             // AUTO-SYNC CHECK: If bus is maintenance but no active records, unlock it
-            if ($bus->status === 'maintenance') {
+            if ($bus->status === \App\Models\Bus::STATUS_MAINTENANCE) {
                 $hasActiveMaintenance = MaintenanceRecord::where('bus_id', $bus->id)
                     ->whereIn('status', ['scheduled', 'in_progress'])
                     ->exists();
                 
                 if (!$hasActiveMaintenance) {
-                    $restoreStatus = $bus->previous_status ?? 'active';
-                    $bus->update(['status' => $restoreStatus, 'previous_status' => null]);
+                    $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_ACTIVE;
+                    \App\Services\BusStateService::transition($bus, $restoreStatus, 'Auto-sync: No active maintenance records');
                 }
             }
 
@@ -382,8 +824,10 @@ class MaintenanceManagementController extends Controller
                     ->whereIn('status', ['scheduled', 'in_progress'])
                     ->orderBy('scheduled_at', 'desc')
                     ->first();
-                if ($maintRecord) {
-                    $completionTime = $maintRecord->scheduled_at->addMinutes($maintRecord->expected_duration_minutes)->timezone('Asia/Manila')->format('h:i A');
+                if ($maintRecord && $maintRecord->scheduled_at && $maintRecord->expected_duration_minutes) {
+                    $completionTime = $maintRecord->scheduled_at->copy()->addMinutes($maintRecord->expected_duration_minutes)->timezone('Asia/Manila')->format('M d h:i A');
+                } elseif ($maintRecord && $maintRecord->scheduled_at) {
+                    $completionTime = $maintRecord->scheduled_at->timezone('Asia/Manila')->format('M d h:i A') . ' (+?m)';
                 }
             }
 
@@ -394,6 +838,7 @@ class MaintenanceManagementController extends Controller
                 'route_color'    => $routeColor,
                 'status'         => $bus->status,
                 'completion_time'=> $completionTime,
+                'has_observation'=> (bool)$bus->has_observation,
             ];
         });
     }

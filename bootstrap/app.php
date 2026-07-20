@@ -12,6 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Trust all proxies (ngrok, Cloudflare, load balancers, etc.)
+        // so that X-Forwarded-* headers are respected.
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
             'commuter_session' => \App\Http\Middleware\EnsureCommuterSession::class,

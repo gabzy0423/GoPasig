@@ -17,6 +17,7 @@ class Driver extends Model
         'license_number',
         'license_expiry',
         'status',
+        'operational_status',
         'previous_status',
         'assigned_bus',
         'assigned_route',

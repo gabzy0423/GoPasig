@@ -111,8 +111,31 @@
                     <div class="flex items-center gap-2">
                         <span class="rm-inner-title" id="rm-detail-route-title">Loading Route Details...</span>
                         <span class="rm-badge-green" id="rm-detail-route-status">Active</span>
+                        <div id="routing-providers-health-container" class="flex gap-1 text-[9px] font-sans border-l border-slate-200 pl-3">
+                            <!-- Telemetry badges rendered by JS -->
+                        </div>
                     </div>
                     <div class="flex items-center gap-1.5">
+                        <!-- Provider Selection & Generate Preview -->
+                        <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-0.5 shrink-0">
+                            <select id="route-provider-select" class="rounded-md border-none bg-transparent px-2 py-1 text-[11px] font-semibold text-slate-800 outline-none transition focus:bg-white cursor-pointer">
+                                <option value="osrm">OSRM Road Router</option>
+                                <option value="google">Google Directions</option>
+                                <option value="manual">Manual Straight</option>
+                            </select>
+                            <button class="rm-btn-primary rm-btn-xs bg-indigo-650 hover:bg-indigo-750 text-white font-bold" onclick="generateRoutePreview()" id="btn-generate-route" title="Generate Geometry Proposal">
+                                <i class="ti ti-rotate"></i> Generate
+                            </button>
+                        </div>
+                        <button class="rm-btn-primary rm-btn-xs bg-[#003F87] text-white" onclick="toggleGeometryEditing()" id="btn-edit-geometry">
+                            <i class="ti ti-map-pin"></i> Edit Geometry
+                        </button>
+                        <button class="rm-btn-outline rm-btn-xs" onclick="openGeometryHistoryModal()">
+                            <i class="ti ti-history"></i> History
+                        </button>
+                        <button class="rm-btn-outline rm-btn-xs" onclick="openGeometryImportModal()">
+                            <i class="ti ti-upload"></i> Import
+                        </button>
                         <button class="rm-btn-outline rm-btn-xs" onclick="editRouteDetails()">
                             <i class="ti ti-edit"></i> Edit route
                         </button>
@@ -138,14 +161,106 @@
                     {{-- MAP PREVIEW + STATS (RIGHT SIDE: 45%) --}}
                     <div class="rm-map-stats-column">
                         {{-- MAP PREVIEW --}}
-                        <div class="rm-map-preview-card">
-                            <div class="rm-map-canvas" id="rm-simulated-map-container">
-                                {{-- SVG path drawn by JS --}}
+                        <div class="rm-map-preview-card relative">
+                            {{-- GIS Editing Toolbar overlay (hidden by default) --}}
+                            <div id="gis-editing-toolbar" class="hidden absolute top-2 left-2 right-2 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-lg p-2 shadow-md z-[1000] flex items-center justify-between gap-2 text-xs select-none">
+                                <div class="flex items-center gap-1">
+                                    <button class="rm-btn-outline rm-btn-xs" onclick="undoGeometryAction()" id="btn-gis-undo" title="Undo">
+                                        <i class="ti ti-arrow-back-up"></i>
+                                    </button>
+                                    <button class="rm-btn-outline rm-btn-xs" onclick="redoGeometryAction()" id="btn-gis-redo" title="Redo">
+                                        <i class="ti ti-arrow-forward-up"></i>
+                                    </button>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-bold text-slate-500">DP Simplify:</span>
+                                    <input type="range" id="simplification-slider" min="0" max="100" value="0" oninput="updateSimplificationFromSlider()" class="w-16 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                                    <span id="simplification-label" class="text-[10px] font-bold text-slate-700">0%</span>
+                                </div>
+                                <div class="flex items-center gap-1">
+                                    <button class="rm-btn-primary rm-btn-xs bg-emerald-600 hover:bg-emerald-700 text-white border-none" onclick="saveEditedGeometry()" title="Save to Database">
+                                        Save
+                                    </button>
+                                    <button class="rm-btn-outline rm-btn-xs text-rose-600 hover:bg-rose-50 border-rose-200" onclick="cancelGeometryEditing()" title="Cancel">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>                            {{-- Route Preview Proposal Card overlay (hidden by default) --}}
+                            <div id="route-preview-proposal-card" class="hidden absolute bottom-12 left-2 right-2 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-lg p-2.5 shadow-md z-[1000] flex flex-col gap-2 text-xs select-none max-h-[300px] overflow-y-auto">
+                                <div class="flex items-center justify-between border-b border-slate-100 pb-1.5 font-sans">
+                                    <span class="font-extrabold text-indigo-700 text-[10px] uppercase tracking-wider flex items-center gap-1">
+                                        <i class="ti ti-route"></i> Proposed Route Preview
+                                    </span>
+                                    <span class="text-[9px] font-semibold text-slate-400" id="preview-expiry-label">Expires in 30m</span>
+                                </div>
+
+                                {{-- Quality Score Summary --}}
+                                <div class="flex items-center justify-between bg-indigo-50/70 p-1.5 rounded border border-indigo-100 font-sans">
+                                    <div class="flex items-center gap-1.5">
+                                        <i class="ti ti-shield-check text-indigo-600 text-sm"></i>
+                                        <span class="font-bold text-slate-700">Quality Score:</span>
+                                    </div>
+                                    <span class="font-extrabold text-[11px]" id="metric-quality-score">100 (Excellent)</span>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-1.5 text-[10px] text-slate-600 font-medium font-sans">
+                                    <div class="flex justify-between bg-slate-50 p-1 rounded">
+                                        <span>Len Diff:</span>
+                                        <strong id="metric-len-diff" class="text-slate-800">0.00 km</strong>
+                                    </div>
+                                    <div class="flex justify-between bg-slate-50 p-1 rounded">
+                                        <span>Vert Diff:</span>
+                                        <strong id="metric-vert-diff" class="text-slate-800">0</strong>
+                                    </div>
+                                    <div class="flex justify-between bg-slate-50 p-1 rounded">
+                                        <span>BBox Overlap:</span>
+                                        <strong id="metric-bbox-overlap" class="text-slate-800">100%</strong>
+                                    </div>
+                                    <div class="flex justify-between bg-slate-50 p-1 rounded">
+                                        <span>Hausdorff:</span>
+                                        <strong id="metric-hausdorff" class="text-slate-800">0.00m</strong>
+                                    </div>
+                                </div>
+
+                                {{-- Warnings and Recommendations lists --}}
+                                <div id="preview-warnings-container" class="hidden flex flex-col gap-1 border-t border-slate-100 pt-1.5 font-sans">
+                                    <span class="text-[9px] font-extrabold text-amber-600 uppercase tracking-wider">⚠️ Warnings & Recommendations</span>
+                                    <ul id="preview-warnings-list" class="list-disc pl-3 text-[9px] text-slate-600 space-y-0.5">
+                                        {{-- Loaded dynamically by JS --}}
+                                    </ul>
+                                </div>
+
+                                {{-- Advanced Analysis (Fréchet) Widget --}}
+                                <div class="border-t border-slate-100 pt-1.5 flex items-center justify-between font-sans">
+                                    <span class="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-0.5">
+                                        <i class="ti ti-activity"></i> Fréchet Similarity:
+                                    </span>
+                                    <div class="flex items-center gap-1.5">
+                                        <span id="metric-frechet" class="text-[10px] font-extrabold text-slate-800">Not Run</span>
+                                        <button class="rm-btn-outline px-1.5 py-0.5 text-[8px] bg-slate-50 hover:bg-slate-100 border-slate-300 rounded font-bold transition flex items-center gap-0.5 font-sans" id="btn-run-frechet" onclick="runFrechetAnalysis()">
+                                            Analyze Shape
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="flex gap-1.5 mt-1 justify-end border-t border-slate-100 pt-1.5">
+                                    <button class="rm-btn-outline rm-btn-xs text-rose-600 hover:bg-rose-50 border-rose-200 w-20 justify-center" onclick="rejectRouteProposal()" title="Discard generated preview">
+                                        Reject
+                                    </button>
+                                    <button class="rm-btn-primary rm-btn-xs bg-emerald-600 hover:bg-emerald-700 text-white w-20 justify-center border-none" onclick="acceptRouteProposal()" title="Apply geometry proposal to route">
+                                        Accept
+                                    </button>
+                                </div>
                             </div>
-                            <div class="rm-map-footer">
-                                <a href="#" class="rm-map-link" onclick="viewLiveMapScreen(event)">
+
+                            <div class="rm-map-canvas" id="rm-simulated-map-container">
+                                {{-- Map preview drawn by Leaflet --}}
+                            </div>
+                            <div class="rm-map-footer flex justify-between items-center px-3 py-1.5 bg-slate-50 border-t border-slate-100">
+                                <a href="#" class="rm-map-link text-[11px]" onclick="viewLiveMapScreen(event)">
                                     <i class="ti ti-external-link"></i> View on live map
                                 </a>
+                                <span class="text-[10px] font-bold text-slate-500" id="route-geometry-version-badge">Version: 0</span>
                             </div>
                         </div>
 
@@ -277,6 +392,69 @@
             <div class="rm-modal-footer">
                 <button class="rm-btn-outline rm-btn-sm" onclick="closeAddStopModal()">Cancel</button>
                 <button class="rm-btn-primary rm-btn-sm" onclick="handleAddStopSubmit(event)">Save stop</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- ==================== MODAL: GEOMETRY VERSION HISTORY ==================== --}}
+    <div id="rm-geometry-history-modal" class="rm-modal-overlay hidden">
+        <div class="rm-modal-card" style="max-width:600px; width: 90%;">
+            <div class="rm-modal-header">
+                <span class="rm-modal-title-text">Geometry Version History</span>
+                <button class="rm-modal-close-btn" onclick="closeGeometryHistoryModal()"><i class="ti ti-x"></i></button>
+            </div>
+            <div class="rm-modal-body">
+                <p class="text-slate-500 text-xs mb-3">Restore or preview previous geometry snapshots. Restoring a version appends a new snapshot without deleting history.</p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left text-slate-700">
+                        <thead class="bg-slate-50 text-[10px] uppercase font-bold text-slate-550 border-b border-slate-100">
+                            <tr>
+                                <th class="p-2">Ver</th>
+                                <th class="p-2">Label</th>
+                                <th class="p-2">Vertices</th>
+                                <th class="p-2">Length</th>
+                                <th class="p-2">Saved By</th>
+                                <th class="p-2">Date</th>
+                                <th class="p-2 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rm-geometry-history-table-body">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-3 flex justify-between items-center text-xs font-semibold text-slate-500" id="rm-geometry-history-pagination">
+                    <!-- Pagination links -->
+                </div>
+            </div>
+            <div class="rm-modal-footer">
+                <button class="rm-btn-outline rm-btn-sm" onclick="closeGeometryHistoryModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- ==================== MODAL: IMPORT GEOMETRY ==================== --}}
+    <div id="rm-geometry-import-modal" class="rm-modal-overlay hidden">
+        <div class="rm-modal-card" style="max-width:440px;">
+            <div class="rm-modal-header">
+                <span class="rm-modal-title-text">Import Route Geometry</span>
+                <button class="rm-modal-close-btn" onclick="closeGeometryImportModal()"><i class="ti ti-x"></i></button>
+            </div>
+            <div class="rm-modal-body">
+                <form id="rm-geometry-import-form" onsubmit="handleGeometryImportSubmit(event)" class="rm-form-layout" enctype="multipart/form-data">
+                    <div class="rm-form-field">
+                        <label class="rm-form-label" for="gi-file">Upload File (.geojson or encoded polyline text)</label>
+                        <input class="rm-form-input" id="gi-file" type="file" accept=".geojson,.json,.txt" required>
+                    </div>
+                    <div class="rm-form-field">
+                        <label class="rm-form-label" for="gi-text">Or paste Encoded Polyline String</label>
+                        <textarea class="rm-form-input h-20 text-[10px] font-mono" id="gi-text" placeholder="e.g. _p~iF~ps|U_ulLnnqC_mqN..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="rm-modal-footer">
+                <button class="rm-btn-outline rm-btn-sm" onclick="closeGeometryImportModal()">Cancel</button>
+                <button class="rm-btn-primary rm-btn-sm" onclick="handleGeometryImportSubmit(event)">Import & Save</button>
             </div>
         </div>
     </div>

@@ -16,6 +16,10 @@ use App\Models\Stop;
 use App\Services\GPSKalmanFilter;
 use App\Services\DashboardService;
 use App\Models\SystemSetting;
+use App\Models\GPSLog;
+use App\Models\Trip;
+use App\Services\TelemetryProcessingService;
+use Illuminate\Support\Facades\Log;
 
 class DriverController extends Controller
 {
@@ -172,51 +176,74 @@ class DriverController extends Controller
     /**
      * Start/Toggle a trip.
      */
-    public function toggleTrip(Request $request)
+    public function toggleTrip(Request $request, \App\Services\TripLifecycleService $tripLifecycleService)
     {
         $user = Auth::user();
         $driver = Driver::where('user_id', $user->id)->first();
         if ($driver && $driver->assigned_bus) {
             $bus = Bus::where('plate_number', $driver->assigned_bus)->first();
             if ($bus) {
-                $status = $request->input('status'); // 'active' or 'inactive'
+                $status = $request->input('status'); // 'active', 'inactive', or 'breakdown'
                 
                 if ($status === 'active' && !$driver->assigned_route) {
                     return response()->json(['success' => false, 'message' => 'No route assigned. Contact your dispatcher.'], 422);
                 }
 
-                $bus->update(['status' => $status]);
-                
                 if ($status === 'active') {
-                    $driver->increment('trips_today');
-                    
-                    // Create an ongoing trip record
-                    $existingTrip = DB::table('trips')
-                        ->where('driver_id', $driver->id)
+                    if ($bus->status === 'maintenance') {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Cannot start trip. Bus is currently locked in maintenance. Contact your dispatcher.'
+                        ], 422);
+                    }
+
+                    if ($bus->status === \App\Models\Bus::STATUS_BREAKDOWN) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Cannot start trip. Bus has an unresolved breakdown. Contact your dispatcher.'
+                        ], 422);
+                    }
+
+                    $trip = \App\Models\Trip::where('driver_id', $driver->id)
+                        ->where('status', 'dispatched')
+                        ->first();
+
+                    if (!$trip) {
+                        $routeId = (int) $driver->assigned_route;
+                        $route = \App\Models\Route::findOrFail($routeId);
+                        $trip = \App\Services\TripService::startTrip($bus, $driver, $route, $bus->passengers ?: 0);
+                    }
+
+                    try {
+                        $tripLifecycleService->startTrip($trip);
+                    } catch (\Exception $e) {
+                        return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+                    }
+
+                } elseif ($status === 'inactive' || $status === 'breakdown') {
+                    $trip = \App\Models\Trip::where('driver_id', $driver->id)
                         ->where('status', 'ongoing')
                         ->first();
                     
-                    if (!$existingTrip) {
-                        DB::table('trips')->insert([
-                            'bus_id' => $bus->id,
-                            'driver_id' => $driver->id,
-                            'route_id' => (int) $driver->assigned_route,
-                            'status' => 'ongoing',
-                            'peak_passengers' => $bus->passengers ?: 0,
-                            'started_at' => now(),
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ]);
+                    if ($trip) {
+                        try {
+                            if ($status === 'breakdown') {
+                                $tripLifecycleService->cancelTrip($trip);
+                            } else {
+                                $tripLifecycleService->completeTrip($trip);
+                            }
+                        } catch (\Exception $e) {
+                            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+                        }
                     }
-                } elseif ($status === 'inactive' || $status === 'breakdown') {
-                    DB::table('trips')
-                        ->where('driver_id', $driver->id)
-                        ->where('status', 'ongoing')
-                        ->update([
-                            'status' => $status === 'breakdown' ? 'cancelled' : 'completed',
-                            'ended_at' => now(),
-                            'updated_at' => now(),
-                        ]);
+
+                    if ($status === \App\Models\Bus::STATUS_INACTIVE) {
+                        $today = now(config('app.timezone', 'Asia/Manila'))->toDateString();
+                        Schedule::where('route_id', (int) $driver->assigned_route)
+                            ->whereDate('service_date', $today)
+                            ->where('bus_id', $bus->id)
+                            ->update(['passengers' => $bus->passengers]);
+                    }
                 }
                 return response()->json(['success' => true, 'status' => $status, 'trips_today' => $driver->trips_today]);
             }
@@ -244,21 +271,9 @@ class DriverController extends Controller
                     ->first();
 
                 if (!$trip) {
-                    $defaultRoute = Route::first();
-                    $routeId = $driver->assigned_route ?? ($defaultRoute ? $defaultRoute->id : 1);
-
-                    $tripId = DB::table('trips')->insertGetId([
-                        'bus_id' => $bus->id,
-                        'driver_id' => $driver->id,
-                        'route_id' => $routeId,
-                        'status' => 'ongoing',
-                        'started_at' => now(),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                } else {
-                    $tripId = $trip->id;
+                    return response()->json(['success' => false, 'message' => 'Cannot log incident: No active trip in progress.'], 422);
                 }
+                $tripId = $trip->id;
 
                 // Insert into incidents table
                 DB::table('incidents')->insert([
@@ -272,10 +287,25 @@ class DriverController extends Controller
                     'updated_at' => now(),
                 ]);
 
-                // Update bus status if it's a breakdown
-                $breakdownType = SystemSetting::get('incident_breakdown_type', 'Breakdown');
-                if ($type === $breakdownType) {
-                    $bus->update(['status' => 'breakdown']);
+                // Update bus status if it's a breakdown or accident, cancel the ongoing trip, and deactivate the driver
+                if (\App\Models\Incident::isBreakdown($type) || \App\Models\Incident::isAccident($type)) {
+                    try {
+                        \App\Services\BusStateService::transition($bus, \App\Models\Bus::STATUS_BREAKDOWN, 'Incident report: ' . strtolower($type));
+                    } catch (\App\Exceptions\InvalidStatusTransitionException $e) {
+                        \Illuminate\Support\Facades\Log::warning('Incident status transition failed', [
+                            'bus_id' => $bus->id,
+                            'error'  => $e->getMessage()
+                        ]);
+                    }
+                } else {
+                    // Non-breakdown informational audit log
+                    \App\Models\BusStatusAuditLog::create([
+                        'bus_id'     => $bus->id,
+                        'old_status' => $bus->status,
+                        'new_status' => $bus->status,
+                        'reason'     => 'Incident Report: ' . $type,
+                        'changed_by' => $user->id,
+                    ]);
                 }
 
                 return response()->json(['success' => true, 'message' => 'Incident logged. Dispatch has been notified!']);
@@ -313,25 +343,25 @@ class DriverController extends Controller
                         return response()->json(['success' => false, 'message' => 'No route assigned. Contact your dispatcher.'], 422);
                     }
                     $routeId = (int) $driver->assigned_route;
-                    DB::table('trips')->insert([
-                        'bus_id' => $bus->id,
-                        'driver_id' => $driver->id,
-                        'route_id' => $routeId,
-                        'status' => 'ongoing',
-                        'peak_passengers' => $newPax,
-                        'started_at' => now(),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
+                    $route = \App\Models\Route::findOrFail($routeId);
+
+                    try {
+                        \App\Services\BusStateService::transition($bus, \App\Models\Bus::STATUS_ACTIVE, 'Auto-started trip via passenger update');
+                    } catch (\App\Exceptions\InvalidStatusTransitionException $e) {
+                        \Illuminate\Support\Facades\Log::warning('Passenger update status transition to active failed', [
+                            'bus_id' => $bus->id,
+                            'error'  => $e->getMessage()
+                        ]);
+                    }
+
+                    // Delegate trip start entirely to TripService
+                    \App\Services\TripService::startTrip($bus, $driver, $route, $newPax);
                 } else {
                     $currentPeak = (int) ($ongoingTrip->peak_passengers ?? 0);
                     if ($newPax > $currentPeak) {
-                        DB::table('trips')
-                            ->where('id', $ongoingTrip->id)
-                            ->update([
-                                'peak_passengers' => $newPax,
-                                'updated_at' => now(),
-                            ]);
+                        // Delegate trip update entirely to TripService
+                        $tripModel = \App\Models\Trip::findOrFail($ongoingTrip->id);
+                        \App\Services\TripService::updatePeakPassengers($tripModel, $newPax);
                     }
                 }
                 
@@ -361,145 +391,189 @@ class DriverController extends Controller
             }
         }
         return response()->json(['success' => false, 'message' => 'No active bus assigned.'], 400);
-    }
-
-    /**
-     * Receive GPS telemetry coordinates, apply Kalman filtering, advance sequence if within threshold, compute ETA.
+    }    /**
+     * Receive GPS telemetry coordinates, validate request, and queue processing.
+     * [GPS_TRACE] TEMPORARY INSTRUMENTATION — REMOVE AFTER INVESTIGATION
      */
-    public function updateGPS(Request $request)
+    public function updateGPS(Request $request, TelemetryProcessingService $telemetry)
     {
-        $user = Auth::user();
-        $driver = Driver::where('user_id', $user->id)->first();
-        if ($driver && $driver->assigned_bus) {
-            $bus = Bus::where('plate_number', $driver->assigned_bus)->first();
-            if ($bus) {
-                $lat = $request->input('lat');
-                $lng = $request->input('lng');
-                $speed = (int)$request->input('speed', 0);
-                $isSimulated = (bool) $request->input('is_simulated', false);
+        // [GPS_TRACE] A — Controller entered
+        Log::info('[GPS_TRACE] A - Controller entered', [
+            'user_id'          => Auth::id(),
+            'queue_connection' => config('queue.default'),
+            'queue_driver'     => config('queue.connections.' . config('queue.default') . '.driver'),
+            'ip'               => $request->ip(),
+            'payload'          => $request->only(['lat', 'lng', 'speed', 'heading', 'accuracy', 'is_simulated', 'gps_fix_timestamp', 'gps_fix_age_ms', 'is_cached_fix', 'speed_source']),
+        ]);
 
-                // 1. Apply Kalman Filter to smooth raw GPS inputs
-                $filtered = GPSKalmanFilter::smooth($bus->id, $lat, $lng);
-                $smoothedLat = $filtered['lat'];
-                $smoothedLng = $filtered['lng'];
+        $request->validate([
+            'lat'          => 'required|numeric|between:-90,90',
+            'lng'          => 'required|numeric|between:-180,180',
+            'speed'        => 'required|numeric|min:0',
+            'heading'      => 'nullable|numeric|between:0,360',
+            'accuracy'     => 'nullable|numeric|min:0',
+            'is_simulated'      => 'nullable|boolean',
+            'gps_fix_timestamp' => 'nullable|date',
+            'gps_fix_age_ms'    => 'nullable|integer|min:0',
+            'is_cached_fix'     => 'nullable|boolean',
+            'speed_source'      => 'nullable|string|in:native,calculated,cached',
+        ]);
 
-                // 2. Dynamic Next Stop Progression and ETA calculation via Haversine
-                $nextStop = $bus->next_stop;
-                $eta = $bus->eta ?: 5;
-
-                $route = $bus->route()->with('stops')->first();
-                if ($route && $route->stops->isNotEmpty()) {
-                    $stops = $route->stops; // Ordered by sequence
-
-                    // Find current target stop or default to first
-                    $currentStop = $stops->first(function ($s) use ($nextStop) {
-                        return stripos($s->name, (string)$nextStop) !== false || stripos((string)$nextStop, $s->name) !== false;
-                    });
-
-                    if (!$currentStop) {
-                        $currentStop = $stops->first();
-                    }
-
-                    // Calculate distance in meters using Haversine formula
-                    $distanceToStop = GPSKalmanFilter::calculateDistance(
-                        $smoothedLat,
-                        $smoothedLng,
-                        $currentStop->lat,
-                        $currentStop->lng
-                    );
-
-                    // If bus is within configurable threshold, automatically advance to next stop in sequence
-                    $autoAdvanceThreshold = (float) \App\Models\SystemSetting::get('stop_auto_advance_distance', 100);
-                    if ($distanceToStop <= $autoAdvanceThreshold) {
-                        $currentIndex = $stops->search(fn ($stop) => $stop->is($currentStop));
-                        if ($currentIndex === false) {
-                            $currentIndex = 0;
-                        }
-                        $nextIndex = ($currentIndex + 1) % $stops->count();
-                        $currentStop = $stops->get($nextIndex);
-
-                        // Recalculate distance to new next stop
-                        $distanceToStop = GPSKalmanFilter::calculateDistance(
-                            $smoothedLat,
-                            $smoothedLng,
-                            $currentStop->lat,
-                            $currentStop->lng
-                        );
-                    }
-
-                    $nextStop = $currentStop->name;
-
-                    // Compute ETA: ETA = Distance (km) / Speed (km/h) * 60 min
-                    $distanceKm = $distanceToStop / 1000;
-                    if ($speed > 5) {
-                        $eta = (int) round(($distanceKm / $speed) * 60);
-                    } else {
-                        // Traffic or stoplights: compute dynamic average speed from active fleet or historical GPS logs
-                        $averageFleetSpeed = null;
-                        if ($route) {
-                            $averageFleetSpeed = Bus::where('route_id', $route->id)
-                                ->where('status', 'active')
-                                ->where('speed', '>', 5)
-                                ->avg('speed');
-                        }
-                        if (!$averageFleetSpeed) {
-                            $averageFleetSpeed = Bus::where('status', 'active')
-                                ->where('speed', '>', 5)
-                                ->avg('speed');
-                        }
-                        if (!$averageFleetSpeed) {
-                            // Limit to the last hour to avoid a full-table scan on the
-                            // ever-growing gps_logs table (receives entries every ~6 seconds).
-                            $averageFleetSpeed = DB::table('gps_logs')
-                                ->where('speed', '>', 5)
-                                ->where('created_at', '>=', now()->subHour())
-                                ->avg('speed');
-                        }
-                        $fallbackSpeed = $averageFleetSpeed ? (int) round($averageFleetSpeed) : 15;
-                        $fallbackSpeed = max(5, $fallbackSpeed); // Ensure speed is at least 5 km/h to avoid division by zero
-                        
-                        $eta = (int) round(($distanceKm / $fallbackSpeed) * 60);
-                    }
-                    $eta = max(1, $eta); // Guarantee at least 1 minute
-                }
-
-                $bus->update([
-                    'lat' => $smoothedLat,
-                    'lng' => $smoothedLng,
-                    'speed' => $speed,
-                    'next_stop' => $nextStop,
-                    'eta' => $eta,
-                    'is_simulated' => $isSimulated
-                ]);
-
-                // Record to gps_logs table if an ongoing trip exists for this driver
-                $ongoingTrip = DB::table('trips')
-                    ->where('driver_id', $driver->id)
-                    ->where('status', 'ongoing')
-                    ->first();
-                if ($ongoingTrip) {
-                    DB::table('gps_logs')->insert([
-                        'trip_id' => $ongoingTrip->id,
-                        'lat' => $smoothedLat,
-                        'lng' => $smoothedLng,
-                        'speed' => $speed,
-                        'timestamp' => now(),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
-
-                return response()->json([
-                    'success' => true, 
-                    'message' => 'GPS Telemetry updated (Kalman filtered, Haversine ETA).', 
-                    'lat' => $smoothedLat, 
-                    'lng' => $smoothedLng, 
-                    'speed' => $speed,
-                    'next_stop' => $nextStop,
-                    'eta' => $eta
-                ]);
-            }
+        if ($request->boolean('is_simulated')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Simulated speed is not accepted for live GPS telemetry.',
+            ], 422);
         }
-        return response()->json(['success' => false, 'message' => 'No assigned bus.'], 400);
+
+        // [GPS_TRACE] B — Validation passed
+        Log::info('[GPS_TRACE] B - Validation passed');
+        Log::info('[GPS_ACCURACY_TRACE] request_accuracy', [
+            'request_accuracy' => $request->input('accuracy'),
+            'request_has_accuracy' => $request->has('accuracy'),
+        ]);
+
+        $user   = Auth::user();
+        $driver = Driver::where('user_id', $user->id)->first();
+
+        if (!$driver || !$driver->assigned_bus) {
+            Log::warning('[GPS_TRACE] EARLY EXIT - No driver or assigned_bus', [
+                'user_id'      => $user->id,
+                'driver_found' => (bool) $driver,
+                'assigned_bus' => $driver->assigned_bus ?? null,
+            ]);
+            return response()->json(['success' => false, 'message' => 'No assigned bus.'], 400);
+        }
+
+        $bus = Bus::where('plate_number', $driver->assigned_bus)->first();
+
+        if (!$bus) {
+            Log::warning('[GPS_TRACE] EARLY EXIT - Bus record not found', [
+                'assigned_bus' => $driver->assigned_bus,
+            ]);
+            return response()->json(['success' => false, 'message' => 'No assigned bus.'], 400);
+        }
+
+        $ongoingTrip = Trip::where('driver_id', $driver->id)
+            ->where('status', 'ongoing')
+            ->where('gps_session', 'ACTIVE')
+            ->first();
+
+        if (!$ongoingTrip) {
+            Log::warning('[GPS_TRACE] EARLY EXIT - No ongoing trip with ACTIVE gps_session', [
+                'driver_id'   => $driver->id,
+                'trips_found' => Trip::where('driver_id', $driver->id)->get(['id', 'status', 'gps_session'])->toArray(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Live trip session has not started or is closed.',
+            ], 409);
+        }
+
+        Log::info('[GPS_TRACE] B2 - Trip guard passed', [
+            'trip_id'     => $ongoingTrip->id,
+            'bus_id'      => $bus->id,
+            'driver_id'   => $driver->id,
+            'gps_session' => $ongoingTrip->gps_session,
+            'trip_status' => $ongoingTrip->status,
+        ]);
+
+        // [GPS_TRACE] C — GPSLog::create
+        Log::info('[GPS_TRACE] C - Before GPSLog::create', [
+            'trip_id'     => $ongoingTrip->id,
+            'lat'         => $request->input('lat'),
+            'lng'         => $request->input('lng'),
+            'received_at' => \Carbon\CarbonImmutable::now('UTC')->toIso8601String(),
+        ]);
+
+        Log::info('[GPS_ACCURACY_TRACE] accuracy_before_gpslog_create', [
+            'accuracy_value' => $request->has('accuracy') ? (float) $request->input('accuracy') : null,
+        ]);
+
+        $log = GPSLog::create([
+            'trip_id'           => $ongoingTrip->id,
+            'lat'               => (float) $request->input('lat'),
+            'lng'               => (float) $request->input('lng'),
+            'speed'             => (float) $request->input('speed'),
+            'heading'           => $request->input('heading') !== null ? (float) $request->input('heading') : null,
+            'accuracy'          => $request->has('accuracy') ? (float) $request->input('accuracy') : null,
+            'timestamp'         => now(),
+            'received_at'       => now(),
+            'gps_fix_timestamp' => $request->filled('gps_fix_timestamp') ? \Carbon\Carbon::parse($request->input('gps_fix_timestamp')) : null,
+            'gps_fix_age_ms'    => $request->has('gps_fix_age_ms') ? (int) $request->input('gps_fix_age_ms') : null,
+            'is_cached_fix'     => $request->boolean('is_cached_fix'),
+            'speed_source'      => $request->input('speed_source'),
+            'processing_status' => 'pending',
+        ]);
+
+        Log::info('[GPS_TRACE] C2 - GPSLog created', [
+            'log_id'      => $log->id,
+            'received_at' => $log->received_at,
+            'trip_id'     => $log->trip_id,
+        ]);
+
+        Log::info('[GPS_ACCURACY_TRACE] persisted_accuracy', [
+            'gps_log_id' => $log->id,
+            'persisted_accuracy' => $log->fresh()->accuracy,
+        ]);
+
+        Log::info('[GPS_TRACE] D - Before synchronous TelemetryProcessingService::processGpsLog', [
+            'log_id' => $log->id,
+        ]);
+
+        $result = $telemetry->processGpsLog($log->id);
+        $processedLog = $result['log'] ?? $log->fresh();
+        $position = $result['position'] ?? null;
+
+        if (($result['status'] ?? null) !== 'processed') {
+            return response()->json([
+                'success'       => false,
+                'message'       => 'GPS telemetry was received but failed live processing.',
+                'status'        => $result['status'] ?? 'unknown',
+                'error'         => $result['error'] ?? null,
+                'log_id'        => $log->id,
+                'trip_id'       => $ongoingTrip->id,
+                'bus_id'        => $bus->id,
+                'processing_ms' => $result['processing_ms'] ?? null,
+            ], 422);
+        }
+
+        $bus->refresh();
+
+        Log::info('[GPS_TRACE] M - Returning synchronous telemetry response', [
+            'log_id'        => $log->id,
+            'trip_id'       => $ongoingTrip->id,
+            'bus_id'        => $bus->id,
+            'processing_ms' => $result['processing_ms'] ?? null,
+        ]);
+
+        return response()->json([
+            'success'       => true,
+            'message'       => 'GPS telemetry processed.',
+            'log_id'        => $log->id,
+            'trip_id'       => $ongoingTrip->id,
+            'bus_id'        => $bus->id,
+            'lat'           => $position ? $position->lat : $bus->lat,
+            'lng'           => $position ? $position->lng : $bus->lng,
+            'filtered_lat'  => $processedLog?->filtered_lat,
+            'filtered_lng'  => $processedLog?->filtered_lng,
+            'speed'         => $bus->speed,
+            'speed_mps'     => $bus->speed !== null ? (float) $bus->speed : null,
+            'speed_kmh'     => $bus->speed !== null ? round((float) $bus->speed * 3.6, 1) : null,
+            'speed_unit'    => 'm/s',
+            'heading'       => $position ? $position->heading : null,
+            'next_stop'     => $bus->next_stop,
+            'eta'           => $bus->eta,
+            'processing_ms' => $result['processing_ms'] ?? null,
+        ]);
     }
 }
+
+
+
+
+
+
+
+
+

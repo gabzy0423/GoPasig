@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\GpsSessionStatus;
+use App\Enums\TripStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -16,9 +18,19 @@ class Trip extends Model
         'driver_id',
         'route_id',
         'status',
+        'gps_session',
         'peak_passengers',
+        'dispatched_at',
         'started_at',
         'ended_at',
+        'gps_session_started_at',
+    ];
+
+    protected $casts = [
+        'dispatched_at'          => 'datetime',
+        'started_at'             => 'datetime',
+        'ended_at'               => 'datetime',
+        'gps_session_started_at' => 'datetime',
     ];
 
     /**

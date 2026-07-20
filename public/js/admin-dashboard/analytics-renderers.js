@@ -12,43 +12,11 @@
         if (typeof heatmapData !== 'undefined' && heatmapData) {
             const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
             const dayName = daysOfWeek[dayIndex];
-            if (heatmapData[dayName] && heatmapData[dayName][hourIndex] !== undefined) {
+            if (heatmapData[dayName] && heatmapData[dayName][hourIndex] !== undefined && heatmapData[dayName][hourIndex] !== null) {
                 return heatmapData[dayName][hourIndex];
             }
         }
-
-        let base = 25;
-        if (hourIndex === 2) base = 280;      // AM peak (7 AM)
-        else if (hourIndex === 3) base = 220; // 8 AM
-        else if (hourIndex === 12) base = 260;// PM peak (5 PM)
-        else if (hourIndex === 13) base = 240;// 6 PM
-        else if (hourIndex === 14) base = 150;// 7 PM
-        else if (hourIndex === 1) base = 120; // 6 AM
-        else if (hourIndex === 11) base = 140;// 4 PM
-        else if (hourIndex === 7) base = 110; // 12 PM lunch surge
-        else if (hourIndex === 8) base = 100; // 1 PM
-        else {
-            // Deterministic fallback — Gaussian AM/PM peak profile matching AnalyticsController.
-            // hour 0 = 5 AM, so hourIndex 2 = 7 AM (AM peak), hourIndex 12 = 5 PM (PM peak).
-            const hourInt = 5 + hourIndex;
-            const amPeak = Math.exp(-Math.pow(hourInt - 8, 2) / 3) * 60;
-            const pmPeak = Math.exp(-Math.pow(hourInt - 18, 2) / 4) * 80;
-            base = Math.round(15 + amPeak + pmPeak);
-        }
-
-        if (dayIndex === 6) { // Sunday
-            base = Math.floor(base * 0.4);
-        } else if (dayIndex === 5) { // Saturday
-            base = Math.floor(base * 0.6);
-        } else if (dayIndex === 1 && hourIndex === 2) {
-            base = 312; // Matches EXACT tooltip prompt condition: "Tuesday · 7 AM · 312 pax"
-        } else {
-            // Sine-wave per-cell variation (deterministic, not random)
-            const variation = Math.round(Math.sin(dayIndex * 1.5 + hourIndex * 0.8) * 5);
-            base = base + variation;
-        }
-
-        return Math.max(7, Math.floor(base));
+        return null;
     }
 
     // 2C: Heatmap matrix grids renderer
@@ -71,8 +39,15 @@
             // Render 18 hours cells
             for (let hourIdx = 0; hourIdx < 18; hourIdx++) {
                 const pax = getHeatmapPaxValue(dayIdx, hourIdx);
-                const color = getHeatmapColor(pax);
-                const tooltipText = `${fullDays[dayIdx]} · ${hours[hourIdx]} · ${pax} pax across all routes`;
+                let color;
+                let tooltipText;
+                if (pax === null) {
+                    color = '#e2e8f0'; // slate-200 (grey empty state)
+                    tooltipText = `${fullDays[dayIdx]} · ${hours[hourIdx]} · No data available`;
+                } else {
+                    color = getHeatmapColor(pax);
+                    tooltipText = `${fullDays[dayIdx]} · ${hours[hourIdx]} · ${pax} pax across all routes`;
+                }
                 
                 rowDiv.innerHTML += `
                     <div class="w-8 h-8 rounded cursor-pointer transition-all hover:scale-105" 
@@ -86,14 +61,17 @@
 
     // Helper: HTML badge renderer for trip table
     function getRouteBadgeHtml(route) {
-        if (route === 'Route A') {
-            return `<span class="inline-flex rounded-full bg-[#E6F1FB] px-2 py-0.5 text-[9px] font-bold text-[#003F87] border border-[#003F87]/15">Route A</span>`;
-        } else if (route === 'Route B') {
-            return `<span class="inline-flex rounded-full bg-[#E8F4E0] px-2 py-0.5 text-[9px] font-bold text-[#639922] border border-[#639922]/15">Route B</span>`;
-        } else if (route === 'Route C') {
-            return `<span class="inline-flex rounded-full bg-[#FEF7ED] px-2 py-0.5 text-[9px] font-bold text-[#BA7517] border border-[#BA7517]/15">Route C</span>`;
+        let color = '#888780';
+        if (typeof routeComparisonData !== 'undefined' && routeComparisonData) {
+            const found = routeComparisonData.find(r => r.route === route);
+            if (found && found.color) {
+                color = found.color;
+            }
         }
-        return route;
+        if (color === '#888780' && typeof routeColors !== 'undefined' && routeColors) {
+            color = routeColors[route] || routeColors[route.replace('Route ', '')] || '#888780';
+        }
+        return `<span class="inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold border" style="background-color: ${color}15; color: ${color}; border-color: ${color}25;">${route}</span>`;
     }
 
     // Helper: Capacity load indicators
@@ -181,8 +159,9 @@
 
     // Helper: bus summary widget builder (3B)
     function getBusSummaryCardHtml(bus) {
+        const capacity = bus.capacity || 45;
         const statusChip = getStatusChipHtml(bus.status);
-        const peakLoadClass = bus.peakLoad === 45 ? 'text-[#E24B4A] font-extrabold' : 'text-slate-700 font-semibold';
+        const peakLoadClass = bus.peakLoad >= capacity ? 'text-[#E24B4A] font-extrabold' : 'text-slate-700 font-semibold';
         
         // utilization color warning
         const isHighUtil = bus.avgCapacity > 85;
@@ -211,7 +190,7 @@
                     </div>
                     <div class="flex justify-between">
                         <span>Peak load:</span>
-                        <span class="${peakLoadClass}">${bus.peakLoad} / 45</span>
+                        <span class="${peakLoadClass}">${bus.peakLoad} / ${capacity}</span>
                     </div>
                 </div>
                 
@@ -317,8 +296,9 @@
                 incidentHtml = `<span class="text-[#639922] font-extrabold flex items-center justify-end gap-1"><i class="ti ti-check text-base"></i> None</span>`;
             }
 
+            const capacity = driver.capacity || 45;
             let peakLoadHtml = `<span class="text-slate-500">${driver.peakLoad}</span>`;
-            if (driver.peakLoad >= 45) {
+            if (driver.peakLoad >= capacity) {
                 peakLoadHtml = `<span class="text-rose-600 font-extrabold">${driver.peakLoad} <span class="text-[9px] font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full uppercase ml-1">Full</span></span>`;
             }
 

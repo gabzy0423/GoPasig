@@ -6,6 +6,9 @@ use Illuminate\Database\Seeder;
 use App\Models\Route;
 use App\Models\Stop;
 use App\Models\Bus;
+use App\Models\Geofence;
+use App\Models\RouteCorridor;
+use App\Enums\GeofenceType;
 
 class RouteSeeder extends Seeder
 {
@@ -204,117 +207,60 @@ class RouteSeeder extends Seeder
             'amenities' => 'Shelter, Security Post'
         ]);
 
-        // 3. Create Buses (all inactive and ready in standby pool)
-        Bus::create([
-            'plate_number' => 'PAS-439',
-            'route_id' => null,
-            'driver_name' => null,
-            'capacity' => 45,
-            'speed' => 0,
-            'passengers' => 0,
-            'next_stop' => null,
-            'eta' => 0,
-            'lat' => 14.5593,
-            'lng' => 121.0805,
-            'status' => 'inactive'
+        // 3. Create Geofences corresponding to Stops
+        $uniqueStops = Stop::all()->unique('name');
+        foreach ($uniqueStops as $stop) {
+            $isTerminal = str_contains(strtolower($stop->name), 'terminal');
+            
+            Geofence::create([
+                'name' => $stop->name,
+                'type' => $isTerminal ? GeofenceType::TERMINAL : GeofenceType::STOP,
+                'geometry' => [
+                    'type' => 'Point',
+                    'coordinates' => [$stop->lng, $stop->lat]
+                ],
+                'radius' => 30.0,
+                'lat' => $stop->lat,
+                'lng' => $stop->lng,
+                'priority' => $isTerminal ? 80 : 100,
+                'status' => 'active'
+            ]);
+        }
+
+        // 4. Create a Depot geofence
+        Geofence::create([
+            'name' => 'Pasig Central Depot',
+            'type' => GeofenceType::DEPOT,
+            'geometry' => [
+                'type' => 'Point',
+                'coordinates' => [121.0810, 14.5615]
+            ],
+            'radius' => 50.0,
+            'lat' => 14.5615,
+            'lng' => 121.0810,
+            'priority' => 50,
+            'status' => 'active'
         ]);
 
-        Bus::create([
-            'plate_number' => 'PAS-112',
-            'route_id' => null,
-            'driver_name' => null,
-            'capacity' => 45,
-            'speed' => 0,
-            'passengers' => 0,
-            'next_stop' => null,
-            'eta' => 0,
-            'lat' => 14.5593,
-            'lng' => 121.0805,
-            'status' => 'inactive'
-        ]);
+        // 5. Create Route Corridors
+        $routes = Route::all();
+        foreach ($routes as $route) {
+            if ($route->polyline_coordinates) {
+                $coords = array_map(function($pt) {
+                    return [(float)$pt[1], (float)$pt[0]];
+                }, $route->polyline_coordinates);
 
-        Bus::create([
-            'plate_number' => 'PAS-204',
-            'route_id' => null,
-            'driver_name' => null,
-            'capacity' => 45,
-            'speed' => 0,
-            'passengers' => 0,
-            'next_stop' => null,
-            'eta' => 0,
-            'lat' => 14.5593,
-            'lng' => 121.0805,
-            'status' => 'inactive'
-        ]);
-
-        Bus::create([
-            'plate_number' => 'PAS-309',
-            'route_id' => null,
-            'driver_name' => null,
-            'capacity' => 45,
-            'speed' => 0,
-            'passengers' => 0,
-            'next_stop' => null,
-            'eta' => 0,
-            'lat' => 14.5593,
-            'lng' => 121.0805,
-            'status' => 'inactive'
-        ]);
-
-        Bus::create([
-            'plate_number' => 'PAS-881',
-            'route_id' => null,
-            'driver_name' => null,
-            'capacity' => 45,
-            'speed' => 0,
-            'passengers' => 0,
-            'next_stop' => null,
-            'eta' => 0,
-            'lat' => 14.5593,
-            'lng' => 121.0805,
-            'status' => 'inactive'
-        ]);
-
-        Bus::create([
-            'plate_number' => 'PAS-661',
-            'route_id' => null,
-            'driver_name' => null,
-            'capacity' => 45,
-            'speed' => 0,
-            'passengers' => 0,
-            'next_stop' => null,
-            'eta' => 0,
-            'lat' => 14.5593,
-            'lng' => 121.0805,
-            'status' => 'inactive'
-        ]);
-
-        Bus::create([
-            'plate_number' => 'PAS-552',
-            'route_id' => null,
-            'driver_name' => null,
-            'capacity' => 45,
-            'speed' => 0,
-            'passengers' => 0,
-            'next_stop' => null,
-            'eta' => 0,
-            'lat' => 14.5593,
-            'lng' => 121.0805,
-            'status' => 'inactive'
-        ]);
-
-        Bus::create([
-            'plate_number' => 'PAS-773',
-            'route_id' => null,
-            'driver_name' => null,
-            'capacity' => 45,
-            'speed' => 0,
-            'passengers' => 0,
-            'next_stop' => null,
-            'eta' => 0,
-            'lat' => 14.5593,
-            'lng' => 121.0805,
-            'status' => 'inactive'
-        ]);
+                RouteCorridor::create([
+                    'route_id' => $route->id,
+                    'buffer_width' => 25.0,
+                    'source_type' => 'AUTO_BUFFER',
+                    'measurement_method' => 'NEAREST_SEGMENT',
+                    'geometry' => [
+                        'type' => 'LineString',
+                        'coordinates' => $coords
+                    ]
+                ]);
+            }
+        }
     }
 }

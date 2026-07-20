@@ -9,6 +9,11 @@ class Bus extends Model
 {
     use HasFactory;
 
+    public const STATUS_ACTIVE = 'active';
+    public const STATUS_INACTIVE = 'inactive';
+    public const STATUS_BREAKDOWN = 'breakdown';
+    public const STATUS_MAINTENANCE = 'maintenance';
+
     // -------------------------------------------------------------------------
     // All operational thresholds are stored in system_settings and accessed via
     // the static getter methods below (e.g. Bus::getDelayThreshold()).
@@ -108,7 +113,7 @@ class Bus extends Model
 
     public static function getGpsSyncIntervalMs()
     {
-        return (int) SystemSetting::get('gps_sync_interval_ms', 6000);
+        return (int) SystemSetting::get('gps_sync_interval_ms', 5000);
     }
 
     public static function getSpeedSimulationIntervalMs()
@@ -133,6 +138,19 @@ class Bus extends Model
 
     protected $fillable = [
         'plate_number',
+        'fleet_number',
+        'vin',
+        'manufacturer',
+        'model',
+        'year_model',
+        'battery_capacity_kwh',
+        'charging_port_type',
+        'max_charging_power_kw',
+        'purchase_date',
+        'supplier',
+        'warranty_expiry',
+        'serial_number',
+        'acquisition_cost',
         'route_id',
         'driver_name',
         'capacity',
@@ -144,7 +162,8 @@ class Bus extends Model
         'lng',
         'status',
         'previous_status',
-        'is_simulated'
+        'is_simulated',
+        'has_observation'
     ];
 
     /**
@@ -154,17 +173,28 @@ class Bus extends Model
      */
     public function lockToMaintenance(): void
     {
-        $this->update([
-            'previous_status' => $this->status === 'maintenance'
-                ? $this->previous_status
-                : $this->status,
-            'status' => 'maintenance',
-        ]);
+        \App\Services\BusStateService::transition($this, self::STATUS_MAINTENANCE, 'Lock to maintenance');
+    }
+
+    public function syncObservationStatus(): void
+    {
+        $latestCompleted = $this->maintenanceRecords()
+            ->where('status', 'completed')
+            ->orderBy('completed_at', 'desc')
+            ->first();
+
+        $hasObs = $latestCompleted && $latestCompleted->maintenance_result === 'Passed with Observation';
+
+        if ($this->has_observation !== $hasObs) {
+            $this->update(['has_observation' => $hasObs]);
+        }
     }
 
     protected $casts = [
         'lat' => 'float',
         'lng' => 'float',
+        'speed' => 'float',
+        'has_observation' => 'boolean',
     ];
 
     public function route()
@@ -179,4 +209,22 @@ class Bus extends Model
     {
         return $this->hasMany(MaintenanceRecord::class);
     }
+
+    /**
+     * Get the trips for this bus.
+     */
+    public function trips()
+    {
+        return $this->hasMany(Trip::class);
+    }
+
+    /**
+     * Get the live vehicle position record for this bus.
+     */
+    public function vehiclePosition()
+    {
+        return $this->hasOne(VehiclePosition::class);
+    }
 }
+
+

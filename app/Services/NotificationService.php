@@ -8,7 +8,6 @@ use App\Models\ServiceAlert;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 class NotificationService
 {
@@ -49,10 +48,6 @@ class NotificationService
                     'urgency' => self::getLicenseExpiryUrgency($daysUntilExpiry),
                 ];
 
-                // Send email notification
-                if ($driver->user && $driver->user->email) {
-                    self::sendEmailNotification($driver->user->email, $notificationData);
-                }
 
                 // Log notification
                 Log::info("License expiry reminder sent to driver {$driver->id}", $notificationData);
@@ -104,10 +99,6 @@ class NotificationService
                     'notification_type' => 'service_alert',
                 ];
 
-                // Send email
-                if ($user->email) {
-                    self::sendEmailNotification($user->email, $notificationData);
-                }
 
                 // Log notification
                 Log::info("Service alert notification sent to user {$user->id}", $notificationData);
@@ -161,10 +152,6 @@ class NotificationService
                     'notification_type' => 'maintenance_completion',
                 ];
 
-                // Send email
-                if ($admin->email) {
-                    self::sendEmailNotification($admin->email, $notificationData);
-                }
 
                 // Log notification
                 Log::info("Maintenance completion notification sent to admin {$admin->id}", $notificationData);
@@ -224,11 +211,6 @@ class NotificationService
                     'notification_type' => 'pending_maintenance_reminder',
                 ];
 
-                foreach ($admins as $admin) {
-                    if ($admin->email) {
-                        self::sendEmailNotification($admin->email, $notificationData);
-                    }
-                }
 
                 $result['maintenance_items'][] = $notificationData;
                 $result['sent']++;
@@ -274,9 +256,6 @@ class NotificationService
                     'notification_type' => 'incident_alert',
                 ];
 
-                if ($admin->email) {
-                    self::sendEmailNotification($admin->email, $notificationData);
-                }
 
                 Log::warning("Incident alert sent to admin {$admin->id}", $notificationData);
 
@@ -303,15 +282,6 @@ class NotificationService
      * Private helper methods
      */
 
-    private static function sendEmailNotification(string $email, array $data): void
-    {
-        // Simple email notification
-        // In production, use Laravel's Mailable classes
-        Log::info("Notification queued for {$email}", $data);
-
-        // This would integrate with Laravel's mailing system:
-        // Mail::to($email)->queue(new NotificationMail($data));
-    }
 
     private static function getLicenseExpiryUrgency(int $daysUntilExpiry): string
     {

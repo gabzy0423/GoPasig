@@ -25,7 +25,7 @@ class SystemSettingSeeder extends Seeder
             ['key' => 'delay_threshold', 'value' => '10', 'description' => 'Threshold in minutes to classify a bus trip as delayed (default: 10)'],
             ['key' => 'occupancy_warning_threshold', 'value' => '50', 'description' => 'Bus passenger occupancy percentage threshold to trigger a warning status (default: 50)'],
             ['key' => 'occupancy_critical_threshold', 'value' => '85', 'description' => 'Bus passenger occupancy percentage threshold to trigger a critical status (default: 85)'],
-            ['key' => 'gps_sync_interval_ms', 'value' => '6000', 'description' => 'Interval in milliseconds for GPS telemetry synchronization (default: 6000)'],
+            ['key' => 'gps_sync_interval_ms', 'value' => '5000', 'description' => 'Interval in milliseconds for GPS telemetry synchronization (default: 5000)'],
             ['key' => 'speed_simulation_interval_ms', 'value' => '1500', 'description' => 'Telemetry simulation speed tick interval in milliseconds (default: 1500)'],
             ['key' => 'sim_speed_min', 'value' => '18', 'description' => 'Minimum bus simulation speed in km/h (default: 18)'],
             ['key' => 'sim_speed_max', 'value' => '43', 'description' => 'Maximum bus simulation speed in km/h (default: 43)'],
@@ -251,6 +251,31 @@ class SystemSettingSeeder extends Seeder
                 'key'         => 'default_route_avg_pax',
                 'value'       => '0',
                 'description' => 'Default average route passenger count when a route has no completed trips',
+            ],
+            [
+                'key'         => 'default_route_on_time_target',
+                'value'       => '85',
+                'description' => 'Default target on-time rate percentage for new routes (default: 85)',
+            ],
+            [
+                'key'         => 'default_route_headway_minutes',
+                'value'       => '15',
+                'description' => 'Default target headway in minutes for new routes (default: 15)',
+            ],
+            [
+                'key'         => 'stop_default_radius_meters',
+                'value'       => '50',
+                'description' => 'Default geofence boarding/alighting detection radius in meters for new stops (default: 50)',
+            ],
+            [
+                'key'         => 'route_min_buses_required',
+                'value'       => '2',
+                'description' => 'Default minimum number of active buses required per route (default: 2)',
+            ],
+            [
+                'key'         => 'bus_max_speed_kmh',
+                'value'       => '80',
+                'description' => 'Maximum allowed speed for buses in km/h to prevent GPS teleportation spoofing',
             ],
         ];
 

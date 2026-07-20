@@ -194,17 +194,6 @@ class DriverPerformanceController extends Controller
     }
 
     /**
-     * Initialize messaging.
-     */
-    public function messageDriver($id)
-    {
-        return response()->json([
-            'success' => true,
-            'message' => "Message thread initialized with Driver ID: {$id}"
-        ]);
-    }
-
-    /**
      * Internal helper: Build driver data.
      */
     public function buildDriverData($startDate, $endDate): array

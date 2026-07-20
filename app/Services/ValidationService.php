@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
+use App\Models\SystemSetting;
 
 class ValidationService
 {
@@ -24,29 +25,32 @@ class ValidationService
      */
     public static function validateGPSCoordinates(float $latitude, float $longitude): array
     {
-        // Check latitude bounds
-        if ($latitude < self::PHILIPPINES_LAT_MIN || $latitude > self::PHILIPPINES_LAT_MAX) {
-            return [
-                'valid' => false,
-                'message' => "Latitude {$latitude} out of bounds. Philippines range: " . 
-                    self::PHILIPPINES_LAT_MIN . "° to " . self::PHILIPPINES_LAT_MAX . "°N"
-            ];
-        }
-
-        // Check longitude bounds
-        if ($longitude < self::PHILIPPINES_LNG_MIN || $longitude > self::PHILIPPINES_LNG_MAX) {
-            return [
-                'valid' => false,
-                'message' => "Longitude {$longitude} out of bounds. Philippines range: " . 
-                    self::PHILIPPINES_LNG_MIN . "° to " . self::PHILIPPINES_LNG_MAX . "°E"
-            ];
-        }
-
         // Check for NaN or Infinity
         if (!is_finite($latitude) || !is_finite($longitude)) {
             return [
                 'valid' => false,
                 'message' => 'GPS coordinates contain invalid values (NaN or Infinity)'
+            ];
+        }
+
+        $latMin = (float) SystemSetting::get('coordinates_bounds_south_latitude', self::PHILIPPINES_LAT_MIN);
+        $latMax = (float) SystemSetting::get('coordinates_bounds_north_latitude', self::PHILIPPINES_LAT_MAX);
+        $lngMin = (float) SystemSetting::get('coordinates_bounds_west_longitude', self::PHILIPPINES_LNG_MIN);
+        $lngMax = (float) SystemSetting::get('coordinates_bounds_east_longitude', self::PHILIPPINES_LNG_MAX);
+
+        // Check latitude bounds
+        if ($latitude < $latMin || $latitude > $latMax) {
+            return [
+                'valid' => false,
+                'message' => "Latitude {$latitude} out of bounds. Range: {$latMin}° to {$latMax}°N"
+            ];
+        }
+
+        // Check longitude bounds
+        if ($longitude < $lngMin || $longitude > $lngMax) {
+            return [
+                'valid' => false,
+                'message' => "Longitude {$longitude} out of bounds. Range: {$lngMin}° to {$lngMax}°E"
             ];
         }
 
@@ -133,7 +137,7 @@ class ValidationService
         }
 
         // Check for excessive distance jumps between consecutive points (basic geometry validation)
-        $maxJumpKm = 50; // Flag if any two consecutive points are >50km apart
+        $maxJumpKm = (float) SystemSetting::get('max_polyline_jump_km', 50.0);
         $invalidJumps = [];
 
         for ($i = 0; $i < count($coordinates) - 1; $i++) {
@@ -175,18 +179,9 @@ class ValidationService
      */
     private static function haversineDistance(float $lat1, float $lng1, float $lat2, float $lng2): float
     {
-        $R = 6371; // Earth radius in kilometers
-        
-        $dLat = deg2rad($lat2 - $lat1);
-        $dLng = deg2rad($lng2 - $lng1);
-        
-        $a = sin($dLat / 2) * sin($dLat / 2) +
-             cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
-             sin($dLng / 2) * sin($dLng / 2);
-        
-        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
-        
-        return $R * $c;
+        $c1 = new \App\Services\ValueObjects\Coordinate($lat1, $lng1);
+        $c2 = new \App\Services\ValueObjects\Coordinate($lat2, $lng2);
+        return app(\App\Services\Contracts\GeospatialServiceInterface::class)->calculateDistanceKm($c1, $c2);
     }
 
     /**
@@ -252,17 +247,21 @@ class ValidationService
         $duration = $arrMinutes - $depMinutes;
 
         // Duration must be between 5 minutes and 12 hours
-        if ($duration < 5) {
+        $minDuration = (int) SystemSetting::get('min_trip_duration_minutes', 5);
+        $maxDuration = (int) SystemSetting::get('max_trip_duration_minutes', 720);
+
+        if ($duration < $minDuration) {
             return [
                 'valid' => false,
-                'message' => 'Trip duration too short (minimum 5 minutes)'
+                'message' => "Trip duration too short (minimum {$minDuration} minutes)"
             ];
         }
 
-        if ($duration > 12 * 60) {
+        if ($duration > $maxDuration) {
+            $maxHours = round($maxDuration / 60, 1);
             return [
                 'valid' => false,
-                'message' => 'Trip duration too long (maximum 12 hours)'
+                'message' => "Trip duration too long (maximum {$maxHours} hours)"
             ];
         }
 

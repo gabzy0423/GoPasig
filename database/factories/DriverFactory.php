@@ -20,6 +20,7 @@ class DriverFactory extends Factory
             'license_number' => $this->faker->unique()->numerify('LIC######'),
             'license_expiry' => $this->faker->dateTimeBetween('+1 day', '+1 year'),
             'status' => 'active',
+            'operational_status' => 'available',
             'assigned_bus' => null,
             'assigned_route' => null,
             'trips_today' => 0,

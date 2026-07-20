@@ -41,6 +41,19 @@
     .bus-marker.idle {
         background-color: #888780;
     }
+    .bus-direction-arrow {
+        position: absolute;
+        top: -10px;
+        left: 50%;
+        width: 0;
+        height: 0;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-bottom: 11px solid #001F44;
+        transform-origin: 50% 27px;
+        opacity: 0.88;
+        filter: drop-shadow(0 1px 1px rgba(0,0,0,0.25));
+    }
 
     /* Pulse animation for active buses */
     .bus-marker.active .bus-pulse {
@@ -208,57 +221,7 @@
                 <!-- Javascript will inject list rows here -->
             </div>
 
-            <!-- Panel Footer -->
-            <div class="p-3 border-t border-black/10 shrink-0 bg-white">
-                <button onclick="openMessageAllModal()" class="w-full h-9 flex items-center justify-center gap-1.5 rounded-lg border border-black/15 bg-white text-[12px] font-medium text-[#001F44] hover:bg-[#F5F8FF] transition-colors">
-                    <i class="ti ti-speakerphone text-[14px]"></i>
-                    <span>Send message to all drivers</span>
-                </button>
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- SEND SUPPORT MESSAGE MODAL -->
-<div id="support-modal" class="fixed inset-0 bg-[#001F44]/40 flex items-center justify-center z-[2000] hidden">
-    <div class="bg-white border border-black/12 rounded-xl shadow-xl w-full max-w-[420px] overflow-hidden flex flex-col animate-fade-in-up">
-        <!-- Header -->
-        <div class="px-4 py-3 border-b border-black/10 flex items-center justify-between">
-            <span class="text-[15px] font-medium text-[#001F44]" id="modal-driver-title">Message driver — Juan dela Cruz</span>
-            <button onclick="closeSupportModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
-                <i class="ti ti-x text-[18px]"></i>
-            </button>
-        </div>
-        
-        <!-- Body -->
-        <div class="p-4 space-y-4">
-            <!-- Recipient Chip -->
-            <div class="flex">
-                <span class="inline-flex rounded-full bg-[#E6F1FB] text-[#0C447C] px-3 py-1 text-[11px] font-semibold tracking-wide uppercase font-mono-custom" id="modal-recipient-chip">
-                    PJY-8821 · Route A
-                </span>
-            </div>
-
-            <!-- Textarea -->
-            <div>
-                <textarea id="modal-message-text" rows="3" placeholder="Type a message to this driver…" class="w-full border border-black/15 rounded-lg p-3 text-[13px] text-[#001F44] placeholder-slate-400 outline-none focus:border-[#003F87] transition-colors resize-none"></textarea>
-            </div>
-
-            <!-- Quick Messages -->
-            <div>
-                <span class="text-[11px] font-medium uppercase tracking-wider text-slate-400 block mb-2">Quick messages</span>
-                <div class="flex flex-wrap gap-1.5">
-                    <button onclick="populateMessage('Return to terminal')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 transition-colors rounded-lg text-[12px] text-slate-700">Return to terminal</button>
-                    <button onclick="populateMessage('Maintain schedule')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 transition-colors rounded-lg text-[12px] text-slate-700">Maintain schedule</button>
-                    <button onclick="populateMessage('Reduce speed')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 transition-colors rounded-lg text-[12px] text-slate-700">Reduce speed</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="px-4 py-3 border-t border-black/10 bg-slate-50 flex items-center justify-end gap-2">
-            <button onclick="closeSupportModal()" class="h-9 px-4 rounded-lg text-[13px] font-medium text-slate-500 hover:bg-slate-100 transition-colors">Cancel</button>
-            <button onclick="sendSupportMessage()" class="h-9 px-4 rounded-lg text-[13px] font-medium bg-[#001F44] hover:bg-[#00172F] text-white transition-colors">Send message</button>
         </div>
     </div>
 </div>
@@ -272,6 +235,71 @@
 
 
 <script>
+    const SPEED_DISPLAY_DEADBAND_KMH = 0.5;
+
+    function normalizeDisplaySpeedKmh(speedKmh, movementState = null) {
+        if (String(movementState || '').toUpperCase() === 'STATIONARY') {
+            return 0;
+        }
+
+        const roundedSpeed = Math.round((Number(speedKmh) || 0) * 10) / 10;
+        return roundedSpeed < SPEED_DISPLAY_DEADBAND_KMH ? 0 : roundedSpeed;
+    }
+
+    function formatDisplaySpeedKmh(speedKmh, movementState = null) {
+        return normalizeDisplaySpeedKmh(speedKmh, movementState) + ' km/h';
+    }
+
+
+    function validDisplayHeading(heading) {
+        if (heading === null || heading === undefined || heading === '') return null;
+        const value = Number(heading);
+        if (!Number.isFinite(value) || value < 0 || value >= 360) return null;
+        return value;
+    }
+
+    function gpsQualityLabel(state) {
+        switch (String(state || 'UNKNOWN').toUpperCase()) {
+            case 'GOOD': return 'GPS Good';
+            case 'DEGRADED': return 'GPS Degraded';
+            case 'STALE': return 'GPS Stale';
+            case 'BLOCKED': return 'GPS Blocked';
+            default: return 'GPS Unknown';
+        }
+    }
+
+    function gpsQualityChipClass(state) {
+        switch (String(state || 'UNKNOWN').toUpperCase()) {
+            case 'GOOD': return 'bg-emerald-50 text-emerald-700 border border-emerald-100';
+            case 'DEGRADED': return 'bg-amber-50 text-amber-700 border border-amber-100';
+            case 'STALE': return 'bg-rose-50 text-rose-700 border border-rose-100';
+            case 'BLOCKED': return 'bg-slate-100 text-slate-600 border border-slate-200';
+            default: return 'bg-slate-50 text-slate-500 border border-slate-200';
+        }
+    }
+    function statusLabelFromOperationalStatus(status) {
+        const normalized = String(status || '').toLowerCase();
+        switch (normalized) {
+            case 'moving': return 'Moving';
+            case 'stopped': return 'Stopped';
+            case 'idle': return 'Idle';
+            case 'offline': return 'Offline';
+            case 'breakdown': return 'Breakdown';
+            case 'maintenance': return 'Maintenance';
+            case 'active': return 'Active';
+            default: return status || 'Unknown';
+        }
+    }
+
+    function statusKeyFromOperationalStatus(status, isNearFull = false) {
+        const normalized = String(status || '').toLowerCase();
+        if (normalized === 'moving') return isNearFull ? 'near-full' : 'active';
+        if (normalized === 'stopped' || normalized === 'idle') return 'idle';
+        if (normalized === 'offline') return 'breakdown';
+        if (normalized === 'breakdown' || normalized === 'maintenance' || normalized === 'active' || normalized === 'near-full') return normalized;
+        return 'idle';
+    }
+
     // Live Data for Buses
     let buses = [
         @foreach($buses as $bus)
@@ -282,14 +310,40 @@
             routeName: '{{ $bus->route ? $bus->route->name . " — " . $bus->route->description : "Unassigned" }}',
             lat: {{ $bus->lat ?? 14.5593 }},
             lng: {{ $bus->lng ?? 121.0805 }},
-            status: '{{ $bus->status === 'active' ? ($bus->capacity > 0 && ($bus->passengers / $bus->capacity >= 0.8) ? 'near-full' : 'active') : ($bus->status === 'maintenance' ? 'breakdown' : 'idle') }}',
-            statusLabel: '{{ $bus->status === 'active' ? ($bus->capacity > 0 && ($bus->passengers / $bus->capacity >= 0.8) ? 'Near Full' : 'Active') : ($bus->status === 'maintenance' ? 'Breakdown' : 'Idle') }}',
-            speed: '{{ $bus->speed }} km/h',
+            operationalStatus: '{{ $bus->vehiclePosition->status ?? $bus->status }}',
+            status: statusKeyFromOperationalStatus('{{ $bus->vehiclePosition->status ?? $bus->status }}', {{ $bus->capacity > 0 && ($bus->passengers / $bus->capacity >= 0.8) ? 'true' : 'false' }}),
+            statusLabel: statusLabelFromOperationalStatus('{{ $bus->vehiclePosition->status ?? $bus->status }}'),
+            speed: formatDisplaySpeedKmh({{ round(((float) ($bus->vehiclePosition->speed ?? $bus->speed ?? 0)) * 3.6, 1) }}, '{{ $bus->vehiclePosition->movement_state ?? '' }}'),
             pax: {{ $bus->passengers }},
             cap: {{ $bus->capacity }},
             nextStop: '{{ $bus->next_stop ?? "Terminal" }}',
             eta: '{{ $bus->eta ? $bus->eta . " min" : "--" }}',
-            issue: '{{ $busIssues[$bus->plate_number] ?? ($bus->status === 'maintenance' ? "In Maintenance" : "") }}'
+            issue: '{{ $busIssues[$bus->plate_number] ?? ($bus->status === 'maintenance' ? "In Maintenance" : "") }}',
+            nearestStop: 'None',
+            currentStop: 'None',
+            upcomingStop: 'None',
+            currentFence: 'Outside Geofence',
+            dwellTimeSeconds: 0,
+            routeAdherence: 'On Route',
+            corridorDistance: 0,
+            completedStops: 0,
+            remainingStops: 0,
+            completionPercentage: 0,
+            tripId: null,
+            coordinateSource: '{{ $bus->vehiclePosition ? "vehicle_position" : "bus_fallback" }}',
+            hasLiveTelemetry: {{ $bus->vehiclePosition ? 'true' : 'false' }},
+            movementState: '{{ $bus->vehiclePosition->movement_state ?? '' }}',
+            movementConfidence: {{ $bus->vehiclePosition && $bus->vehiclePosition->movement_confidence !== null ? (float) $bus->vehiclePosition->movement_confidence : 'null' }},
+            movementReason: '{{ $bus->vehiclePosition->movement_reason ?? '' }}',
+            movementStateUpdatedAt: '{{ $bus->vehiclePosition && $bus->vehiclePosition->movement_state_updated_at ? $bus->vehiclePosition->movement_state_updated_at->toIso8601String() : '' }}',
+            stationaryDurationSeconds: {{ $bus->vehiclePosition && $bus->vehiclePosition->movement_state === 'STATIONARY' && $bus->vehiclePosition->movement_state_updated_at ? $bus->vehiclePosition->movement_state_updated_at->diffInSeconds(now()) : 'null' }},
+            gpsQualityState: '{{ $bus->vehiclePosition->gps_quality_state ?? 'UNKNOWN' }}',
+            gpsQualityReason: '{{ $bus->vehiclePosition->gps_quality_reason ?? '' }}',
+            gpsFixAgeSeconds: {{ $bus->vehiclePosition && $bus->vehiclePosition->gps_fix_age_seconds !== null ? (int) $bus->vehiclePosition->gps_fix_age_seconds : 'null' }},
+            lastGpsFixAt: '{{ $bus->vehiclePosition && $bus->vehiclePosition->last_gps_fix_at ? $bus->vehiclePosition->last_gps_fix_at->toIso8601String() : '' }}',
+            stateMismatch: false,
+            stateMismatchDetails: null,
+            lastGpsAt: '{{ $bus->vehiclePosition && $bus->vehiclePosition->last_updated_at ? $bus->vehiclePosition->last_updated_at->toIso8601String() : "" }}'
         },
         @endforeach
     ];
@@ -383,6 +437,22 @@
         } else if (focusRoute) {
             filterByRoute(focusRoute);
         }
+        
+        // Trigger initial telemetry and overlay load immediately
+        pollBusGpsPositions();
+
+        // Start polling interval
+        setInterval(pollBusGpsPositions, GPS_POLL_INTERVAL_MS);
+
+        // Start ticking display updates for GPS age every 5s
+        setInterval(() => {
+            document.querySelectorAll('.last-gps-time').forEach(el => {
+                const gpsAt = el.getAttribute('data-gps-at');
+                if (gpsAt) {
+                    el.innerText = formatTimeSince(gpsAt);
+                }
+            });
+        }, 5000);
     }
     if (document.readyState === 'loading') {
         document.addEventListener("DOMContentLoaded", initMonitorMap);
@@ -390,14 +460,123 @@
         initMonitorMap();
     }
 
+    function formatTimeSince(isoString) {
+        if (!isoString) return 'Never';
+        const date = new Date(isoString);
+        if (isNaN(date.getTime())) return 'Never';
+        
+        const now = new Date();
+        const diffMs = now - date;
+        const diffSecs = Math.max(0, Math.floor(diffMs / 1000));
+        
+        if (diffSecs < 60) {
+            return `${diffSecs} sec ago`;
+        }
+        const diffMins = Math.floor(diffSecs / 60);
+        if (diffMins < 60) {
+            return `${diffMins} min ago`;
+        }
+        const diffHours = Math.floor(diffMins / 60);
+        return `${diffHours} hr ago`;
+    }
+
     function getBusIconHTML(bus) {
         let iconName = 'bus';
         if (bus.status === 'breakdown') iconName = 'alert-circle';
+        const displayHeading = validDisplayHeading(bus.displayHeading);
+        const directionArrow = displayHeading !== null
+            ? `<div class="bus-direction-arrow" style="transform: translateX(-50%) rotate(${displayHeading}deg);"></div>`
+            : '';
         
         return `<div class="bus-marker ${bus.status}">
-                    <i class="ti ti-${iconName}"></i>
-                    <div class="bus-pulse"></div>
-                </div>`;
+                     ${directionArrow}
+                     <i class="ti ti-${iconName}"></i>
+                     <div class="bus-pulse"></div>
+                 </div>`;
+    }
+
+    function getPopupContentHTML(bus) {
+        let iconName = 'bus';
+        if (bus.status === 'breakdown') iconName = 'alert-circle';
+        
+        let adherenceBadge = '';
+        if (bus.routeAdherence === 'On Route') {
+            adherenceBadge = `<span class="bg-[#EAF3DE] text-[#3B6D11] px-1.5 py-0.5 rounded text-[10px] font-semibold">On Route</span>`;
+        } else {
+            adherenceBadge = `<span class="bg-[#FCEBEB] text-[#E24B4A] px-1.5 py-0.5 rounded text-[10px] font-semibold">${bus.routeAdherence}</span>`;
+        }
+
+        let dwellTimerHtml = '';
+        if (bus.dwellTimeSeconds && bus.dwellTimeSeconds > 0) {
+            let minutes = Math.floor(bus.dwellTimeSeconds / 60);
+            let seconds = bus.dwellTimeSeconds % 60;
+            let timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+            dwellTimerHtml = `
+                <div class="flex items-center gap-2 text-slate-600">
+                    <i class="ti ti-hourglass text-[14px]"></i>
+                    <span>Dwell: <strong>${timeStr}</strong></span>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="bg-white p-3 space-y-3">
+                <div class="flex justify-between items-center border-b border-black/6 pb-2">
+                    <span class="font-mono-custom text-[13px] font-bold text-[#001F44]">${bus.plate}</span>
+                    <span class="rounded-full px-2 py-0.2 text-[10px] font-semibold tracking-wide uppercase ${getStatusChipClass(bus.status)}">${bus.statusLabel}</span>
+                </div>
+                <div class="space-y-1.5 text-[12px] text-[#001F44]">
+                    <div class="flex items-center gap-2">
+                        <i class="ti ti-id text-slate-400 text-[14px]"></i>
+                        <span>Driver: <strong>${bus.driver}</strong></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="ti ti-route text-slate-400 text-[14px]"></i>
+                        <span>Route: <strong>${bus.routeName}</strong></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="ti ti-gauge text-slate-400 text-[14px]"></i>
+                        <span>Speed: <strong>${bus.speed}</strong></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="ti ti-users text-slate-400 text-[14px]"></i>
+                        <span class="flex items-center gap-1">
+                            Pax: <strong>${bus.pax} / ${bus.cap}</strong>
+                            ${bus.pax >= 40 ? '<span class="rounded bg-[#FCEBEB] text-[#A32D2D] px-1 text-[9px] font-medium">Near full</span>' : ''}
+                        </span>
+                    </div>
+                    <div class="h-px bg-black/5 my-1"></div>
+                    <div class="flex items-center gap-2">
+                        <i class="ti ti-map-pin text-[14px] text-purple-600"></i>
+                        <span>Fence: <strong>${bus.currentFence || 'Open Road'}</strong></span>
+                    </div>
+                    ${dwellTimerHtml}
+                    <div class="flex items-center gap-2">
+                        <i class="ti ti-compass text-[14px] text-blue-600"></i>
+                        <span>Adherence: ${adherenceBadge}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 text-[11px]">
+                        <i class="ti ti-satellite text-[13px] text-slate-400"></i>
+                        <span class="rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${gpsQualityChipClass(bus.gpsQualityState)}">${gpsQualityLabel(bus.gpsQualityState)}</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-slate-500 text-[11px]">
+                        <i class="ti ti-ruler text-[13px]"></i>
+                        <span>Nearest Stop: <strong>${bus.nearestStop || 'None'}</strong></span>
+                    </div>
+                    <div class="flex items-center gap-2 text-slate-500 text-[11px]">
+                        <i class="ti ti-clock text-[13px]"></i>
+                        <span>Next: <strong>${bus.nextStop}</strong> · ETA ${bus.eta}</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-slate-500 text-[11px]">
+                        <i class="ti ti-history text-[13px]"></i>
+                        <span>Last GPS: <strong class="last-gps-time" data-gps-at="${bus.lastGpsAt}">${formatTimeSince(bus.lastGpsAt)}</strong></span>
+                    </div>
+                </div>
+                <button onclick="openSupportModal('${bus.plate}', '${bus.driver}', '${bus.route}')" class="w-full h-7 rounded border border-black/15 bg-white text-[11px] font-medium text-[#001F44] hover:bg-[#F5F8FF] transition-colors mt-1">
+                    Send support message
+                </button>
+            </div>
+        `;
     }
 
     function renderBusMarkers() {
@@ -421,43 +600,7 @@
 
             let marker = L.marker([bus.lat, bus.lng], { icon: icon }).addTo(map);
             
-            // Tooltip popup HTML
-            let popupContent = `
-                <div class="bg-white p-3 space-y-3">
-                    <div class="flex justify-between items-center border-b border-black/6 pb-2">
-                        <span class="font-mono-custom text-[13px] font-bold text-[#001F44]">${bus.plate}</span>
-                        <span class="rounded-full px-2 py-0.2 text-[10px] font-semibold tracking-wide uppercase ${getStatusChipClass(bus.status)}">${bus.statusLabel}</span>
-                    </div>
-                    <div class="space-y-1.5 text-[12px] text-[#001F44]">
-                        <div class="flex items-center gap-2">
-                            <i class="ti ti-id text-slate-400 text-[14px]"></i>
-                            <span>${bus.driver}</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <i class="ti ti-route text-slate-400 text-[14px]"></i>
-                            <span>${bus.routeName}</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <i class="ti ti-gauge text-slate-400 text-[14px]"></i>
-                            <span>${bus.speed}</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <i class="ti ti-users text-slate-400 text-[14px]"></i>
-                            <span class="flex items-center gap-1">
-                                ${bus.pax} / ${bus.cap} pax
-                                ${bus.pax >= 40 ? '<span class="rounded bg-[#FCEBEB] text-[#A32D2D] px-1 text-[9px] font-medium">Near full</span>' : ''}
-                            </span>
-                        </div>
-                        <div class="flex items-center gap-2 text-slate-500">
-                            <i class="ti ti-clock text-[14px]"></i>
-                            <span>Next: <strong>${bus.nextStop}</strong> · ETA ${bus.eta}</span>
-                        </div>
-                    </div>
-                    <button onclick="openSupportModal('${bus.plate}', '${bus.driver}', '${bus.route}')" class="w-full h-7 rounded border border-black/15 bg-white text-[11px] font-medium text-[#001F44] hover:bg-[#F5F8FF] transition-colors mt-1">
-                        Send support message
-                    </button>
-                </div>
-            `;
+            let popupContent = getPopupContentHTML(bus);
 
             marker.bindPopup(popupContent, {
                 className: 'custom-leaflet-popup',
@@ -478,6 +621,8 @@
             case 'active': return 'bg-[#E6F1FB] text-[#0C447C]';
             case 'near-full': return 'bg-[#FAEEDA] text-[#854F0B]';
             case 'breakdown': return 'bg-[#FCEBEB] text-[#A32D2D]';
+            case 'offline': return 'bg-[#FCEBEB] text-[#A32D2D]';
+            case 'stopped': return 'bg-[#F1EFE8] text-[#5F5E5A]';
             case 'idle': return 'bg-[#F1EFE8] text-[#5F5E5A]';
             default: return 'bg-slate-100 text-slate-600';
         }
@@ -559,6 +704,103 @@
             row.id = `bus-row-${bus.plate}`;
             row.className = `p-3.5 border-b border-black/6 cursor-pointer hover:bg-[#F5F8FF]/50 transition-colors ${activeClass}`;
             row.onclick = () => selectBus(bus.plate);
+            let spatialStatusHtml = '';
+            if (bus.currentFence && bus.currentFence !== 'Outside Geofence') {
+                let timerStr = '';
+                if (bus.dwellTimeSeconds && bus.dwellTimeSeconds > 0) {
+                    let mins = Math.floor(bus.dwellTimeSeconds / 60);
+                    let secs = bus.dwellTimeSeconds % 60;
+                    timerStr = mins > 0 ? ` (${mins}m ${secs}s)` : ` (${secs}s)`;
+                }
+                spatialStatusHtml += `
+                    <div class="flex items-center gap-1.5 text-[11px] font-semibold text-purple-600 mt-1 select-none">
+                        <i class="ti ti-map-pin text-[12px]"></i>
+                        <span>Fence: ${bus.currentFence}${timerStr}</span>
+                    </div>
+                `;
+            }
+
+            if (bus.routeAdherence && bus.routeAdherence !== 'On Route') {
+                spatialStatusHtml += `
+                    <div class="flex items-center gap-1.5 text-[11px] font-bold text-red-500 mt-1 select-none">
+                        <i class="ti ti-alert-triangle text-[12px]"></i>
+                        <span>${bus.routeAdherence} (${bus.corridorDistance || 0}m off)</span>
+                    </div>
+                `;
+            } else {
+                spatialStatusHtml += `
+                    <div class="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5 select-none">
+                        <i class="ti ti-compass text-[12px]"></i>
+                        <span>Near: ${bus.nearestStop || 'None'}</span>
+                    </div>
+                `;
+            }
+
+            let detailsHtml = '';
+            if (currentSelectedBus === bus.plate) {
+                const currentStop = bus.currentStop || 'None';
+                const upcomingStop = bus.upcomingStop || 'None';
+                const nearestStop = bus.nearestStop || 'None';
+                const currentFence = bus.currentFence || 'Outside Geofence';
+                const routeStatus = bus.routeAdherence || 'On Route';
+                const deviationSeverity = (bus.routeAdherence && bus.routeAdherence !== 'On Route') ? bus.routeAdherence.replace(' Deviation', '') : 'None';
+                const completedStops = bus.completedStops ?? 0;
+                const remainingStops = bus.remainingStops ?? 0;
+                const completionPercentage = bus.completionPercentage ?? 0;
+                const eta = bus.eta || '--';
+                const speed = bus.speed || '0 km/h';
+
+                detailsHtml = `
+                    <div class="mt-3 p-3 bg-slate-50 border border-slate-100 rounded-lg text-[11px] text-slate-700 space-y-2 select-none">
+                        <div class="grid grid-cols-2 gap-x-4 gap-y-2">
+                            <div>
+                                <span class="text-slate-400 block font-medium">Current Stop</span>
+                                <strong class="text-[#001F44] text-[12px]">${currentStop}</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block font-medium">Upcoming Stop</span>
+                                <strong class="text-[#001F44] text-[12px]">${upcomingStop}</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block font-medium">Nearest Stop</span>
+                                <strong class="text-[#001F44] text-[12px]">${nearestStop}</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block font-medium">Current Geofence</span>
+                                <strong class="text-purple-600 text-[12px]">${currentFence}</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block font-medium">Route Status</span>
+                                <strong class="text-[12px] ${routeStatus === 'On Route' ? 'text-green-600' : 'text-red-500'}">${routeStatus}</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block font-medium">Deviation Severity</span>
+                                <strong class="text-[12px] ${deviationSeverity === 'None' ? 'text-slate-600' : 'text-red-500'}">${deviationSeverity}</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block font-medium">Completed / Remaining</span>
+                                <strong class="text-[#001F44] text-[12px]">${completedStops} / ${remainingStops}</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block font-medium">Trip Completion %</span>
+                                <strong class="text-[#001F44] text-[12px]">${completionPercentage}%</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block font-medium">ETA</span>
+                                <strong class="text-[#001F44] text-[12px]">${eta}</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block font-medium">Current Speed</span>
+                                <strong class="text-[#001F44] text-[12px]">${speed}</strong>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block font-medium">Last GPS Update</span>
+                                <strong class="text-[#001F44] text-[12px] last-gps-time" data-gps-at="${bus.lastGpsAt}">${formatTimeSince(bus.lastGpsAt)}</strong>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
 
             row.innerHTML = `
                 <div class="flex items-center justify-between">
@@ -574,6 +816,13 @@
                     <span>${bus.driver}</span>
                 </div>
 
+                <div class="flex items-center gap-1.5 text-[11px] mt-1">
+                    <i class="ti ti-satellite text-[12px] text-slate-400"></i>
+                    <span class="rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${gpsQualityChipClass(bus.gpsQualityState)}">${gpsQualityLabel(bus.gpsQualityState)}</span>
+                </div>
+
+                ${spatialStatusHtml}
+
                 <div class="flex items-center justify-between text-[11px] mt-1.5">
                     <span class="px-1.5 py-0.5 rounded font-medium ${routeBadgeColor}">Route ${bus.route}</span>
                     <span class="font-mono-custom font-medium text-slate-600">${bus.pax}/${bus.cap} pax (${pct}%)</span>
@@ -583,6 +832,8 @@
                 <div class="w-full bg-slate-100 rounded-full h-1 mt-2 overflow-hidden">
                     <div class="h-full rounded-full ${getProgressBarColor(bus.pax, bus.cap)}" style="width: ${pct}%"></div>
                 </div>
+
+                ${detailsHtml}
 
                 ${warningRow}
             `;
@@ -697,48 +948,217 @@
             stopMarkers.forEach(m => m.setStyle({ color: '#003F87' }));
         }
     }
+    // ─── Real-time GPS Position Polling ─────────────────────────────────────
+    // The Blade template populates `buses[]` once at page load from the database.
+    // Without polling, bus markers stay frozen at their page-load coordinates even
+    // while drivers are actively reporting GPS telemetry. This interval fetches
+    // fresh positions from the backend and moves markers without a full re-render.
+    const GPS_POLL_INTERVAL_MS = {{ (int) \App\Models\SystemSetting::get('map_gps_polling_interval_ms', 5000) }};
+    const GPS_POLL_URL = '{{ route("fleet.api.bus-gps-positions") }}';
 
-    // Modal Actions
-    function openSupportModal(plate, driver, route) {
-        document.getElementById('modal-driver-title').innerText = `Message driver — ${driver}`;
-        document.getElementById('modal-recipient-chip').innerText = `${plate} · Route ${route}`;
-        document.getElementById('modal-message-text').value = '';
-        document.getElementById('support-modal').classList.remove('hidden');
-    }
+    // Animate smoothly to new position using Ease in-out interpolation
+    function animateMarker(marker, newLat, newLng, duration) {
+        const startLat = marker.getLatLng().lat;
+        const startLng = marker.getLatLng().lng;
+        const startTime = performance.now();
 
-    function openMessageAllModal() {
-        document.getElementById('modal-driver-title').innerText = `Message all active drivers`;
-        document.getElementById('modal-recipient-chip').innerText = `All Active Routes`;
-        document.getElementById('modal-message-text').value = '';
-        document.getElementById('support-modal').classList.remove('hidden');
-    }
+        function step(currentTime) {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
 
-    function closeSupportModal() {
-        document.getElementById('support-modal').classList.add('hidden');
-    }
+            // Ease in-out interpolation
+            const ease = progress < 0.5
+                ? 2 * progress * progress
+                : -1 + (4 - 2 * progress) * progress;
 
-    function populateMessage(text) {
-        document.getElementById('modal-message-text').value = text;
-    }
+            const lat = startLat + (newLat - startLat) * ease;
+            const lng = startLng + (newLng - startLng) * ease;
 
-    function sendSupportMessage() {
-        const text = document.getElementById('modal-message-text').value;
-        if (!text) {
-            alert('Please enter a message before sending.');
-            return;
+            marker.setLatLng([lat, lng]);
+
+            if (progress < 1) {
+                requestAnimationFrame(step);
+            }
         }
 
-        // Close modal
-        closeSupportModal();
-
-        // Show Toast
-        const toast = document.getElementById('toast');
-        document.getElementById('toast-message').innerText = `Message broadcasted successfully!`;
-        toast.classList.add('show');
-
-        setTimeout(() => {
-            toast.classList.remove('show');
-        }, 3000);
+        requestAnimationFrame(step);
     }
+
+    let geofenceLayers = [];
+    let corridorLayers = [];
+    let overlaysLoaded = false;
+
+    function loadSpatialOverlays(geofences, corridors) {
+        if (!map) return;
+        if (overlaysLoaded) return;
+        if (!geofences || !corridors) return;
+        overlaysLoaded = true;
+
+        geofenceLayers.forEach(l => map.removeLayer(l));
+        geofenceLayers = [];
+        corridorLayers.forEach(l => map.removeLayer(l));
+        corridorLayers = [];
+
+        // 1. Draw Geofences
+        geofences.forEach(gf => {
+            let layer;
+            if (gf.geometry && gf.geometry.type === 'Polygon') {
+                layer = L.polygon(gf.geometry.coordinates, {
+                    color: '#7000cc',
+                    weight: 1.5,
+                    fillColor: '#7000cc',
+                    fillOpacity: 0.1,
+                    dashArray: '4, 4'
+                }).addTo(map);
+            } else {
+                layer = L.circle([gf.lat, gf.lng], {
+                    radius: gf.radius || 30,
+                    color: '#7000cc',
+                    weight: 1.5,
+                    fillColor: '#7000cc',
+                    fillOpacity: 0.1,
+                    dashArray: '4, 4'
+                }).addTo(map);
+            }
+            layer.bindTooltip(`${gf.name} (${gf.type})`, { sticky: true });
+            geofenceLayers.push(layer);
+        });
+
+        // 2. Draw Corridors
+        corridors.forEach(corr => {
+            if (corr.geometry && corr.geometry.type === 'LineString') {
+                let latLngs = corr.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+                
+                let bufferLayer = L.polyline(latLngs, {
+                    color: '#00cc88',
+                    weight: corr.buffer_width * 2,
+                    opacity: 0.12,
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                }).addTo(map);
+
+                let centerLayer = L.polyline(latLngs, {
+                    color: '#00cc88',
+                    weight: 1.5,
+                    opacity: 0.6,
+                    dashArray: '5, 5'
+                }).addTo(map);
+
+                corridorLayers.push(bufferLayer);
+                corridorLayers.push(centerLayer);
+            }
+        });
+    }
+
+    async function pollBusGpsPositions() {
+        if (!map) return;
+        try {
+            const response = await fetch(GPS_POLL_URL);
+            if (!response.ok) return;
+            const data = await response.json();
+            
+            // Draw overlays once
+            if (data.geofences && data.corridors) {
+                loadSpatialOverlays(data.geofences, data.corridors);
+            }
+
+            if (!data.buses || !Array.isArray(data.buses)) return;
+
+            data.buses.forEach(function(fresh) {
+                const newLat = parseFloat(fresh.lat);
+                const newLng = parseFloat(fresh.lng);
+                if (isNaN(newLat) || isNaN(newLng)) return;
+
+                // Update in-memory JS bus array
+                const idx = buses.findIndex(function(b) { return b.plate === fresh.plate_number; });
+                if (idx !== -1) {
+                    buses[idx].lat              = newLat;
+                    buses[idx].lng              = newLng;
+                    buses[idx].movementState    = fresh.movement_state ?? null;
+                    buses[idx].movementConfidence = fresh.movement_confidence ?? null;
+                    buses[idx].movementReason   = fresh.movement_reason ?? null;
+                    buses[idx].movementStateUpdatedAt = fresh.movement_state_updated_at ?? null;
+                    buses[idx].stationaryDurationSeconds = fresh.stationary_duration_seconds ?? null;
+                    buses[idx].gpsQualityState = fresh.gps_quality_state ?? 'UNKNOWN';
+                    buses[idx].gpsQualityReason = fresh.gps_quality_reason ?? null;
+                    buses[idx].gpsFixAgeSeconds = fresh.gps_fix_age_seconds ?? null;
+                    buses[idx].lastGpsFixAt = fresh.last_gps_fix_at ?? null;
+                    buses[idx].operationalStatus = fresh.operational_status ?? fresh.status ?? null;
+                    buses[idx].status = statusKeyFromOperationalStatus(buses[idx].operationalStatus, (fresh.capacity || buses[idx].cap) > 0 && ((fresh.passengers ?? buses[idx].pax) / (fresh.capacity || buses[idx].cap) >= 0.8));
+                    buses[idx].statusLabel = statusLabelFromOperationalStatus(buses[idx].operationalStatus);
+                    buses[idx].speed            = formatDisplaySpeedKmh(fresh.speed_kmh ?? 0, fresh.movement_state ?? null);
+                    buses[idx].speedMps         = fresh.speed_mps ?? null;
+                    buses[idx].heading          = fresh.heading ?? null;
+                    buses[idx].displayHeading   = fresh.display_heading ?? null;
+                    buses[idx].headingSource    = fresh.heading_source ?? 'unavailable';
+                    buses[idx].headingUpdatedAt = fresh.heading_updated_at ?? null;
+                    buses[idx].pax              = fresh.passengers ?? buses[idx].pax;
+                    buses[idx].nextStop         = fresh.next_stop  ?? buses[idx].nextStop;
+                    buses[idx].eta              = fresh.eta        ? fresh.eta + ' min' : '--';
+                    
+                    buses[idx].nearestStop      = fresh.nearest_stop ?? 'None';
+                    buses[idx].currentStop      = fresh.current_stop ?? 'None';
+                    buses[idx].upcomingStop     = fresh.upcoming_stop ?? 'None';
+                    buses[idx].currentFence     = fresh.current_fence ?? 'Outside Geofence';
+                    buses[idx].dwellTimeSeconds = fresh.dwell_time_seconds ?? 0;
+                    buses[idx].routeAdherence   = fresh.route_adherence ?? 'On Route';
+                    buses[idx].corridorDistance = fresh.corridor_distance ?? 0;
+                    buses[idx].tripId           = fresh.trip_id ?? null;
+                    buses[idx].coordinateSource = fresh.coordinate_source ?? 'bus_fallback';
+                    buses[idx].hasLiveTelemetry = !!fresh.has_live_telemetry;
+                    buses[idx].stateMismatch    = !!fresh.state_mismatch;
+                    buses[idx].stateMismatchDetails = fresh.state_mismatch_details ?? null;
+                    buses[idx].lastGpsAt        = fresh.last_gps_at ?? '';
+
+                    if (fresh.trip_progress) {
+                        buses[idx].completedStops = fresh.trip_progress.completed_stops ?? 0;
+                        buses[idx].remainingStops = fresh.trip_progress.remaining_stops ?? 0;
+                        buses[idx].completionPercentage = fresh.trip_progress.completion_percentage ?? 0;
+                    } else {
+                        buses[idx].completedStops = 0;
+                        buses[idx].remainingStops = 0;
+                        buses[idx].completionPercentage = 0;
+                    }
+
+                    // Update driver / route from live trip data
+                    if (fresh.driver_name) buses[idx].driver    = fresh.driver_name;
+                    if (fresh.route_id)    buses[idx].route     = String(fresh.route_id);
+                    if (fresh.route_name)  buses[idx].routeName = fresh.route_name;
+                }
+
+                // Smoothly animate the Leaflet marker to the updated position
+                if (markersMap[fresh.plate_number]) {
+                    animateMarker(markersMap[fresh.plate_number], newLat, newLng, 2000);
+                    markersMap[fresh.plate_number].setIcon(L.divIcon({
+                        html: getBusIconHTML(buses[idx]),
+                        className: 'bus-marker-container',
+                        iconSize: [34, 34],
+                        iconAnchor: [17, 17],
+                        popupAnchor: [0, -17]
+                    }));
+                    markersMap[fresh.plate_number].setPopupContent(getPopupContentHTML(buses[idx]));
+                }
+            });
+
+            // Refresh list sidebar
+            renderVehicleList();
+        } catch (err) {
+            console.warn('Fleet GPS poll error:', err);
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
 </script>
 </section>
+
+
+
+
+
+
+
+
+
+
+
+

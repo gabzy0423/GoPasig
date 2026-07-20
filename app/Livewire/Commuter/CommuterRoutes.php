@@ -17,6 +17,15 @@ class CommuterRoutes extends Component
     public $selectedRouteId = null;
     public $routeStops = [];
     public $activeBuses = [];
+    public $previousRouteId = null;
+
+    #[\Livewire\Attributes\On('buses-updated')]
+    public function onBusesUpdated()
+    {
+        if ($this->selectedRouteId) {
+            $this->selectRoute($this->selectedRouteId);
+        }
+    }
 
     public function mount()
     {
@@ -26,9 +35,9 @@ class CommuterRoutes extends Component
     public function loadRoutes()
     {
         // Fetch routes from the database
-        $routes = Route::getAllCached();
+        $routes = Route::getAllCached()->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive']);
         $stopsByRoute = Stop::getAllCached()->groupBy('route_id');
-        $activeBusesByRoute = Bus::where('status', 'active')->get()->groupBy('route_id');
+        $activeBusesByRoute = \App\Services\CommuterDashboardCacheService::getActiveBuses()->groupBy('route_id');
 
         $this->routes = $routes->map(function ($route) use ($stopsByRoute, $activeBusesByRoute) {
             $stops = $stopsByRoute->get($route->id, collect());
@@ -67,6 +76,7 @@ class CommuterRoutes extends Component
     public function selectRoute($routeId)
     {
         $this->selectedRouteId = $routeId ? (int) $routeId : null;
+        $this->previousRouteId = $this->selectedRouteId;
 
         if (!$this->selectedRouteId) {
             $this->routeStops = [];
@@ -80,12 +90,13 @@ class CommuterRoutes extends Component
             ->sortBy('sequence');
 
         // 2. Fetch all active buses on this route
-        $buses = Bus::where('route_id', $this->selectedRouteId)
-            ->where('status', 'active')
-            ->get();
+        $buses = \App\Services\CommuterDashboardCacheService::getActiveBuses()
+            ->where('route_id', $this->selectedRouteId);
 
         // 3. Map stops and estimate arrival times
-        $route = Route::getAllCached()->firstWhere('id', $this->selectedRouteId);
+        $route = Route::getAllCached()
+            ->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])
+            ->firstWhere('id', $this->selectedRouteId);
         $fallbackDuration = RouteDuration::getDuration($this->selectedRouteId, now()->englishDayOfWeek, null);
         $routeTravelTime  = $route ? ($route->travel_time_minutes ?: $fallbackDuration) : $fallbackDuration;
 
@@ -195,8 +206,20 @@ class CommuterRoutes extends Component
 
     public function render()
     {
-        // Keep active buses, stops, and ETAs updated in real-time when polling occurs
         if ($this->selectedRouteId) {
+            $selectedRoute = Route::find($this->selectedRouteId);
+            if ($selectedRoute && in_array(strtolower($selectedRoute->status), ['suspended', 'inactive'])) {
+                $this->dispatch('route-suspended', [
+                    'message' => 'This route has been suspended due to an operational issue. Please select another route.'
+                ]);
+                $this->selectedRouteId = null;
+                $this->routeStops = [];
+                $this->activeBuses = [];
+            }
+        }
+
+        // Keep active buses, stops, and ETAs updated in real-time when polling occurs
+        if ($this->selectedRouteId !== $this->previousRouteId) {
             $this->selectRoute($this->selectedRouteId);
         }
 

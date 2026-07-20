@@ -26,7 +26,7 @@ class CommuterSchedule extends Component
 
     public function loadRoutes()
     {
-        $this->routes = Route::getAllCached()->toArray();
+        $this->routes = Route::getAllCached()->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])->toArray();
     }
 
     public function filterByRoute($routeId)
@@ -47,7 +47,7 @@ class CommuterSchedule extends Component
 
         $schedule = Schedule::with(['route', 'route.stops', 'bus'])->find($this->selectedTripId);
 
-        if (!$schedule) {
+        if (!$schedule || !$schedule->route || in_array($schedule->route->status, ['suspended', 'inactive', 'Suspended', 'Inactive'])) {
             $this->selectedTrip = null;
             return;
         }
@@ -191,7 +191,9 @@ class CommuterSchedule extends Component
     public function render()
     {
         // Query schedules
-        $query = Schedule::with(['route', 'route.stops']);
+        $query = Schedule::whereHas('route', function($q) {
+            $q->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive']);
+        })->with(['route', 'route.stops']);
 
         if ($this->activeRouteFilter) {
             $query->where('route_id', $this->activeRouteFilter);

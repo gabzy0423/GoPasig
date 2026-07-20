@@ -18,7 +18,7 @@
                 
                 @include('admin.overview')
 
-                @include('admin.buses.index')
+                @include('admin.bus.index')
 
                 @include('admin.dispatch.index')
 
@@ -74,6 +74,7 @@
 <script>
     window.GoPasigConfig = {
         fleetDataUrl: "{{ route('admin.api.fleet-data') }}",
+        viewBusRouteTemplate: "{{ route('admin.buses.show', ['bus' => ':id']) }}",
         analyticsUrl: "{{ route('admin.api.analytics') }}",
         busesBaseUrl: "{{ url('admin/api/buses') }}",
         driversBaseUrl: "{{ url('admin/api/drivers') }}",

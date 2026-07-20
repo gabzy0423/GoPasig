@@ -17,18 +17,18 @@ class TripSeeder extends Seeder
         DB::table('dispatch_logs')->delete();
         Trip::query()->delete();
 
-        // Find active buses from RouteSeeder
-        $bus1 = Bus::where('plate_number', 'PAS-439')->first();
-        $bus2 = Bus::where('plate_number', 'PAS-204')->first();
-        $bus3 = Bus::where('plate_number', 'PAS-881')->first();
-        $bus4 = Bus::where('plate_number', 'PAS-661')->first();
-        $bus5 = Bus::where('plate_number', 'PAS-112')->first(); // inactive
+        // Find active buses from BusSeeder
+        $bus1 = Bus::where('plate_number', 'PAS-001')->first();
+        $bus2 = Bus::where('plate_number', 'PAS-002')->first();
+        $bus3 = Bus::where('plate_number', 'PAS-003')->first();
+        $bus4 = Bus::where('plate_number', 'PAS-004')->first();
+        $bus5 = Bus::where('plate_number', 'PAS-005')->first(); // inactive
 
-        $driver1 = Driver::where('assigned_bus', 'PAS-439')->first();
-        $driver2 = Driver::where('assigned_bus', 'PAS-204')->first();
-        $driver3 = Driver::where('assigned_bus', 'PAS-881')->first();
-        $driver4 = Driver::where('assigned_bus', 'PAS-661')->first();
-        $driver5 = Driver::where('emp_id', 'EMP-0023')->first(); // Ramon Reyes
+        $driver1 = Driver::where('emp_id', 'EMP-0021')->first();
+        $driver2 = Driver::where('emp_id', 'EMP-0022')->first();
+        $driver3 = Driver::where('emp_id', 'EMP-0023')->first();
+        $driver4 = Driver::where('emp_id', 'EMP-0024')->first();
+        $driver5 = Driver::where('emp_id', 'EMP-0025')->first();
 
         // No active ongoing trips seeded to ensure a clean operational slate.
 

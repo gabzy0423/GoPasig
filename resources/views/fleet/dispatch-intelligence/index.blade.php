@@ -165,7 +165,7 @@
                 @php
                     $borderClass = $r->status === 'red' ? 'border-[#E24B4A] border-t-[4px]' : ($r->status === 'yellow' ? 'border-[#BA7517] border-t-[4px]' : 'border-slate-200 border-t-[4px] border-t-[#003F87]');
                     $badgeClass = $r->status === 'red' ? 'bg-[#FCEBEB] text-[#A32D2D]' : ($r->status === 'yellow' ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-[#EAF3DE] text-[#3B6D11]');
-                    $badgeText = $r->status === 'red' ? '🔴 Dispatch Now' : ($r->status === 'yellow' ? '🟡 Standby (High)' : '🟢 Normal');
+                    $badgeText = $r->status === 'red' ? 'Dispatch Now' : ($r->status === 'yellow' ? 'Standby (High)' : 'Normal');
                     $loadPercent = $r->threshold > 0 ? min(100, round(($r->total / $r->threshold) * 100)) : 0;
                     $progressBarColor = $r->status === 'red' ? 'bg-[#E24B4A]' : ($r->status === 'yellow' ? 'bg-[#BA7517]' : 'bg-[#003F87]');
                 @endphp

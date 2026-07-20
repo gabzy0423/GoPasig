@@ -46,7 +46,7 @@ class CommuterTrackerTest extends TestCase
         ]);
 
         // 3. Create a driver assigned to the first bus
-        Driver::create([
+        $driver1 = Driver::create([
             'first_name' => 'Juan',
             'last_name' => 'Dela Cruz',
             'emp_id' => 'EMP-001',
@@ -54,6 +54,24 @@ class CommuterTrackerTest extends TestCase
             'license_expiry' => now()->addYear(),
             'assigned_bus' => 'PAS-101',
             'status' => 'active'
+        ]);
+
+        // Create ongoing trips for these buses to make them appear on the map tracker
+        \App\Models\Trip::create([
+            'bus_id' => $busWithDriver->id,
+            'driver_id' => $driver1->id,
+            'route_id' => $route->id,
+            'status' => 'ongoing',
+            'started_at' => now(),
+        ]);
+
+        $dummyDriver = Driver::factory()->create();
+        \App\Models\Trip::create([
+            'bus_id' => $busWithoutDriver->id,
+            'driver_id' => $dummyDriver->id,
+            'route_id' => $route->id,
+            'status' => 'ongoing',
+            'started_at' => now(),
         ]);
 
         // 4. Test the Livewire component view data

@@ -24,7 +24,7 @@ class DashboardService
             'delayed_buses' => Bus::with('route')->where('status', 'active')->get()->filter(function ($bus) {
                 return $bus->eta >= $bus->getRouteDelayThreshold();
             })->count(),
-            'passengers_today' => Schedule::whereDate('created_at', Carbon::today('Asia/Manila'))->sum('passengers'),
+            'passengers_today' => Schedule::whereDate('service_date', Carbon::today('Asia/Manila'))->sum('passengers'),
             'open_alerts' => ServiceAlert::activeAlerts()->count(),
         ];
     }

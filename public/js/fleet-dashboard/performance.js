@@ -451,10 +451,6 @@ function renderDrawerData(driver, trips, incidents) {
 
         ${incidentsHtml}
     `;
-
-    if (msgBtn) {
-        msgBtn.onclick = () => messageDriverAction(driver.driver_id);
-    }
 }
 
 function closeDriverDrawer() {
@@ -464,26 +460,6 @@ function closeDriverDrawer() {
 
     drawerContent.classList.add('translate-x-full');
     setTimeout(() => drawer.classList.add('hidden'), 300);
-}
-
-async function messageDriverAction(driverId) {
-    try {
-        const response = await fetch(`${window.FleetPerformanceConfig.driverMessageUrl}/${driverId}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': window.FleetPerformanceConfig.csrfToken
-            }
-        });
-        const data = await response.json();
-        if (response.ok && data.success) {
-            // Flash a success message
-            showNotification(data.message);
-            closeDriverDrawer();
-        }
-    } catch (e) {
-        console.error('Error messaging driver:', e);
-    }
 }
 
 function showNotification(message) {

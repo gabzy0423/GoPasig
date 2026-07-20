@@ -36,18 +36,36 @@ class Tracker extends Component
 
     public function render()
     {
+        if ($this->selectedRouteId) {
+            $selectedRouteObj = Route::find($this->selectedRouteId);
+            if ($selectedRouteObj && in_array(strtolower($selectedRouteObj->status), ['suspended', 'inactive'])) {
+                $this->dispatch('route-suspended', [
+                    'message' => 'This route has been suspended due to an operational issue. Please select another route.'
+                ]);
+                $this->selectedRouteId = null;
+            }
+        }
+
         // 1. Fetch active alerts   
         $activeAlerts = ServiceAlert::activeAlerts()
             ->orderBy('created_at', 'desc')
             ->get();
 
         // 2. Fetch routes
-        $routes = Route::getAllCached();
+        $routes = Route::getAllCached()->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive']);
 
         // 3. Fetch active buses
+        $activeBusIds = \App\Models\Trip::where('status', 'ongoing')->pluck('bus_id')->toArray();
 
         $busesQuery = Bus::with(['route', 'route.stops'])
-            ->where('status', 'active');
+            ->where('status', '!=', 'inactive')
+            ->where('status', '!=', 'maintenance')
+            ->where(function($q) use ($activeBusIds) {
+                $q->where(function($sub) use ($activeBusIds) {
+                    $sub->where('status', 'active')
+                        ->whereIn('id', $activeBusIds);
+                })->orWhere('status', 'breakdown');
+            });
 
         if ($this->selectedRouteId) {
             $busesQuery->where('route_id', $this->selectedRouteId);
@@ -57,9 +75,11 @@ class Tracker extends Component
             // Route color: read from the database column
             $color = $bus->route?->color ?: config('brand.route_color_unassigned', '#888780');
 
-            // Determine commuter-visible status (bus DB status is always 'active' here)
+            // Determine commuter-visible status
             $status = 'active';
-            if ($bus->eta >= $bus->getRouteDelayThreshold() && $bus->speed > 0) {
+            if ($bus->status === 'breakdown') {
+                $status = 'breakdown';
+            } elseif ($bus->eta >= $bus->getRouteDelayThreshold() && $bus->speed > 0) {
                 $status = 'delayed';
             } elseif ($bus->speed == 0 && $bus->passengers == 0) {
                 // ISSUE-040 FIX: 'idle' only assigned to active buses stopped with no passengers.

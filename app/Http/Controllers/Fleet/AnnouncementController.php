@@ -114,7 +114,7 @@ class AnnouncementController extends Controller
         $validated = $request->validate($rules);
 
         $user = Auth::user();
-        $postedBy = $user && $user->name ? $user->name : 'Danielle Dispatcher';
+        $postedBy = $user && $user->name ? $user->name : \App\Models\SystemSetting::get('default_poster_name', 'Fleet Operations');
 
         $data = [
             'headline' => $validated['headline'],

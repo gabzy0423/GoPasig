@@ -32,8 +32,6 @@
 
                     @include('fleet.incidents.index')
 
-                    @include('fleet.maintenance.index')
-
                     @include('fleet.announcements.index')
 
                     @include('fleet.analytics.index')

@@ -44,11 +44,11 @@
         } else {
             window.activeRoutesTab = tab;
         }
-        window.location.hash = tab === 'stops' ? 'routes-stops' : 'routes-schedule';
+        switchScreen(tab === 'stops' ? 'routes-stops' : 'routes-schedule');
     }
 
     function navigateToAnalyticsSection(sectionId) {
-        window.location.hash = sectionId;
+        switchScreen(sectionId);
     }
 
     // Expose helpers globally
@@ -65,6 +65,11 @@
 
     // Switch Screens seamlessly
     function switchScreen(screenName) {
+        // Clear browser URL hash to ensure a completely clean URL (e.g. /admin/dashboard)
+        if (window.location.hash) {
+            history.pushState("", document.title, window.location.pathname + window.location.search);
+        }
+
         // Resolve parent screen name and sub-nav highlight key
         let parentScreenName = screenName;
         let navHighlightName = screenName;
@@ -84,53 +89,32 @@
             navHighlightName = activeTab === 'stops' ? 'routes-stops' : 'routes-schedule';
         }
 
+        const hideElement = (id) => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        };
+
         // Hide all screens
-        document.getElementById('screen-overview').classList.add('hidden');
-        document.getElementById('screen-buses').classList.add('hidden');
-        document.getElementById('screen-dispatch').classList.add('hidden');
-        document.getElementById('screen-maintenance').classList.add('hidden');
-        document.getElementById('screen-map-view').classList.add('hidden');
-        if (document.getElementById('screen-analytics-fleet-utilization')) {
-            document.getElementById('screen-analytics-fleet-utilization').classList.add('hidden');
-        }
-        if (document.getElementById('screen-analytics-route-performance')) {
-            document.getElementById('screen-analytics-route-performance').classList.add('hidden');
-        }
-        if (document.getElementById('screen-analytics-driver-performance')) {
-            document.getElementById('screen-analytics-driver-performance').classList.add('hidden');
-        }
-        document.getElementById('screen-drivers').classList.add('hidden');
-        if (document.getElementById('screen-drivers-create')) {
-            document.getElementById('screen-drivers-create').classList.add('hidden');
-        }
-        if (document.getElementById('screen-drivers-edit')) {
-            document.getElementById('screen-drivers-edit').classList.add('hidden');
-        }
-        if (document.getElementById('screen-drivers-show')) {
-            document.getElementById('screen-drivers-show').classList.add('hidden');
-        }
-        if (document.getElementById('screen-routes')) {
-            document.getElementById('screen-routes').classList.add('hidden');
-        }
-        if (document.getElementById('screen-alerts')) {
-            document.getElementById('screen-alerts').classList.add('hidden');
-        }
-        if (document.getElementById('screen-alerts-history')) {
-            document.getElementById('screen-alerts-history').classList.add('hidden');
-        }
-        if (document.getElementById('screen-schedules-conflict')) {
-            document.getElementById('screen-schedules-conflict').classList.add('hidden');
-        }
-        if (document.getElementById('screen-schedules-create')) {
-            document.getElementById('screen-schedules-create').classList.add('hidden');
-        }
-        if (document.getElementById('screen-schedules-edit')) {
-            document.getElementById('screen-schedules-edit').classList.add('hidden');
-        }
-        if (document.getElementById('screen-settings')) {
-            document.getElementById('screen-settings').classList.add('hidden');
-        }
-        document.getElementById('screen-placeholder').classList.add('hidden');
+        hideElement('screen-overview');
+        hideElement('screen-buses');
+        hideElement('screen-dispatch');
+        hideElement('screen-maintenance');
+        hideElement('screen-map-view');
+        hideElement('screen-analytics-fleet-utilization');
+        hideElement('screen-analytics-route-performance');
+        hideElement('screen-analytics-driver-performance');
+        hideElement('screen-drivers');
+        hideElement('screen-drivers-create');
+        hideElement('screen-drivers-edit');
+        hideElement('screen-drivers-show');
+        hideElement('screen-routes');
+        hideElement('screen-alerts');
+        hideElement('screen-alerts-history');
+        hideElement('screen-schedules-conflict');
+        hideElement('screen-schedules-create');
+        hideElement('screen-schedules-edit');
+        hideElement('screen-settings');
+        hideElement('screen-placeholder');
 
         // Reset all navigation buttons
         const navButtons = document.querySelectorAll('[data-nav]');
@@ -311,30 +295,37 @@
             const placeholderTitle = document.getElementById('placeholder-title');
             const placeholderIcon = document.getElementById('placeholder-icon');
 
-            placeholderScreen.classList.remove('hidden');
+            if (placeholderScreen) placeholderScreen.classList.remove('hidden');
 
             const label = screenLabels[navHighlightName] ?? (activeNavBtn ? activeNavBtn.textContent.trim() : 'Ops Module');
             if (breadcrumbCurrent) breadcrumbCurrent.textContent = label;
-            placeholderTitle.textContent = label;
+            if (placeholderTitle) placeholderTitle.textContent = label;
             
             // Map icons for visual polish
-            if (parentScreenName === 'map-view') placeholderIcon.className = "ti ti-map-pin text-3xl";
-            else if (parentScreenName === 'drivers') placeholderIcon.className = "ti ti-id text-3xl";
-            else if (parentScreenName === 'routes') placeholderIcon.className = "ti ti-route text-3xl";
-            else if (parentScreenName === 'alerts') placeholderIcon.className = "ti ti-bell-ringing text-3xl";
-            else if (parentScreenName.startsWith('analytics-')) placeholderIcon.className = "ti ti-chart-bar text-3xl";
-            else placeholderIcon.className = "ti ti-settings text-3xl";
+            if (placeholderIcon) {
+                if (parentScreenName === 'map-view') placeholderIcon.className = "ti ti-map-pin text-3xl";
+                else if (parentScreenName === 'drivers') placeholderIcon.className = "ti ti-id text-3xl";
+                else if (parentScreenName === 'routes') placeholderIcon.className = "ti ti-route text-3xl";
+                else if (parentScreenName === 'alerts') placeholderIcon.className = "ti ti-bell-ringing text-3xl";
+                else if (parentScreenName.startsWith('analytics-')) placeholderIcon.className = "ti ti-chart-bar text-3xl";
+                else placeholderIcon.className = "ti ti-settings text-3xl";
+            }
         }
 
         // Close sidebar drawer on mobile after clicks
         const sidebar = document.getElementById('sidebar');
-        if (!sidebar.classList.contains('-translate-x-full')) {
+        if (sidebar && !sidebar.classList.contains('-translate-x-full')) {
             sidebar.classList.add('-translate-x-full');
         }
     }
 
+    let hashRouteCheckedOnLoad = false;
     // Auto-activate tab from hash immediately and on load to prevent page flashing
-    function checkHashRoute() {
+    function checkHashRoute(event) {
+        if (event && event.type === 'load' && hashRouteCheckedOnLoad) {
+            return;
+        }
+        hashRouteCheckedOnLoad = true;
         let hash = window.location.hash.replace('#', '') || 'overview';
         let param = null;
 
@@ -383,6 +374,8 @@
         }
     }
 
-    checkHashRoute();
-    window.addEventListener('load', checkHashRoute);
-    window.addEventListener('hashchange', checkHashRoute);
+    if (window.location.pathname.includes('/admin/dashboard')) {
+        checkHashRoute();
+        window.addEventListener('load', checkHashRoute);
+        window.addEventListener('hashchange', checkHashRoute);
+    }

@@ -130,10 +130,10 @@ class FleetDispatchIntelligenceTest extends TestCase
 
     public function test_can_dispatch_bus_and_reset_queue(): void
     {
-        // Seed an inactive bus and driver
+        // Seed an available bus and active/available driver
         $bus = Bus::create([
             'plate_number' => 'PAS-555',
-            'status' => 'inactive',
+            'status' => 'available',
             'capacity' => 45,
             'lat' => 14.5593,
             'lng' => 121.0805,
@@ -147,7 +147,8 @@ class FleetDispatchIntelligenceTest extends TestCase
             'last_name' => 'Dalisay',
             'license_number' => 'N01-23-456789',
             'license_expiry' => '2027-12-12',
-            'status' => 'inactive',
+            'status' => 'active',
+            'operational_status' => 'available',
         ]);
 
         // Seed commuter checking in
@@ -173,12 +174,13 @@ class FleetDispatchIntelligenceTest extends TestCase
         $response->assertStatus(200);
         $response->assertJson(['success' => true]);
 
-        // Assert bus and driver are now active
+        // Assert bus and driver are now dispatched/assigned
         $bus->refresh();
-        $this->assertEquals('active', $bus->status);
+        $this->assertEquals('ready', $bus->status);
 
         $driver->refresh();
         $this->assertEquals('active', $driver->status);
+        $this->assertEquals('assigned', $driver->operational_status);
 
         // Assert pending commuter check-in is now boarded (ON_BUS)
         $this->assertDatabaseHas('commuter_trips', [
@@ -198,5 +200,266 @@ class FleetDispatchIntelligenceTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonFragment(['success' => false]);
+    }
+
+    public function test_dispatch_creates_single_trip_and_single_dispatch_log(): void
+    {
+        $bus = Bus::create([
+            'plate_number' => 'PAS-X1',
+            'status' => 'available',
+            'capacity' => 45,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'speed' => 0,
+            'passengers' => 0,
+        ]);
+
+        $driver = Driver::create([
+            'emp_id' => 'EMP-X1',
+            'first_name' => 'Cardo',
+            'last_name' => 'Dalisay',
+            'license_number' => 'N01-23-456781',
+            'license_expiry' => '2027-12-12',
+            'status' => 'active',
+            'operational_status' => 'available',
+        ]);
+
+        $response = $this->actingAs($this->dispatcher)->post('/fleet/api/dispatch-now', [
+            'route_id' => $this->route->id,
+        ]);
+
+        $response->assertStatus(200);
+        $this->assertDatabaseCount('trips', 1);
+        $this->assertDatabaseCount('dispatch_logs', 1);
+    }
+
+    public function test_duplicate_dispatch_rejected(): void
+    {
+        $bus = Bus::create([
+            'plate_number' => 'PAS-X2',
+            'status' => 'available',
+            'capacity' => 45,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'speed' => 0,
+            'passengers' => 0,
+        ]);
+
+        $driver = Driver::create([
+            'emp_id' => 'EMP-X2',
+            'first_name' => 'Cardo',
+            'last_name' => 'Dalisay',
+            'license_number' => 'N01-23-456782',
+            'license_expiry' => '2027-12-12',
+            'status' => 'active',
+            'operational_status' => 'available',
+        ]);
+
+        // First dispatch
+        $response1 = $this->actingAs($this->dispatcher)->post('/fleet/api/dispatch-now', [
+            'route_id' => $this->route->id,
+        ]);
+        $response1->assertStatus(200);
+
+        // Replay dispatch immediately with same resource
+        try {
+            \App\Services\SimulationDispatchService::dispatch($bus, $driver, $this->route);
+            $this->fail("Duplicate dispatch should throw DispatchException.");
+        } catch (\App\Exceptions\DispatchException $e) {
+            $this->assertTrue(
+                str_contains($e->getMessage(), 'already has an ongoing trip') ||
+                str_contains($e->getMessage(), 'is already active')
+            );
+        }
+    }
+
+    public function test_maintenance_bus_rejected(): void
+    {
+        $bus = Bus::create([
+            'plate_number' => 'PAS-MNT',
+            'status' => 'maintenance',
+            'capacity' => 45,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'speed' => 0,
+            'passengers' => 0,
+        ]);
+
+        $driver = Driver::create([
+            'emp_id' => 'EMP-MNT',
+            'first_name' => 'Cardo',
+            'last_name' => 'Dalisay',
+            'license_number' => 'N01-23-456783',
+            'license_expiry' => '2027-12-12',
+            'status' => 'active',
+            'operational_status' => 'available',
+        ]);
+
+        $this->expectException(\App\Exceptions\BusUnavailableException::class);
+        $this->expectExceptionMessage('is currently in maintenance');
+
+        \App\Services\SimulationDispatchService::dispatch($bus, $driver, $this->route);
+    }
+
+    public function test_breakdown_bus_rejected(): void
+    {
+        $bus = Bus::create([
+            'plate_number' => 'PAS-BRK',
+            'status' => 'breakdown',
+            'capacity' => 45,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'speed' => 0,
+            'passengers' => 0,
+        ]);
+
+        $driver = Driver::create([
+            'emp_id' => 'EMP-BRK',
+            'first_name' => 'Cardo',
+            'last_name' => 'Dalisay',
+            'license_number' => 'N01-23-456784',
+            'license_expiry' => '2027-12-12',
+            'status' => 'active',
+            'operational_status' => 'available',
+        ]);
+
+        $this->expectException(\App\Exceptions\BusUnavailableException::class);
+        $this->expectExceptionMessage('has an unresolved breakdown');
+
+        \App\Services\SimulationDispatchService::dispatch($bus, $driver, $this->route);
+    }
+
+    public function test_unavailable_driver_rejected(): void
+    {
+        $bus = Bus::create([
+            'plate_number' => 'PAS-OK',
+            'status' => 'available',
+            'capacity' => 45,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'speed' => 0,
+            'passengers' => 0,
+        ]);
+
+        $driver = Driver::create([
+            'emp_id' => 'EMP-SUSP',
+            'first_name' => 'Cardo',
+            'last_name' => 'Dalisay',
+            'license_number' => 'N01-23-456785',
+            'license_expiry' => '2027-12-12',
+            'status' => 'suspended',
+        ]);
+
+        $this->expectException(\App\Exceptions\DriverUnavailableException::class);
+        $this->expectExceptionMessage('is suspended');
+
+        \App\Services\SimulationDispatchService::dispatch($bus, $driver, $this->route);
+    }
+
+    public function test_expired_license_rejected(): void
+    {
+        $bus = Bus::create([
+            'plate_number' => 'PAS-OK2',
+            'status' => 'available',
+            'capacity' => 45,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'speed' => 0,
+            'passengers' => 0,
+        ]);
+
+        $driver = Driver::create([
+            'emp_id' => 'EMP-EXP',
+            'first_name' => 'Cardo',
+            'last_name' => 'Dalisay',
+            'license_number' => 'N01-23-456786',
+            'license_expiry' => '2020-12-12', // expired
+            'status' => 'active',
+            'operational_status' => 'available',
+        ]);
+
+        $this->expectException(\App\Exceptions\DriverUnavailableException::class);
+        $this->expectExceptionMessage('license expired');
+
+        \App\Services\SimulationDispatchService::dispatch($bus, $driver, $this->route);
+    }
+
+    public function test_schedule_conflict_rejected(): void
+    {
+        $bus = Bus::create([
+            'plate_number' => 'PAS-CON',
+            'status' => 'available',
+            'capacity' => 45,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'speed' => 0,
+            'passengers' => 0,
+        ]);
+
+        $driver = Driver::create([
+            'emp_id' => 'EMP-CON',
+            'first_name' => 'Cardo',
+            'last_name' => 'Dalisay',
+            'license_number' => 'N01-23-456787',
+            'license_expiry' => '2027-12-12',
+            'status' => 'active',
+            'operational_status' => 'available',
+        ]);
+
+        // Seed conflicting schedule for this bus
+        \App\Models\Schedule::create([
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $this->route->id,
+            'departure_time' => now()->format('H:i:s'),
+            'arrival_time' => now()->addMinutes(60)->format('H:i:s'),
+            'service_date' => now()->toDateString(),
+            'status' => 'scheduled',
+        ]);
+
+        $this->expectException(\App\Exceptions\ScheduleConflictException::class);
+        $this->expectExceptionMessage('already scheduled');
+
+        \App\Services\SimulationDispatchService::dispatch($bus, $driver, $this->route);
+    }
+
+    public function test_transaction_rollback_restores_all_state_and_no_orphan_records(): void
+    {
+        $bus = Bus::create([
+            'plate_number' => 'PAS-ROLL',
+            'status' => 'available',
+            'capacity' => 45,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'speed' => 0,
+            'passengers' => 0,
+        ]);
+
+        $driver = Driver::create([
+            'emp_id' => 'EMP-ROLL',
+            'first_name' => 'Cardo',
+            'last_name' => 'Dalisay',
+            'license_number' => 'N01-23-456788',
+            'license_expiry' => '2027-12-12',
+            'status' => 'active',
+            'operational_status' => 'available',
+        ]);
+
+        // Mock Log facade to throw exception inside transition to force rollback midway
+        \Illuminate\Support\Facades\Log::shouldReceive('info')
+            ->andThrow(new \RuntimeException('Forced rollback'));
+
+        try {
+            \App\Services\SimulationDispatchService::dispatch($bus, $driver, $this->route);
+            $this->fail("Rollback should have thrown exception.");
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Forced rollback', $e->getMessage());
+        }
+
+        // Verify: no partial updates remain (bus is still available, no trips created, no dispatch logs)
+        $bus->refresh();
+        $this->assertSame('available', $bus->status);
+        $this->assertDatabaseCount('trips', 0);
+        $this->assertDatabaseCount('dispatch_logs', 0);
     }
 }

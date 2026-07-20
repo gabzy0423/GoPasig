@@ -331,14 +331,6 @@
                     <div id="drawer-details-body" class="space-y-5"></div>
                 </div>
 
-                <!-- Sticky bottom action -->
-                <div class="mt-6 pt-4 border-t border-slate-100 sticky bottom-0 bg-white z-10">
-                    <button type="button" id="btn-message-driver"
-                        class="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg border border-[#003F87] text-[#003F87] font-semibold text-xs hover:bg-[#E6F1FB] transition-colors">
-                        <i class="ti ti-message text-[16px]"></i>
-                        <span>Message driver</span>
-                    </button>
-                </div>
             </div>
         </div>
     </div>

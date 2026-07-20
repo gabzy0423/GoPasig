@@ -99,9 +99,10 @@ class CommuterStops extends Component
 
                 // Servicing routes: in this capstone, find routes passing this stop landmark.
                 // We'll show the direct parent route and look for routes with the same stop name for a unified view.
-                $servicingRoutes = Route::whereHas('stops', function ($q) use ($selectedStop) {
-                    $q->where('name', $selectedStop->name);
-                })->get();
+                $servicingRoutes = Route::whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])
+                    ->whereHas('stops', function ($q) use ($selectedStop) {
+                        $q->where('name', $selectedStop->name);
+                    })->get();
 
                 // Find next arriving bus for this route (ISSUE-052: Sort active buses by physical proximity/distance to the stop)
                 $buses = Bus::where('route_id', $selectedStop->route_id)
@@ -139,7 +140,7 @@ class CommuterStops extends Component
         }
 
         // All routes for coordinate rendering
-        $routes = Route::getAllCached();
+        $routes = Route::getAllCached()->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive']);
 
         return view('livewire.commuter.commuter-stops', [
             'stops' => $stops,

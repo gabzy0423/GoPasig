@@ -25,32 +25,70 @@ class SecurityHeadersMiddleware
         $response->headers->set('X-XSS-Protection', '1; mode=block');
         $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
 
+        // ─────────────────────────────────────────────────────────────────
         // Content Security Policy
-        $isLocal = app()->environment('local');
+        //
+        // Rules are kept environment-agnostic: $appUrl (from APP_URL in
+        // .env) is always injected so the policy works correctly whether
+        // the app is accessed locally, via ngrok, or via any other proxy.
+        //
+        // Vite dev-server origins (localhost:5173) are always included —
+        // they are harmless no-ops when the dev server is not running but
+        // are required for hot-reload during local development.
+        //
+        // Mobile browsers are strict about 'self' — when the request
+        // arrives via ngrok, 'self' resolves to the ngrok origin, so we
+        // must also explicitly list that origin in every directive that
+        // might serve resources.
+        // ─────────────────────────────────────────────────────────────────
+        $appUrl  = rtrim(config('app.url'), '/');
+        $appHost = parse_url($appUrl, PHP_URL_HOST) ?? '';
 
-        $scriptSrc = $isLocal 
-            ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:5173 http://127.0.0.1:5173 http://[::1]:5173 https://maps.googleapis.com https://challenges.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net"
-            : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://challenges.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net";
+        // WebSocket equivalent of the app URL (for Vite HMR over ngrok if ever needed)
+        $appWs = str_starts_with($appUrl, 'https://')
+            ? 'wss://' . $appHost
+            : 'ws://' . $appHost;
 
-        $styleSrc = $isLocal
-            ? "style-src 'self' 'unsafe-inline' http://localhost:5173 http://127.0.0.1:5173 http://[::1]:5173 https://fonts.googleapis.com https://maps.googleapis.com https://unpkg.com"
-            : "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://maps.googleapis.com https://unpkg.com";
+        $csp = implode('; ', [
+            // Catch-all fallback: self + ngrok origin
+            "default-src 'self' {$appUrl}",
 
-        $connectSrc = $isLocal
-            ? "connect-src 'self' http://localhost:5173 http://127.0.0.1:5173 ws://localhost:5173 ws://127.0.0.1:5173 ws://[::1]:5173 http://[::1]:5173 https://maps.googleapis.com https://challenges.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net"
-            : "connect-src 'self' https://maps.googleapis.com https://challenges.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net";
+            // Scripts: self, ngrok, Vite dev server, external CDNs
+            "script-src 'self' {$appUrl} 'unsafe-inline' 'unsafe-eval'"
+                . " http://localhost:5173 http://127.0.0.1:5173 http://[::1]:5173"
+                . " https://maps.googleapis.com https://challenges.cloudflare.com"
+                . " https://unpkg.com https://cdn.jsdelivr.net",
 
-        $fontSrc = $isLocal
-            ? "font-src 'self' http://localhost:5173 http://127.0.0.1:5173 http://[::1]:5173 https://fonts.gstatic.com data:;"
-            : "font-src 'self' https://fonts.gstatic.com data:;";
+            // Styles: self, ngrok, Vite dev server, Google Fonts
+            "style-src 'self' {$appUrl} 'unsafe-inline'"
+                . " http://localhost:5173 http://127.0.0.1:5173 http://[::1]:5173"
+                . " https://fonts.googleapis.com https://maps.googleapis.com https://unpkg.com",
 
-        $csp = "default-src 'self'; " .
-               "{$scriptSrc}; " .
-               "{$styleSrc}; " .
-               "img-src 'self' data: https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com *.tile.openstreetmap.org; " .
-               "{$fontSrc}; " .
-               "{$connectSrc}; " .
-               "frame-src 'self' https://challenges.cloudflare.com;";
+            // Images: self, ngrok, data URIs, map tiles
+            "img-src 'self' {$appUrl} data: blob:"
+                . " https://maps.googleapis.com https://maps.gstatic.com"
+                . " https://*.googleapis.com *.tile.openstreetmap.org",
+
+            // Fonts: self, ngrok, Vite dev server, Google Fonts CDN, data URIs
+            // tabler-icons.css references fonts via relative ./fonts/ path so
+            // 'self' covers those; ngrok is needed for mobile.
+            "font-src 'self' {$appUrl}"
+                . " http://localhost:5173 http://127.0.0.1:5173 http://[::1]:5173"
+                . " https://fonts.gstatic.com data:",
+
+            // XHR / fetch / WebSocket: self, ngrok, Vite HMR, Google Maps
+            "connect-src 'self' {$appUrl} {$appWs}"
+                . " http://localhost:5173 http://127.0.0.1:5173"
+                . " ws://localhost:5173 ws://127.0.0.1:5173 ws://[::1]:5173 http://[::1]:5173"
+                . " https://maps.googleapis.com https://challenges.cloudflare.com"
+                . " https://unpkg.com https://cdn.jsdelivr.net",
+
+            // Frames: self + Cloudflare Turnstile
+            "frame-src 'self' https://challenges.cloudflare.com",
+
+            // Workers: self + blob for any inline workers
+            "worker-src 'self' blob:",
+        ]);
 
         $response->headers->set('Content-Security-Policy', $csp);
 

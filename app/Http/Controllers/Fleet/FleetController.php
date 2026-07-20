@@ -21,6 +21,13 @@ use App\Services\DashboardService;
 use App\Services\RouteStatusService;
 use App\Models\CommuterTrip;
 use App\Models\CommuterSession;
+use App\Models\Geofence;
+use App\Models\RouteCorridor;
+use App\Models\GeofenceTransition;
+use App\Models\TripProgress;
+use App\Models\VehiclePosition;
+use App\Services\ValueObjects\Coordinate;
+use App\Services\Contracts\GeospatialServiceInterface;
 
 class FleetController extends Controller
 {
@@ -104,10 +111,19 @@ class FleetController extends Controller
             'reported_at' => now(),
         ]);
 
-        // If the incident type is the configured breakdown type, flag bus for maintenance
-        $breakdownType = SystemSetting::get('incident_breakdown_type', 'Breakdown');
-        if ($type === $breakdownType && $trip->bus) {
-            $trip->bus->lockToMaintenance();
+        // If the incident type matches Breakdown or Accident, flag bus for breakdown status
+        if ((Incident::isBreakdown($type) || Incident::isAccident($type)) && $trip->bus) {
+            \App\Services\BusStateService::transition($trip->bus, \App\Models\Bus::STATUS_BREAKDOWN, 'Incident Report: ' . $type);
+        } else {
+            if ($trip->bus) {
+                \App\Models\BusStatusAuditLog::create([
+                    'bus_id'     => $trip->bus->id,
+                    'old_status' => $trip->bus->status,
+                    'new_status' => $trip->bus->status,
+                    'reason'     => 'Incident Report: ' . $type,
+                    'changed_by' => auth()->id(),
+                ]);
+            }
         }
 
         // Log recent activity
@@ -188,9 +204,11 @@ class FleetController extends Controller
      */
     protected function logActivity($type, $description)
     {
-        // In Laravel, activities are dynamic from DB query. We insert them or let DB query read them.
-        // Since getOverviewDataArray reads from dispatch_logs, incidents, maintenance_records, and service_alerts,
-        // inserting to DB tables will automatically make them appear in the feed.
+        \App\Models\ActivityLog::create([
+            'type' => $type,
+            'description' => $description,
+            'user_id' => Auth::id(),
+        ]);
     }
 
     /**
@@ -200,10 +218,13 @@ class FleetController extends Controller
     {
         $today = Carbon::today('Asia/Manila');
 
-        // Auto-detect offline buses (> 2 minutes without GPS ping)
+        // Auto-detect offline buses (> 2 minutes without GPS ping from vehicle_positions)
         $activeTripBuses = Trip::where('status', 'ongoing')->pluck('bus_id')->toArray();
+        $offlineThreshold = (int) SystemSetting::get('gps_offline_threshold_minutes', 2);
         $offlineBusesCheck = Bus::whereIn('id', $activeTripBuses)
-            ->where('updated_at', '<', now()->subMinutes(2))
+            ->whereDoesntHave('vehiclePosition', function ($q) use ($offlineThreshold) {
+                $q->where('last_updated_at', '>=', now()->subMinutes($offlineThreshold));
+            })
             ->get();
 
         foreach ($offlineBusesCheck as $busCheck) {
@@ -287,7 +308,9 @@ class FleetController extends Controller
             $routeColors[$idx + 1] = $colorEntry->hex_color;
         }
 
-        $routes = Route::getAllCached()->sortBy('id');
+        $routes = Route::getAllCached()
+            ->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])
+            ->sortBy('id');
 
         // Pre-fetch counts to avoid N+1 queries in loop
         $ongoingCounts = Trip::where('status', 'ongoing')
@@ -490,26 +513,41 @@ class FleetController extends Controller
         })->toArray();
 
         // All Routes
-        $allRoutes = Route::getAllCached()->sortBy('id')->map(function ($route) {
-            return [
-                'id' => $route->id,
-                'name' => $route->name,
-                'description' => $route->description,
-                'polyline_coordinates' => $route->polyline_coordinates,
-            ];
-        })->toArray();
+        $allRoutes = Route::getAllCached()
+            ->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])
+            ->sortBy('id')
+            ->map(function ($route) {
+                return [
+                    'id' => $route->id,
+                    'name' => $route->name,
+                    'description' => $route->description,
+                    'polyline_coordinates' => $route->polyline_coordinates,
+                ];
+            })
+            ->values()
+            ->toArray();
 
-        // All Buses
-        $allBuses = Bus::all()->map(function ($bus) {
-            return [
-                'id' => $bus->id,
-                'plate_number' => $bus->plate_number,
-                'status' => $bus->status,
-                'lat' => $bus->lat,
-                'lng' => $bus->lng,
-                'eta' => $bus->eta,
-            ];
-        })->toArray();
+        // Filter by active trip:
+        $activeBusIds = Trip::where('status', 'ongoing')->pluck('bus_id')->toArray();
+
+        // All Buses (including breakdown buses to keep them visible on the map, excluding inactive/maintenance ones)
+        $allBuses = Bus::where('status', '!=', 'inactive')
+            ->where('status', '!=', 'maintenance')
+            ->where(function($q) use ($activeBusIds) {
+                $q->whereIn('id', $activeBusIds)
+                  ->orWhere('status', 'breakdown');
+            })
+            ->get()
+            ->map(function ($bus) {
+                return [
+                    'id' => $bus->id,
+                    'plate_number' => $bus->plate_number,
+                    'status' => $bus->status,
+                    'lat' => $bus->lat,
+                    'lng' => $bus->lng,
+                    'eta' => $bus->eta,
+                ];
+            })->toArray();
 
         return [
             'overviewKpi' => $overviewKpi,
@@ -531,6 +569,7 @@ class FleetController extends Controller
     public function getCommuterTrips(Request $request)
     {
         $query = CommuterTrip::with(['route', 'originStop', 'destinationStop'])
+            ->where('is_simulated', false)
             ->latest();
 
         if ($request->filled('search')) {
@@ -576,4 +615,221 @@ class FleetController extends Controller
 
         return response()->json($sessions);
     }
+
+    /**
+     * Lightweight API endpoint for live bus GPS positions.
+     * Used by the Fleet Monitor map to poll real-time coordinates
+     * without fetching the full overview payload.
+     */
+    public function getBusGpsPositions()
+    {
+        $activeTrips = Trip::where('status', 'ongoing')->get()->keyBy('bus_id');
+        $activeBusIds = $activeTrips->keys()->all();
+
+        $rawBuses = Bus::where(function ($q) use ($activeBusIds) {
+                $q->whereIn('id', $activeBusIds)
+                  ->orWhere('status', 'breakdown');
+            })
+            ->get(['id', 'plate_number', 'lat', 'lng', 'speed',
+                   'passengers', 'capacity', 'next_stop', 'eta', 'status', 'route_id', 'updated_at']);
+
+        $livePositions = VehiclePosition::whereIn('bus_id', $rawBuses->pluck('id'))
+            ->get()
+            ->keyBy('bus_id');
+
+        $buses = [];
+
+        foreach ($rawBuses as $bus) {
+            $trip = $activeTrips->get($bus->id);
+
+            $livePos = $livePositions->get($bus->id);
+            $livePosMatchesTrip = $livePos && (!$trip || (int) $livePos->trip_id === (int) $trip->id);
+            $hasLiveTelemetry = (bool) $livePosMatchesTrip;
+            $coordinateSource = $hasLiveTelemetry ? 'vehicle_position' : 'bus_fallback';            $liveLat = $hasLiveTelemetry ? (float) $livePos->lat : (float) $bus->lat;
+            $liveLng = $hasLiveTelemetry ? (float) $livePos->lng : (float) $bus->lng;
+            $liveSpeedMps = $hasLiveTelemetry ? (float) $livePos->speed : (float) $bus->speed;
+            $liveSpeedKmh = round($liveSpeedMps * 3.6, 1);
+            $liveHeading = $hasLiveTelemetry ? $livePos->heading : null;
+            $displayHeading = $hasLiveTelemetry ? $livePos->display_heading : null;
+            $headingSource = $hasLiveTelemetry ? ($livePos->heading_source ?: 'unavailable') : null;
+            $headingUpdatedAt = $hasLiveTelemetry && $livePos->heading_updated_at ? $livePos->heading_updated_at->toIso8601String() : null;
+            $movementState = $hasLiveTelemetry ? ($livePos->movement_state ?: 'UNKNOWN') : null;
+            $movementConfidence = $hasLiveTelemetry ? $livePos->movement_confidence : null;
+            $movementReason = $hasLiveTelemetry ? $livePos->movement_reason : null;
+            $movementStateUpdatedAt = $hasLiveTelemetry && $livePos->movement_state_updated_at ? $livePos->movement_state_updated_at->toIso8601String() : null;
+            $fleetStatusService = app(\App\Services\Routing\FleetStatusService::class);
+            $operationalStatus = $hasLiveTelemetry ? $fleetStatusService->determineStatus($livePos) : null;
+            $stationaryDurationSeconds = $hasLiveTelemetry ? $fleetStatusService->stationaryDurationSeconds($livePos) : null;
+            $gpsQualityState = $hasLiveTelemetry ? ($livePos->gps_quality_state ?: 'UNKNOWN') : null;
+            $gpsQualityReason = $hasLiveTelemetry ? $livePos->gps_quality_reason : null;
+            $gpsFixAgeSeconds = $hasLiveTelemetry ? $livePos->gps_fix_age_seconds : null;
+            $lastGpsFixAt = $hasLiveTelemetry && $livePos->last_gps_fix_at ? $livePos->last_gps_fix_at->toIso8601String() : null;
+
+            $bus->lat = $liveLat;
+            $bus->lng = $liveLng;
+            $bus->speed = $liveSpeedMps;
+
+            $currentStopName = null;
+            $upcomingStopName = null;
+            $nearestStopName = null;
+            $corridorDistance = null;
+            $adherence = null;
+            $tripProgress = null;
+
+            if ($trip) {
+                $progress = TripProgress::where('trip_id', $trip->id)
+                    ->with('currentStop', 'nextStop')
+                    ->first();
+
+                if ($progress) {
+                    if ($progress->currentStop) {
+                        $currentStopName = $progress->currentStop->name;
+                        $nearestStopName = $progress->currentStop->name;
+                    }
+
+                    if ($progress->nextStop) {
+                        $upcomingStopName = $progress->nextStop->name;
+                        if ($currentStopName === null) {
+                            $nearestStopName = $progress->nextStop->name;
+                        }
+                    }
+
+                    $adherence = $progress->route_adherence;
+                    $tripProgress = [
+                        'current_stop_id' => $progress->current_stop_id,
+                        'next_stop_id' => $progress->next_stop_id,
+                        'last_completed_stop_id' => $progress->last_completed_stop_id,
+                        'completed_stops' => $progress->completed_stops_count,
+                        'remaining_stops' => $progress->remaining_stops_count,
+                        'completion_percentage' => $progress->trip_percentage,
+                    ];
+                }
+
+                if ($hasLiveTelemetry) {
+                    $corridorDistance = (float) $livePos->corridor_distance;
+                }
+            }
+
+            $currentFenceName = 'Outside Geofence';
+            $dwellTimeSeconds = 0;
+
+            $activeTransition = GeofenceTransition::where('bus_id', $bus->id)
+                ->whereNull('exited_at')
+                ->with('geofence')
+                ->orderBy('entered_at', 'desc')
+                ->first();
+
+            if ($activeTransition && $activeTransition->geofence) {
+                $currentFenceName = $activeTransition->geofence->name;
+                $dwellTimeSeconds = now()->diffInSeconds($activeTransition->entered_at);
+            }
+
+            $driverName = 'Unassigned';
+            $routeId = null;
+            $routeName = 'Unassigned';
+            $tripId = null;
+            if ($trip) {
+                $trip->loadMissing('driver', 'route');
+                $driverName = $trip->driver ? $trip->driver->name : 'Unassigned';
+                $routeId = $trip->route_id;
+                $routeName = $trip->route ? ($trip->route->name . ' - ' . $trip->route->description) : 'Unassigned';
+                $tripId = $trip->id;
+            }
+
+            $healthyBusStatuses = ['operating', 'active', 'ready'];
+            $stateMismatch = $trip && !in_array((string) $bus->status, $healthyBusStatuses, true);
+
+            $buses[] = array_merge($bus->toArray(), [
+                'nearest_stop'       => $nearestStopName,
+                'current_stop'       => $currentStopName,
+                'upcoming_stop'      => $upcomingStopName,
+                'next_stop'          => $upcomingStopName,
+                'current_fence'      => $currentFenceName,
+                'dwell_time_seconds' => $dwellTimeSeconds,
+                'route_adherence'    => $adherence,
+                'corridor_distance'  => $corridorDistance,
+                'driver_name'        => $driverName,
+                'route_id'           => $routeId,
+                'route_name'         => $routeName,
+                'trip_id'            => $tripId,
+                'trip_progress'      => $tripProgress,
+                'speed_mps'          => $liveSpeedMps,
+                'speed_kmh'          => $liveSpeedKmh,
+                'speed_unit'         => 'm/s',
+                'heading'            => $liveHeading !== null ? (float) $liveHeading : null,
+                'display_heading'    => $displayHeading !== null ? (float) $displayHeading : null,
+                'heading_source'     => $headingSource,
+                'heading_updated_at' => $headingUpdatedAt,
+                'status'             => $operationalStatus ?? $bus->status,
+                'bus_status'         => $bus->status,
+                'operational_status' => $operationalStatus,
+                'movement_state'     => $movementState,
+                'movement_confidence' => $movementConfidence !== null ? (float) $movementConfidence : null,
+                'movement_reason'    => $movementReason,
+                'movement_state_updated_at' => $movementStateUpdatedAt,
+                'stationary_duration_seconds' => $stationaryDurationSeconds,
+                'gps_quality_state' => $gpsQualityState,
+                'gps_quality_reason' => $gpsQualityReason,
+                'gps_fix_age_seconds' => $gpsFixAgeSeconds,
+                'last_gps_fix_at' => $lastGpsFixAt,
+                'coordinate_source'  => $coordinateSource,
+                'has_live_telemetry' => $hasLiveTelemetry,
+                'state_mismatch'     => (bool) $stateMismatch,
+                'state_mismatch_details' => $stateMismatch ? [
+                    'trip_status' => $trip->status,
+                    'gps_session' => $trip->gps_session,
+                    'bus_status' => $bus->status,
+                ] : null,
+                'last_gps_at'        => $hasLiveTelemetry && $livePos->last_updated_at ? $livePos->last_updated_at->toIso8601String() : null,
+            ]);
+        }
+
+        $geofences = Geofence::where('status', 'active')->get();
+        $corridors = RouteCorridor::all();
+
+        return response()->json([
+            'buses' => $buses,
+            'geofences' => $geofences,
+            'corridors' => $corridors,
+        ]);
+    }
+
+    private function distanceToSegmentHelper(Coordinate $p, Coordinate $a, Coordinate $b, $geospatial): float
+    {
+        $latP = $p->getLatitude();
+        $lngP = $p->getLongitude();
+        $latA = $a->getLatitude();
+        $lngA = $a->getLongitude();
+        $latB = $b->getLatitude();
+        $lngB = $b->getLongitude();
+
+        $dx = $latB - $latA;
+        $dy = $lngB - $lngA;
+
+        if ($dx === 0.0 && $dy === 0.0) {
+            return $geospatial->calculateDistance($p, $a);
+        }
+
+        $t = (($latP - $latA) * $dx + ($lngP - $lngA) * $dy) / ($dx * $dx + $dy * $dy);
+        $t = max(0.0, min(1.0, $t));
+
+        $closestLat = $latA + $t * $dx;
+        $closestLng = $lngA + $t * $dy;
+
+        return $geospatial->calculateDistance($p, new Coordinate($closestLat, $closestLng));
+    }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+

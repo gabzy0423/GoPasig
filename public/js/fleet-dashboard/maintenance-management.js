@@ -89,7 +89,7 @@ function setupEventListeners() {
     const btnComplete = document.getElementById('btn-action-complete');
     if (btnComplete) {
         btnComplete.addEventListener('click', () => {
-            if (selectedRecordId) updateRecordStatus(selectedRecordId, 'completed');
+            if (selectedRecordId) openCompleteModal(selectedRecordId, selectedBusPlate);
         });
     }
 
@@ -485,6 +485,7 @@ async function openDetailDrawer(id) {
 
         if (data.success) {
             const rec = data.record;
+            selectedBusPlate = rec.bus_plate;
             document.getElementById('drawer-record-bus-plate').innerText = `Bus ${rec.bus_plate}`;
             document.getElementById('drawer-record-description').innerText = rec.description;
             document.getElementById('drawer-record-type').innerText = rec.type;
@@ -581,7 +582,15 @@ async function openBusDrawer(plateNumber) {
             };
 
             const statusCont = document.getElementById('drawer-bus-status-container');
-            statusCont.innerHTML = `<span class="inline-flex rounded px-2.5 py-0.5 text-[10px] font-bold uppercase border ${statusClasses[bus.status] || 'border-slate-200 bg-slate-50'}">${statusLabels[bus.status] || bus.status}</span>`;
+            if (bus.status === 'inactive') {
+                if (bus.has_observation) {
+                    statusCont.innerHTML = `<span class="inline-flex rounded px-2.5 py-0.5 text-[10px] font-bold uppercase border border-slate-200 bg-slate-50 text-slate-500">Offline</span> <span class="inline-flex rounded px-2.5 py-0.5 text-[10px] font-bold uppercase border border-amber-200 bg-amber-50 text-amber-700 ml-1">Observation</span>`;
+                } else {
+                    statusCont.innerHTML = `<span class="inline-flex rounded px-2.5 py-0.5 text-[10px] font-bold uppercase border border-slate-200 bg-slate-50 text-slate-500">Offline</span>`;
+                }
+            } else {
+                statusCont.innerHTML = `<span class="inline-flex rounded px-2.5 py-0.5 text-[10px] font-bold uppercase border ${statusClasses[bus.status] || 'border-slate-200 bg-slate-50'}">${statusLabels[bus.status] || bus.status}</span>`;
+            }
 
             // Recent Services list
             const servicesList = document.getElementById('drawer-bus-services-list');
@@ -714,8 +723,8 @@ async function deleteRecord(id) {
             }
         });
 
-        if (!response.ok) throw new Error('Failed to delete record');
         const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Failed to delete record');
 
         showSuccessAlert(data.message);
         closeDetailDrawer();
@@ -723,6 +732,7 @@ async function deleteRecord(id) {
 
     } catch (error) {
         console.error('Error deleting record:', error);
+        showSuccessAlert(error.message || 'Error occurred during deletion.', true);
     }
 }
 
@@ -750,3 +760,142 @@ function showSuccessAlert(message, isError = false) {
         }, 5000);
     }
 }
+
+// Complete Maintenance Modal Control
+// Complete Maintenance Modal Control
+function openCompleteModal(recordId, busPlate) {
+    const modal = document.getElementById('complete-maintenance-modal');
+    const plateText = document.getElementById('complete-modal-bus-plate');
+    if (modal) {
+        // Reset form inputs first so we don't wipe out the record ID
+        document.getElementById('complete-maintenance-form').reset();
+        document.getElementById('comp-cost-total').value = 'PHP 0.00';
+
+        // Set state/details
+        document.getElementById('complete-maintenance-id').value = recordId || '';
+        plateText.innerText = `Bus Unit: ${busPlate || 'Unknown'}`;
+        
+        // Show modal
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+            modal.classList.remove('opacity-0');
+            modal.querySelector('.bg-white').classList.remove('scale-95');
+        }, 10);
+    }
+}
+
+function closeCompleteModal() {
+    const modal = document.getElementById('complete-maintenance-modal');
+    if (modal) {
+        modal.classList.add('opacity-0');
+        modal.querySelector('.bg-white').classList.add('scale-95');
+        setTimeout(() => {
+            modal.classList.add('hidden');
+        }, 300);
+    }
+}
+
+function calculateTotalCost() {
+    const labor = parseFloat(document.getElementById('comp-cost-labor').value) || 0;
+    const parts = parseFloat(document.getElementById('comp-cost-parts').value) || 0;
+    const other = parseFloat(document.getElementById('comp-cost-other').value) || 0;
+    const total = labor + parts + other;
+    document.getElementById('comp-cost-total').value = `PHP ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+async function submitCompleteMaintenance(event) {
+    event.preventDefault();
+    
+    // Retrieve recordId and validate defensively
+    const recordId = document.getElementById('complete-maintenance-id').value;
+    if (!recordId || recordId === 'null' || recordId === 'undefined' || recordId === 'NaN') {
+        alert('Error: No active maintenance record selected. Please close and re-open the completion modal.');
+        return;
+    }
+    
+    // JS Safety Checklist Validation
+    const brakes = document.getElementById('chk-brakes').checked;
+    const battery = document.getElementById('chk-battery').checked;
+    const tires = document.getElementById('chk-tires').checked;
+    const lights = document.getElementById('chk-lights').checked;
+    const testDrive = document.getElementById('chk-test-drive').checked;
+    
+    if (!brakes || !battery || !tires || !lights || !testDrive) {
+        alert('Please complete all inspection items before completing the maintenance.');
+        return;
+    }
+    
+    // Validate conditional recommendations
+    const result = document.getElementById('comp-result').value;
+    const recommendation = document.getElementById('comp-recommendation').value.trim();
+    
+    if (result === 'Passed with Observation' && !recommendation) {
+        alert('Recommendation is required for buses with observations.');
+        return;
+    }
+    if (result === 'Failed Inspection' && !recommendation) {
+        alert('Recommendation is required before closing the maintenance record.');
+        return;
+    }
+    
+    // Show spinner
+    document.getElementById('complete-submit-text').innerText = 'Processing...';
+    document.getElementById('complete-submit-spinner').classList.remove('hidden');
+    
+    try {
+        const payload = {
+            status: 'completed',
+            inspector_name: document.getElementById('comp-inspector').value,
+            bus_condition: document.getElementById('comp-condition').value,
+            roadworthy: document.getElementById('comp-roadworthy').value,
+            maintenance_result: result,
+            inspection_checklist: {
+                brakes,
+                battery,
+                tires,
+                lights,
+                test_drive: testDrive
+            },
+            parts_replaced: document.getElementById('comp-parts-replaced').value,
+            labor_cost: document.getElementById('comp-cost-labor').value,
+            parts_cost: document.getElementById('comp-cost-parts').value,
+            other_cost: document.getElementById('comp-cost-other').value,
+            technician_notes: document.getElementById('comp-notes').value,
+            recommendation: recommendation
+        };
+        
+        const response = await fetch(`${window.FleetMaintenanceConfig.updateStatusUrl}/${recordId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': window.FleetMaintenanceConfig.csrfToken,
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to complete maintenance');
+        }
+        
+        closeCompleteModal();
+        showSuccessAlert(data.message || 'Maintenance status updated.');
+        closeDetailDrawer();
+        fetchMaintenanceData();
+        
+    } catch (err) {
+        console.error('Error submitting completion details:', err);
+        alert(err.message || 'Error occurred while saving completion details.');
+    } finally {
+        document.getElementById('complete-submit-text').innerText = 'Complete Service';
+        document.getElementById('complete-submit-spinner').classList.add('hidden');
+    }
+}
+
+// Expose functions globally for inline HTML references
+window.openCompleteModal = openCompleteModal;
+window.closeCompleteModal = closeCompleteModal;
+window.calculateTotalCost = calculateTotalCost;
+window.submitCompleteMaintenance = submitCompleteMaintenance;

@@ -221,6 +221,7 @@ async function initRoutesDashboard() {
         if (activeRoutesTab === 'stops') {
             renderRoutesTab();
         }
+        window.dispatchEvent(new Event('routes-dashboard-loaded'));
     }).catch(err => {
         console.error("Failed background refresh of routes database:", err);
     });
@@ -1099,6 +1100,10 @@ function renderRouteMap(routeId) {
     } else {
         // Clear previous layers
         try {
+            if (typeof historyPreviewLayer !== 'undefined' && historyPreviewLayer && routePreviewMapInstance.hasLayer(historyPreviewLayer)) {
+                routePreviewMapInstance.removeLayer(historyPreviewLayer);
+                historyPreviewLayer = null;
+            }
             if (routePreviewPolyline && routePreviewMapInstance.hasLayer(routePreviewPolyline)) {
                 routePreviewMapInstance.removeLayer(routePreviewPolyline);
             }
@@ -1146,6 +1151,12 @@ function renderRouteMap(routeId) {
 
         routePreviewMarkers.push(marker);
     });
+
+    // Update geometry version badge
+    const geoBadge = document.getElementById('route-geometry-version-badge');
+    if (geoBadge) {
+        geoBadge.textContent = `Version: ${route.geometry_version ?? 0}`;
+    }
 
     // Invalidate size in case container size changed
     setTimeout(() => {

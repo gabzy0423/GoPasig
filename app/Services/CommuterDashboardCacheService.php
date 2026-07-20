@@ -15,10 +15,17 @@ class CommuterDashboardCacheService
 {
     private const CACHE_TTL_SECONDS = 30;
 
+    public static function getActiveBuses()
+    {
+        return Cache::remember('commuter_active_buses_list', 15, function () {
+            return Bus::with('route')->where('status', 'active')->get();
+        });
+    }
+
     public function dashboardData(): array
     {
         return Cache::remember('commuter_dashboard_aggregate', now()->addSeconds(self::CACHE_TTL_SECONDS), function () {
-            $routes = Route::with('stops')->orderBy('id')->get();
+            $routes = Route::whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])->with('stops')->orderBy('id')->get();
             $activeBuses = Bus::with('route')->where('status', 'active')->orderBy('eta')->get();
             $schedules = Schedule::orderBy('departure_time')->get();
             $activeAlerts = ServiceAlert::activeAlerts()->latest('created_at')->get();
@@ -126,7 +133,7 @@ class CommuterDashboardCacheService
                 'quickStats' => [
                     'active_buses' => $activeBuses->count(),
                     'delayed_buses' => $activeBuses->filter(fn($bus) => $bus->eta >= ($bus->route?->delay_threshold_minutes ?: $defaultDelayThreshold))->count(),
-                    'passengers_today' => Schedule::whereDate('created_at', Carbon::today('Asia/Manila'))->sum('passengers'),
+                    'passengers_today' => Schedule::whereDate('service_date', Carbon::today('Asia/Manila'))->sum('passengers'),
                     'open_alerts' => $activeAlerts->count(),
                 ],
                 'activeRoutes' => $activeRoutes,

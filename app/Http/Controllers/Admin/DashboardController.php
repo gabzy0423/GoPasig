@@ -10,6 +10,8 @@ use App\Models\ServiceAlert;
 use App\Models\SystemSetting;
 use App\Models\Stop;
 use App\Models\DispatchSimulationDefault;
+use App\Models\TripProgress;
+use App\Models\VehiclePosition;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -31,7 +33,7 @@ class DashboardController extends Controller
         $mapCenterLat = (float) SystemSetting::get('map_default_latitude', 14.5690);
         $mapCenterLng = (float) SystemSetting::get('map_default_longitude', 121.0680);
         $mapZoom = (int) SystemSetting::get('map_default_zoom', 13);
-        $pollingInterval = (int) SystemSetting::get('map_gps_polling_interval_ms', 10000);
+        $pollingInterval = (int) SystemSetting::get('map_gps_polling_interval_ms', 5000);
         $scheduleBuffer = (int) SystemSetting::get('driver_schedule_buffer_minutes', 15);
         $busScheduleBuffer = (int) SystemSetting::get('bus_schedule_buffer_minutes', 15);
         $defaultTravelTime = (int) SystemSetting::get('schedule_default_travel_time_minutes', 30);
@@ -57,13 +59,26 @@ class DashboardController extends Controller
             $systemStatus = 'nominal';
         }
 
+        $maintenanceStats = app(\App\Services\MaintenanceStatisticsService::class)->getSummary();
+        $totalRecords = $maintenanceStats['totalRecords'];
+        $scheduledCount = $maintenanceStats['scheduledCount'];
+        $inProgressCount = $maintenanceStats['inProgressCount'];
+        $completedCount = $maintenanceStats['completedCount'];
+        $cancelledCount = $maintenanceStats['cancelledCount'];
+        $observationCount = $maintenanceStats['observationCount'];
+        $overdueCount = $maintenanceStats['overdueCount'];
+        $requiringRepairCount = $maintenanceStats['requiringRepairCount'];
+        $averageDuration = $maintenanceStats['averageDuration'];
+
         return view('admin.dashboard', compact(
             'missingThresholdKey', 'routes', 'primaryRouteName', 'busCapacityLimit',
             'licenseWarningDays', 'mapCenterLat', 'mapCenterLng', 'mapZoom',
             'pollingInterval', 'systemStatus', 'scheduleBuffer', 'busScheduleBuffer',
             'defaultTravelTime', 'defaultDepartureTime', 'defaultActiveDays',
             'defaultStopBoarding', 'defaultStopAlighting', 'defaultStopDwellSeconds',
-            'maintenanceTypes'
+            'maintenanceTypes', 'totalRecords', 'scheduledCount', 'inProgressCount',
+            'completedCount', 'cancelledCount', 'observationCount', 'overdueCount',
+            'requiringRepairCount', 'averageDuration'
         ));
     }
 
@@ -75,21 +90,138 @@ class DashboardController extends Controller
             ->groupBy('route_id')
             ->pluck('avg_peak', 'route_id');
 
-        $routes = Route::getAllCached()->map(function ($route) use ($stopsByRoute, $avgPaxByRoute) {
-            $route->setRelation('stops', $stopsByRoute->get($route->id, collect()));
+        $routes = Route::getAllCached()
+            ->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])
+            ->map(function ($route) use ($stopsByRoute, $avgPaxByRoute) {
+                $route->setRelation('stops', $stopsByRoute->get($route->id, collect()));
 
-            $avgPax = $avgPaxByRoute->get($route->id);
+                $avgPax = $avgPaxByRoute->get($route->id);
 
-            if ($avgPax === null) {
-                // Get default average pax from SystemSetting (optional fallback).
-                $avgPax = (int) (SystemSetting::get('default_route_avg_pax') ?? 0);
+                if ($avgPax === null) {
+                    $avgPax = (int) (SystemSetting::get('default_route_avg_pax') ?? 0);
+                }
+
+                $route->avg_passengers = (int) round($avgPax);
+                return $route;
+            });
+
+        $activeTrips = Trip::where('status', 'ongoing')
+            ->with('driver')
+            ->get()
+            ->keyBy('bus_id');
+        $activeBusIds = $activeTrips->keys()->all();
+        $positions = VehiclePosition::all()->keyBy('bus_id');
+        $progresses = TripProgress::with(['currentStop', 'nextStop', 'trip'])->get()->keyBy(fn($p) => $p->trip->bus_id ?? 0);
+
+        $buses = Bus::all()->map(function ($bus) use ($activeBusIds, $activeTrips, $positions, $progresses) {
+            $bus->has_active_trip = in_array($bus->id, $activeBusIds);
+            $activeTrip = $activeTrips->get($bus->id);
+
+            $originalBusStatus = $bus->status;
+            $pos = $positions->get($bus->id);
+            $positionMatchesTrip = $pos && (!$activeTrip || (int) $pos->trip_id === (int) $activeTrip->id);
+            $hasLiveTelemetry = (bool) $positionMatchesTrip;
+            $coordinateSource = $hasLiveTelemetry ? 'vehicle_position' : 'bus_fallback';
+
+            $speedMps = $hasLiveTelemetry ? (float) $pos->speed : (float) ($bus->speed ?? 0);
+            $speedKmh = round($speedMps * 3.6, 1);
+            $heading = $hasLiveTelemetry ? $pos->heading : null;
+            $displayHeading = $hasLiveTelemetry ? $pos->display_heading : null;
+            $headingSource = $hasLiveTelemetry ? ($pos->heading_source ?: 'unavailable') : null;
+            $headingUpdatedAt = $hasLiveTelemetry && $pos->heading_updated_at ? $pos->heading_updated_at->toIso8601String() : null;
+            $movementState = $hasLiveTelemetry ? ($pos->movement_state ?: 'UNKNOWN') : null;
+            $movementConfidence = $hasLiveTelemetry ? $pos->movement_confidence : null;
+            $movementReason = $hasLiveTelemetry ? $pos->movement_reason : null;
+            $movementStateUpdatedAt = $hasLiveTelemetry && $pos->movement_state_updated_at ? $pos->movement_state_updated_at->toIso8601String() : null;
+            $fleetStatusService = app(\App\Services\Routing\FleetStatusService::class);
+            $operationalStatus = $hasLiveTelemetry ? $fleetStatusService->determineStatus($pos) : null;
+            $stationaryDurationSeconds = $hasLiveTelemetry ? $fleetStatusService->stationaryDurationSeconds($pos) : null;
+            $gpsQualityState = $hasLiveTelemetry ? ($pos->gps_quality_state ?: 'UNKNOWN') : null;
+            $gpsQualityReason = $hasLiveTelemetry ? $pos->gps_quality_reason : null;
+            $gpsFixAgeSeconds = $hasLiveTelemetry ? $pos->gps_fix_age_seconds : null;
+            $lastGpsFixAt = $hasLiveTelemetry && $pos->last_gps_fix_at ? $pos->last_gps_fix_at->toIso8601String() : null;
+
+            if ($hasLiveTelemetry) {
+                $bus->lat = $pos->lat;
+                $bus->lng = $pos->lng;
+                $bus->status = $operationalStatus; // Moving, Stopped, Idle, Offline
+            } else {
+                $bus->lat = $bus->lat;
+                $bus->lng = $bus->lng;
             }
 
-            $route->avg_passengers = (int) round($avgPax);
-            return $route;
+            $bus->speed = $speedMps;
+            $bus->speed_mps = $speedMps;
+            $bus->speed_kmh = $speedKmh;
+            $bus->speed_unit = 'm/s';
+            $bus->heading = $heading !== null ? (float) $heading : null;
+            $bus->display_heading = $displayHeading !== null ? (float) $displayHeading : null;
+            $bus->heading_source = $headingSource;
+            $bus->heading_updated_at = $headingUpdatedAt;
+
+            $bus->driver_name = $activeTrip && $activeTrip->driver
+                ? "{$activeTrip->driver->first_name} {$activeTrip->driver->last_name}"
+                : 'Unassigned';
+            $bus->trip_id = $activeTrip?->id;
+            $bus->bus_status = $originalBusStatus;
+            $bus->operational_status = $operationalStatus;
+            $bus->movement_state = $movementState;
+            $bus->movement_confidence = $movementConfidence !== null ? (float) $movementConfidence : null;
+            $bus->movement_reason = $movementReason;
+            $bus->movement_state_updated_at = $movementStateUpdatedAt;
+            $bus->stationary_duration_seconds = $stationaryDurationSeconds;
+            $bus->gps_quality_state = $gpsQualityState;
+            $bus->gps_quality_reason = $gpsQualityReason;
+            $bus->gps_fix_age_seconds = $gpsFixAgeSeconds;
+            $bus->last_gps_fix_at = $lastGpsFixAt;
+            $bus->coordinate_source = $coordinateSource;
+            $bus->has_live_telemetry = $hasLiveTelemetry;
+            $bus->last_gps_at = $hasLiveTelemetry && $pos->last_updated_at ? $pos->last_updated_at->toIso8601String() : null;
+            $bus->corridor_distance = $hasLiveTelemetry ? (float) $pos->corridor_distance : null;
+            $bus->route_adherence = null;
+            $bus->trip_progress = null;
+            $bus->current_stop = null;
+            $bus->upcoming_stop = null;
+
+            $healthyBusStatuses = ['operating', 'active', 'ready'];
+            $stateMismatch = $activeTrip && !in_array((string) $originalBusStatus, $healthyBusStatuses, true);
+            $bus->state_mismatch = (bool) $stateMismatch;
+            $bus->state_mismatch_details = $stateMismatch ? [
+                'trip_status' => $activeTrip->status,
+                'gps_session' => $activeTrip->gps_session,
+                'bus_status' => $originalBusStatus,
+            ] : null;
+
+            $prog = $progresses->get($bus->id);
+            if ($prog) {
+                $bus->current_stop = $prog->currentStop ? $prog->currentStop->name : null;
+                $bus->upcoming_stop = $prog->nextStop ? $prog->nextStop->name : null;
+                $bus->next_stop = $bus->upcoming_stop;
+                $bus->route_adherence = $prog->route_adherence;
+                $bus->trip_progress = [
+                    'current_stop_id' => $prog->current_stop_id,
+                    'next_stop_id' => $prog->next_stop_id,
+                    'last_completed_stop_id' => $prog->last_completed_stop_id,
+                    'completed_stops' => $prog->completed_stops_count,
+                    'remaining_stops' => $prog->remaining_stops_count,
+                    'completion_percentage' => $prog->trip_percentage,
+                ];
+
+                $etas = $prog->upcoming_etas ?? [];
+                if (!empty($etas)) {
+                    $etaTime = \Carbon\Carbon::parse($etas[0]['eta_timestamp'] ?? now());
+                    $bus->eta = max(0, (int) round(now()->diffInMinutes($etaTime)));
+                } else {
+                    $bus->eta = null;
+                }
+            } else {
+                $bus->next_stop = null;
+                $bus->eta = null;
+            }
+
+            return $bus;
         });
 
-        $buses = Bus::all();
         $trips = Trip::with(['bus', 'driver', 'route'])->latest()->take(5)->get();
 
         return response()->json(compact('routes', 'buses', 'trips'));
@@ -234,3 +366,13 @@ class DashboardController extends Controller
         ]);
     }
 }
+
+
+
+
+
+
+
+
+
+

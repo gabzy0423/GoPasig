@@ -126,7 +126,7 @@ return new class extends Migration
             ],
             [
                 'key' => 'map_gps_polling_interval_ms',
-                'value' => '10000',
+                'value' => '5000',
                 'description' => 'GPS polling interval in milliseconds for real-time tracking',
             ],
             [

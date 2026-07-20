@@ -45,8 +45,15 @@ class SecurityAuthTest extends TestCase
     {
         $response = $this->actingAs($this->nonAdminUser)->postJson('/admin/api/buses', [
             'plate_number' => 'TEST-001',
+            'fleet_number' => 'BUS-111',
+            'vin' => '1234567890ABCDEF1',
+            'manufacturer' => 'BYD',
+            'model' => 'K9',
+            'year_model' => 2024,
+            'battery_capacity_kwh' => 350.00,
+            'charging_port_type' => 'CCS2',
+            'max_charging_power_kw' => 150.00,
             'capacity' => 50,
-            'status' => 'active',
         ]);
 
         $response->assertStatus(403);
@@ -61,8 +68,15 @@ class SecurityAuthTest extends TestCase
     {
         $response = $this->actingAs($this->adminUser)->postJson('/admin/api/buses', [
             'plate_number' => 'TEST-002',
+            'fleet_number' => 'BUS-222',
+            'vin' => '1234567890ABCDEF2',
+            'manufacturer' => 'BYD',
+            'model' => 'K9',
+            'year_model' => 2024,
+            'battery_capacity_kwh' => 350.00,
+            'charging_port_type' => 'CCS2',
+            'max_charging_power_kw' => 150.00,
             'capacity' => 50,
-            'status' => 'active',
         ]);
 
         $response->assertStatus(201);
@@ -76,9 +90,15 @@ class SecurityAuthTest extends TestCase
         $bus = Bus::factory()->create();
 
         $response = $this->actingAs($this->nonAdminUser)->putJson("/admin/api/buses/{$bus->id}", [
-            'plate_number' => 'UPDATED',
+            'fleet_number' => 'BUS-333',
+            'manufacturer' => 'BYD',
+            'model' => 'K9',
+            'year_model' => 2024,
+            'battery_capacity_kwh' => 350.00,
+            'charging_port_type' => 'CCS2',
+            'max_charging_power_kw' => 150.00,
             'capacity' => 60,
-            'status' => 'active',
+            'status' => 'inactive',
         ]);
 
         $response->assertStatus(403);
@@ -94,14 +114,20 @@ class SecurityAuthTest extends TestCase
         $bus = Bus::factory()->create();
 
         $response = $this->actingAs($this->adminUser)->putJson("/admin/api/buses/{$bus->id}", [
-            'plate_number' => 'UPDATED-001',
+            'fleet_number' => 'BUS-444',
+            'manufacturer' => 'BYD',
+            'model' => 'K9',
+            'year_model' => 2024,
+            'battery_capacity_kwh' => 350.00,
+            'charging_port_type' => 'CCS2',
+            'max_charging_power_kw' => 150.00,
             'capacity' => 60,
-            'status' => 'active',
+            'status' => 'inactive',
         ]);
 
         $response->assertStatus(200);
         $response->assertJson(['success' => true]);
-        $this->assertDatabaseHas('buses', ['id' => $bus->id, 'plate_number' => 'UPDATED-001']);
+        $this->assertDatabaseHas('buses', ['id' => $bus->id, 'fleet_number' => 'BUS-444']);
     }
 
     /** @test */

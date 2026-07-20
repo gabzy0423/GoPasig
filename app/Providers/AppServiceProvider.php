@@ -11,7 +11,113 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(
+            \App\Services\Contracts\GeospatialServiceInterface::class,
+            \App\Services\GeospatialService::class
+        );
+        $this->app->singleton(
+            \App\Services\Contracts\KalmanFilterServiceInterface::class,
+            \App\Services\GPS\KalmanFilterService::class
+        );
+        $this->app->singleton(
+            \App\Services\GPS\Contracts\PositionFilterInterface::class,
+            \App\Services\GPS\KalmanFilterService::class
+        );
+        $this->app->singleton(
+            \App\Services\GPS\GPSSmoothingService::class
+        );
+        $this->app->singleton(
+            \App\Services\Spatial\SpatialContextResolver::class
+        );
+        $this->app->singleton(
+            \App\Services\Spatial\GeofenceEngine::class
+        );
+        $this->app->singleton(\App\Services\Spatial\Handlers\StopGeofenceHandler::class);
+        $this->app->singleton(\App\Services\Spatial\Handlers\DepotGeofenceHandler::class);
+        $this->app->singleton(\App\Services\Spatial\Handlers\TerminalGeofenceHandler::class);
+        $this->app->singleton(\App\Services\Spatial\Handlers\GeofenceHandlerRegistry::class, function ($app) {
+            $registry = new \App\Services\Spatial\Handlers\GeofenceHandlerRegistry();
+            $registry->register(\App\Enums\GeofenceType::STOP, $app->make(\App\Services\Spatial\Handlers\StopGeofenceHandler::class));
+            $registry->register(\App\Enums\GeofenceType::DEPOT, $app->make(\App\Services\Spatial\Handlers\DepotGeofenceHandler::class));
+            $registry->register(\App\Enums\GeofenceType::TERMINAL, $app->make(\App\Services\Spatial\Handlers\TerminalGeofenceHandler::class));
+            $registry->register(\App\Enums\GeofenceType::GARAGE, $app->make(\App\Services\Spatial\Handlers\DepotGeofenceHandler::class));
+            return $registry;
+        });
+        $this->app->singleton(
+            \App\Services\Spatial\RouteCorridorEngine::class
+        );
+        $this->app->singleton(
+            \App\Services\Spatial\SpatialMonitoringEngine::class
+        );
+        $this->app->singleton(
+            \App\Repositories\Contracts\RouteGeometryRepositoryInterface::class,
+            \App\Repositories\RouteGeometryRepository::class
+        );
+        $this->app->singleton(
+            \App\Services\Contracts\RouteGeometryServiceInterface::class,
+            \App\Services\RouteGeometryService::class
+        );
+        $this->app->singleton(
+            \App\Services\Contracts\GeometryValidatorInterface::class,
+            \App\Services\GeometryValidator::class
+        );
+        $this->app->singleton(
+            \App\Services\Contracts\RouteGeometryEngineInterface::class,
+            \App\Services\RouteGeometryEngine::class
+        );
+        $this->app->singleton(
+            \App\Services\GeometrySimplifier::class
+        );
+        $this->app->singleton(
+            \App\Services\GeometryVersioningService::class
+        );
+        $this->app->singleton(
+            \App\Services\Providers\GoogleRoutingProvider::class
+        );
+        $this->app->singleton(
+            \App\Services\Providers\OsrmRoutingProvider::class
+        );
+        $this->app->singleton(
+            \App\Services\Providers\ManualRoutingProvider::class
+        );
+        $this->app->singleton(
+            \App\Services\Routing\RouteComparisonService::class
+        );
+        $this->app->singleton(
+            \App\Services\Routing\RouteGenerationSessionService::class
+        );
+        $this->app->singleton(
+            \App\Services\Routing\ProviderHealthService::class
+        );
+        $this->app->singleton(
+            \App\Services\Routing\ProviderQuotaService::class
+        );
+        $this->app->singleton(
+            \App\Services\Contracts\ProviderCircuitBreakerInterface::class,
+            \App\Services\Routing\ProviderCircuitBreaker::class
+        );
+        $this->app->singleton(
+            \App\Services\Contracts\RouteQualityInterface::class,
+            \App\Services\Routing\RouteQualityService::class
+        );
+        $this->app->singleton(
+            \App\Services\Routing\IntelligentRoutingEngine::class
+        );
+        $this->app->singleton(
+            \App\Services\Routing\GPSValidationService::class
+        );
+        $this->app->singleton(
+            \App\Services\Routing\RouteAdherenceService::class
+        );
+        $this->app->singleton(
+            \App\Services\Routing\ETAEngine::class
+        );
+        $this->app->singleton(
+            \App\Services\Routing\TripProgressService::class
+        );
+        $this->app->singleton(
+            \App\Services\Routing\FleetStatusService::class
+        );
     }
 
     /**
@@ -19,8 +125,42 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Register Phase 5 Event Listeners
+        \Illuminate\Support\Facades\Event::listen(
+            \App\Events\PositionUpdated::class,
+            \App\Listeners\SpatialMonitoringListener::class
+        );
+        \Illuminate\Support\Facades\Event::listen(
+            \App\Events\PositionUpdated::class,
+            \App\Listeners\ETAListener::class
+        );
+        // ─────────────────────────────────────────────────────────────
+        // Reverse-proxy / ngrok support
+        // When the app is accessed through ngrok or any other HTTPS
+        // proxy, the forwarded headers must be trusted so that
+        // request()->secure(), url(), asset(), and route() all produce
+        // the correct public URL instead of the local http://localhost
+        // one. Without this, Vite manifest paths and CSRF cookies will
+        // mismatch the ngrok origin, causing broken assets and 419s.
+        // ─────────────────────────────────────────────────────────────
+        $request = app('request');
+
+        if ($request->hasHeader('X-Forwarded-Host') ||
+            $request->hasHeader('X-Forwarded-Proto') ||
+            $request->hasHeader('ngrok-skip-browser-warning')) {
+
+            \Illuminate\Support\Facades\URL::forceRootUrl(config('app.url'));
+            \Illuminate\Support\Facades\URL::forceScheme('https');
+        }
+
         \Illuminate\Support\Facades\View::composer('fleet.monitor.index', function ($view) {
-            $buses = \App\Models\Bus::with('route')->get();
+            $activeBusIds = \App\Models\Trip::where('status', 'ongoing')->pluck('bus_id')->toArray();
+            $buses = \App\Models\Bus::with(['route', 'vehiclePosition'])
+                ->where(function($q) use ($activeBusIds) {
+                    $q->whereIn('id', $activeBusIds)
+                      ->orWhere('status', 'breakdown');
+                })
+                ->get();
             $routes = \App\Models\Route::getAllCached();
             $stops = \App\Models\Stop::getAllCached();
             
@@ -392,3 +532,4 @@ class AppServiceProvider extends ServiceProvider
         });
     }
 }
+

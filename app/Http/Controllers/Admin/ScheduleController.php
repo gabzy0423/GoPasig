@@ -94,77 +94,84 @@ class ScheduleController extends Controller
             return response()->json(['success' => false, 'message' => 'Bus not found.'], 404);
         }
 
-        // NEW: Validate bus availability
-        // Issue 3.1.1: Schedule conflict incomplete
-        $busAvailable = BusinessLogicService::validateBusAvailability($bus->id);
-        if (! $busAvailable['available']) {
-            return response()->json(['success' => false, 'message' => $busAvailable['error']], 422);
-        }
-
         $driver = Driver::find($validated['driver_id']);
         if (! $driver) {
             return response()->json(['success' => false, 'message' => 'Driver not found.'], 404);
         }
 
-        // NEW: Validate driver availability
-        // Issue 3.1.1: Schedule conflict incomplete
-        $driverAvailable = BusinessLogicService::validateDriverAvailability($driver->id);
-        if (! $driverAvailable['available']) {
-            return response()->json(['success' => false, 'message' => $driverAvailable['error']], 422);
-        }
+        try {
+            $schedule = \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $bus, $driver) {
+                // Lock the bus and driver rows to prevent concurrent reads/updates
+                $busLocked = Bus::lockForUpdate()->find($bus->id);
+                $driverLocked = Driver::lockForUpdate()->find($driver->id);
 
-        // NEW: Check daily hours limit for driver
-        $maxDailyHours = (int) SystemSetting::get('driver_max_daily_hours', 10);
-        $dailyHoursCheck = BusinessLogicService::checkDriverDailyHours(
-            $driver->id,
-            $validated['departure_time'],
-            $this->resolveRouteTravelDuration($validated['route_id']),
-            $maxDailyHours,
-            null,
-            $validated['service_date'] ?? now('Asia/Manila')->toDateString()
-        );
-        if (! $dailyHoursCheck['allowed']) {
-            return response()->json(['success' => false, 'message' => $dailyHoursCheck['error']], 422);
-        }
+                // Validate bus availability
+                $busAvailable = BusinessLogicService::validateBusAvailability($busLocked->id);
+                if (! $busAvailable['available']) {
+                    throw new \Exception($busAvailable['error']);
+                }
 
-        // NEW: Use enhanced conflict checking from BusinessLogicService
-        // Issue 3.1.1: Schedule conflict incomplete
-        $conflictCheck = BusinessLogicService::checkScheduleConflict(
-            $bus->id,
-            $driver->id,
-            $validated['route_id'],
-            $validated['departure_time'],
-            null,
-            $validated['service_date'] ?? now('Asia/Manila')->toDateString()
-        );
+                // Validate driver availability
+                $driverAvailable = BusinessLogicService::validateDriverAvailability($driverLocked->id);
+                if (! $driverAvailable['available']) {
+                    throw new \Exception($driverAvailable['error']);
+                }
 
-        if ($conflictCheck['conflict']) {
+                // Check daily hours limit for driver
+                $maxDailyHours = (int) SystemSetting::get('driver_max_daily_hours', 10);
+                $dailyHoursCheck = BusinessLogicService::checkDriverDailyHours(
+                    $driverLocked->id,
+                    $validated['departure_time'],
+                    $this->resolveRouteTravelDuration($validated['route_id']),
+                    $maxDailyHours,
+                    null,
+                    $validated['service_date'] ?? now('Asia/Manila')->toDateString()
+                );
+                if (! $dailyHoursCheck['allowed']) {
+                    throw new \Exception($dailyHoursCheck['error']);
+                }
+
+                // Check schedule conflicts
+                $conflictCheck = BusinessLogicService::checkScheduleConflict(
+                    $busLocked->id,
+                    $driverLocked->id,
+                    $validated['route_id'],
+                    $validated['departure_time'],
+                    null,
+                    $validated['service_date'] ?? now('Asia/Manila')->toDateString()
+                );
+
+                if ($conflictCheck['conflict']) {
+                    throw new \Exception($conflictCheck['message']);
+                }
+
+                // Compute estimated arrival time using route duration
+                $departure = $validated['departure_time'];
+                $duration = $this->resolveRouteTravelDuration($validated['route_id']);
+
+                $timeParts = explode(':', $departure);
+                $totalMinutes = intval($timeParts[0]) * 60 + intval($timeParts[1]) + $duration;
+                $arrivalHour = floor($totalMinutes / 60) % 24;
+                $arrivalMinute = $totalMinutes % 60;
+                $arrivalTime = sprintf('%02d:%02d', $arrivalHour, $arrivalMinute);
+
+                return Schedule::create([
+                    'route_id' => $validated['route_id'],
+                    'service_date' => $validated['service_date'] ?? now('Asia/Manila')->toDateString(),
+                    'bus_id' => $busLocked->id,
+                    'driver_id' => $driverLocked->id,
+                    'departure_time' => $departure,
+                    'arrival_time' => $arrivalTime,
+                    'passengers' => 0,
+                    'status' => 'On time',
+                ]);
+            });
+        } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
-                'message' => $conflictCheck['message'],
+                'message' => $e->getMessage(),
             ], 422);
         }
-
-        // Compute estimated arrival time using route duration from the database or settings
-        $departure = $validated['departure_time'];
-        $duration = $this->resolveRouteTravelDuration($validated['route_id']);
-
-        $timeParts = explode(':', $departure);
-        $totalMinutes = intval($timeParts[0]) * 60 + intval($timeParts[1]) + $duration;
-        $arrivalHour = floor($totalMinutes / 60) % 24;
-        $arrivalMinute = $totalMinutes % 60;
-        $arrivalTime = sprintf('%02d:%02d', $arrivalHour, $arrivalMinute);
-
-        $schedule = Schedule::create([
-            'route_id' => $validated['route_id'],
-            'service_date' => $validated['service_date'] ?? now('Asia/Manila')->toDateString(),
-            'bus_id' => $bus->id,
-            'driver_id' => $driver->id,
-            'departure_time' => $departure,
-            'arrival_time' => $arrivalTime,
-            'passengers' => 0,
-            'status' => 'On time',
-        ]);
 
         return response()->json([
             'success' => true,
@@ -213,65 +220,82 @@ class ScheduleController extends Controller
         if (! $busAvailable['available']) {
             return response()->json(['success' => false, 'message' => $busAvailable['error']], 422);
         }
-
         $driver = Driver::find($validated['driver_id']);
         if (! $driver) {
             return response()->json(['success' => false, 'message' => 'Driver not found.'], 404);
         }
 
-        $driverAvailable = BusinessLogicService::validateDriverAvailability($driver->id);
-        if (! $driverAvailable['available']) {
-            return response()->json(['success' => false, 'message' => $driverAvailable['error']], 422);
-        }
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $bus, $driver, $schedule) {
+                // Lock rows
+                $busLocked = Bus::lockForUpdate()->find($bus->id);
+                $driverLocked = Driver::lockForUpdate()->find($driver->id);
 
-        $maxDailyHours = (int) SystemSetting::get('driver_max_daily_hours', 10);
-        $dailyHoursCheck = BusinessLogicService::checkDriverDailyHours(
-            $driver->id,
-            $validated['departure_time'],
-            $this->resolveRouteTravelDuration($validated['route_id']),
-            $maxDailyHours,
-            $schedule->id,
-            $validated['service_date'] ?? $schedule->service_date ?? now('Asia/Manila')->toDateString()
-        );
-        if (! $dailyHoursCheck['allowed']) {
-            return response()->json(['success' => false, 'message' => $dailyHoursCheck['error']], 422);
-        }
+                // Validate bus availability
+                $busAvailable = BusinessLogicService::validateBusAvailability($busLocked->id);
+                if (! $busAvailable['available']) {
+                    throw new \Exception($busAvailable['error']);
+                }
 
-        // Use enhanced conflict checking from BusinessLogicService
-        $conflictCheck = BusinessLogicService::checkScheduleConflict(
-            $bus->id,
-            $driver->id,
-            $validated['route_id'],
-            $validated['departure_time'],
-            $schedule->id,
-            $validated['service_date'] ?? $schedule->service_date ?? now('Asia/Manila')->toDateString()
-        );
+                // Validate driver availability
+                $driverAvailable = BusinessLogicService::validateDriverAvailability($driverLocked->id);
+                if (! $driverAvailable['available']) {
+                    throw new \Exception($driverAvailable['error']);
+                }
 
-        if ($conflictCheck['conflict']) {
+                // Check daily hours limit for driver
+                $maxDailyHours = (int) SystemSetting::get('driver_max_daily_hours', 10);
+                $dailyHoursCheck = BusinessLogicService::checkDriverDailyHours(
+                    $driverLocked->id,
+                    $validated['departure_time'],
+                    $this->resolveRouteTravelDuration($validated['route_id']),
+                    $maxDailyHours,
+                    $schedule->id,
+                    $validated['service_date'] ?? $schedule->service_date ?? now('Asia/Manila')->toDateString()
+                );
+                if (! $dailyHoursCheck['allowed']) {
+                    throw new \Exception($dailyHoursCheck['error']);
+                }
+
+                // Check schedule conflicts
+                $conflictCheck = BusinessLogicService::checkScheduleConflict(
+                    $busLocked->id,
+                    $driverLocked->id,
+                    $validated['route_id'],
+                    $validated['departure_time'],
+                    $schedule->id,
+                    $validated['service_date'] ?? $schedule->service_date ?? now('Asia/Manila')->toDateString()
+                );
+
+                if ($conflictCheck['conflict']) {
+                    throw new \Exception($conflictCheck['message']);
+                }
+
+                // Compute arrival time
+                $departure = $validated['departure_time'];
+                $duration = $this->resolveRouteTravelDuration($validated['route_id']);
+
+                $timeParts = explode(':', $departure);
+                $totalMinutes = intval($timeParts[0]) * 60 + intval($timeParts[1]) + $duration;
+                $arrivalHour = floor($totalMinutes / 60) % 24;
+                $arrivalMinute = $totalMinutes % 60;
+                $arrivalTime = sprintf('%02d:%02d', $arrivalHour, $arrivalMinute);
+
+                $schedule->update([
+                    'route_id' => $validated['route_id'],
+                    'service_date' => $validated['service_date'] ?? $schedule->service_date ?? now('Asia/Manila')->toDateString(),
+                    'bus_id' => $busLocked->id,
+                    'driver_id' => $driverLocked->id,
+                    'departure_time' => $departure,
+                    'arrival_time' => $arrivalTime,
+                ]);
+            });
+        } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
-                'message' => $conflictCheck['message'],
+                'message' => $e->getMessage(),
             ], 422);
         }
-
-        // Compute estimated arrival time using route duration from the database or settings
-        $departure = $validated['departure_time'];
-        $duration = $this->resolveRouteTravelDuration($validated['route_id']);
-
-        $timeParts = explode(':', $departure);
-        $totalMinutes = intval($timeParts[0]) * 60 + intval($timeParts[1]) + $duration;
-        $arrivalHour = floor($totalMinutes / 60) % 24;
-        $arrivalMinute = $totalMinutes % 60;
-        $arrivalTime = sprintf('%02d:%02d', $arrivalHour, $arrivalMinute);
-
-        $schedule->update([
-            'route_id' => $validated['route_id'],
-            'service_date' => $validated['service_date'] ?? $schedule->service_date ?? now('Asia/Manila')->toDateString(),
-            'bus_id' => $bus->id,
-            'driver_id' => $driver->id,
-            'departure_time' => $departure,
-            'arrival_time' => $arrivalTime,
-        ]);
 
         return response()->json([
             'success' => true,

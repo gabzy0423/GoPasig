@@ -160,7 +160,7 @@ class GoPasigScenariosTest extends TestCase
         // Far inactive bus
         Bus::create([
             'plate_number' => 'PAS-FAR',
-            'status' => 'inactive',
+            'status' => 'available',
             'capacity' => 45,
             'lat' => 14.6000, // ~11 km away
             'lng' => 121.1000,
@@ -171,7 +171,7 @@ class GoPasigScenariosTest extends TestCase
         // Close inactive bus
         Bus::create([
             'plate_number' => 'PAS-NEAR',
-            'status' => 'inactive',
+            'status' => 'available',
             'capacity' => 45,
             'lat' => 14.5010, // ~150 meters away
             'lng' => 121.0010,

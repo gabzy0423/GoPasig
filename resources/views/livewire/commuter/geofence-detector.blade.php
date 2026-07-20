@@ -434,12 +434,12 @@
 
             get gpsModeText() {
                 if (this.simulatedStopId && this.simulatedStopId !== 'real') {
-                    return '🔴 Simulated GPS';
+                    return 'Simulated GPS';
                 }
                 if (this.isTracking) {
-                    return '📡 Live Device GPS';
+                    return 'Live Device GPS';
                 }
-                return '⚪ Naka-off';
+                return 'Naka-off';
             },
 
             initComponent() {
@@ -651,11 +651,12 @@
                         
                         const lat = position.coords.latitude;
                         const lng = position.coords.longitude;
+                        const accuracy = position.coords.accuracy;
                         
-                        console.log(`Live GPS coords: Lat ${lat}, Lng ${lng}`);
+                        console.log(`Live GPS coords: Lat ${lat}, Lng ${lng}, Accuracy ${accuracy}`);
                         
                         // Send location to Livewire component
-                        this.$wire.call('updateLocation', lat, lng);
+                        this.$wire.call('updateLocation', lat, lng, accuracy);
                     },
                     (error) => {
                         console.error('Error fetching GPS coordinate: ', error);

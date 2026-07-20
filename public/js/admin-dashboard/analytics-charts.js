@@ -27,7 +27,7 @@ function initAnalyticsDashboard() {
     const hasHourlyData = (typeof hourlyRidershipData !== 'undefined' && hourlyRidershipData && hourlyRidershipData.length > 0);
     showChartEmptyState('hourly-ridership-chart', !hasHourlyData);
 
-    if (hasHourlyData) {
+    if (hasHourlyData && document.getElementById('hourly-ridership-chart')) {
         let hourlyLabels = hourlyRidershipData.map(d => d.hour);
         let routeNames = [];
         if (typeof routeComparisonData !== 'undefined' && routeComparisonData && routeComparisonData.length > 0) {
@@ -124,7 +124,7 @@ function initAnalyticsDashboard() {
     const hasDoughnutData = (typeof routeComparisonData !== 'undefined' && routeComparisonData && routeComparisonData.length > 0);
     showChartEmptyState('route-doughnut-chart', !hasDoughnutData);
 
-    if (hasDoughnutData) {
+    if (hasDoughnutData && document.getElementById('route-doughnut-chart')) {
         let doughnutLabels = routeComparisonData.map(r => r.route);
         let doughnutColors = routeComparisonData.map((r, idx) => r.color || ['#003F87', '#639922', '#BA7517', '#E24B4A'][idx % 4]);
         let doughnutData = routeComparisonData.map(r => r.pax);
@@ -162,7 +162,7 @@ function initAnalyticsDashboard() {
     const hasStopsData = (typeof stopBoardingData !== 'undefined' && stopBoardingData && stopBoardingData.length > 0);
     showChartEmptyState('stop-boarding-chart', !hasStopsData);
 
-    if (hasStopsData) {
+    if (hasStopsData && document.getElementById('stop-boarding-chart')) {
         let stopLabels = stopBoardingData.slice(0, 10).map(s => s.name);
         let stopValues = stopBoardingData.slice(0, 10).map(s => s.boarding);
 
@@ -234,7 +234,7 @@ function initAnalyticsDashboard() {
     const hasTimelineData = (typeof tripData !== 'undefined' && tripData && tripData.length > 0);
     showChartEmptyState('pax-load-timeline-chart', !hasTimelineData);
 
-    if (hasTimelineData) {
+    if (hasTimelineData && document.getElementById('pax-load-timeline-chart')) {
         const timelineLabels = ["5 AM", "6 AM", "7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
         let timelineDatasets = [];
 
@@ -354,7 +354,7 @@ function initAnalyticsDashboard() {
     const hasTrendData = (typeof historicalTrendData !== 'undefined' && historicalTrendData && historicalTrendData.length > 0);
     showChartEmptyState('historical-trend-chart', !hasTrendData);
 
-    if (hasTrendData) {
+    if (hasTrendData && document.getElementById('historical-trend-chart')) {
         let trendLabels = historicalTrendData.map(d => d.label);
         let trendDatasets = [];
         let todayPax = 1284;

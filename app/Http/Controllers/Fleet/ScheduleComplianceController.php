@@ -8,6 +8,7 @@ use App\Models\Route;
 use App\Models\Driver;
 use App\Models\Schedule;
 use App\Models\ColorPalette;
+use App\Models\SystemSetting;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -219,14 +220,24 @@ class ScheduleComplianceController extends Controller
             });
         }
         if ($selectedStatus !== 'all') {
-            $dbStatus = match ($selectedStatus) {
-                'On Time' => 'On time',
-                'Late' => 'Delayed',
-                'Missed' => 'Cancelled',
-                'Early' => 'On time',
-                default => $selectedStatus,
-            };
-            $schedQuery->where('status', $dbStatus);
+            if ($selectedStatus === 'Early') {
+                $schedQuery->whereNotNull('actual_departure_time')
+                    ->whereRaw('actual_departure_time < departure_time');
+            } else {
+                $dbStatus = match ($selectedStatus) {
+                    'On Time' => 'On time',
+                    'Late' => 'Delayed',
+                    'Missed' => 'Cancelled',
+                    default => $selectedStatus,
+                };
+                $schedQuery->where('status', $dbStatus);
+                if ($dbStatus === 'On time') {
+                    $schedQuery->where(function ($q) {
+                        $q->whereNull('actual_departure_time')
+                          ->orWhereRaw('actual_departure_time >= departure_time');
+                    });
+                }
+            }
         }
 
         $schedules = $schedQuery->get();
@@ -240,7 +251,7 @@ class ScheduleComplianceController extends Controller
             $routeColor = $s->route ? ($routeColorMap[$s->route_id] ?? '#64748b') : '#64748b';
 
             $uiStatus = match (strtolower((string) $s->status)) {
-                'on time' => 'On Time',
+                'on time' => ($s->actual_departure_time && $s->actual_departure_time < $s->departure_time) ? 'Early' : 'On Time',
                 'delayed' => 'Late',
                 'cancelled' => 'Missed',
                 default => ucwords((string) $s->status),
@@ -258,7 +269,7 @@ class ScheduleComplianceController extends Controller
             } else {
                 $isEstimated = (strtolower((string) $s->status) === 'delayed');
                 if (strtolower((string) $s->status) === 'delayed') {
-                    $varianceMin = $s->delay_minutes ?: max(1, (int) round($duration * 0.1));
+                    $varianceMin = $s->delay_minutes ?? 0;
                     $actualDep = Carbon::parse($s->departure_time)->addMinutes($varianceMin)->format('g:i A');
                 } else {
                     $varianceMin = 0;
@@ -375,8 +386,7 @@ class ScheduleComplianceController extends Controller
                 } elseif ($ds->delay_minutes > 0) {
                     $totalDelayMin += $ds->delay_minutes;
                 } else {
-                    $dur = Carbon::parse($ds->departure_time)->diffInMinutes(Carbon::parse($ds->arrival_time));
-                    $totalDelayMin += max(1, (int) round($dur * 0.1));
+                    $totalDelayMin += $ds->delay_minutes ?? 0;
                 }
             }
             if ($totalDelayMin > 0) {
@@ -430,7 +440,7 @@ class ScheduleComplianceController extends Controller
                 } elseif ($row->total_delay_minutes > 0) {
                     $avgDelay = (int) round($row->total_delay_minutes / $row->late_count);
                 } else {
-                    $avgDelay = max(1, (int) round(($row->total_duration / $row->late_count) * 0.1));
+                    $avgDelay = 0;
                 }
             }
             return [

@@ -11,6 +11,19 @@ class MaintenanceRecord extends Model
 
     protected $table = 'maintenance_records';
 
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::created(function ($model) {
+            if (empty($model->ticket_number)) {
+                $year = $model->created_at ? $model->created_at->format('Y') : date('Y');
+                $model->ticket_number = 'MT-' . $year . '-' . str_pad($model->id, 6, '0', STR_PAD_LEFT);
+                $model->saveQuietly();
+            }
+        });
+    }
+
     protected $fillable = [
         'bus_id',
         'type',
@@ -20,6 +33,7 @@ class MaintenanceRecord extends Model
         'workflow_status',
         'expected_duration_minutes',
         'technician_name',
+        'ticket_number',
         'cost_php',
         'completed_at',
         'technician_notes',
@@ -28,6 +42,16 @@ class MaintenanceRecord extends Model
         'inspection_notes',
         'inspected_by',
         'inspected_at',
+        'inspector_name',
+        'bus_condition',
+        'roadworthy',
+        'recommendation',
+        'maintenance_result',
+        'inspection_checklist',
+        'parts_replaced',
+        'labor_cost',
+        'parts_cost',
+        'other_cost',
     ];
 
     protected $casts = [
@@ -38,6 +62,11 @@ class MaintenanceRecord extends Model
         'expected_duration_minutes' => 'integer',
         'actual_duration_minutes' => 'integer',
         'inspection_passed' => 'boolean',
+        'roadworthy' => 'boolean',
+        'inspection_checklist' => 'array',
+        'labor_cost' => 'float',
+        'parts_cost' => 'float',
+        'other_cost' => 'float',
     ];
 
     /**
@@ -49,11 +78,37 @@ class MaintenanceRecord extends Model
     }
 
     /**
-     * Get all inspections for this maintenance record
+     * Get all inspection attempts for this maintenance record.
+     * Ordered by attempt_no ascending (chronological).
      */
-    public function inspections()
+    public function inspectionAttempts()
     {
-        return $this->hasMany(MaintenanceInspection::class);
+        return $this->hasMany(MaintenanceInspection::class, 'maintenance_record_id')
+            ->orderBy('attempt_no');
+    }
+
+    /**
+     * Get the most recent inspection attempt.
+     */
+    public function latestInspection()
+    {
+        return $this->inspectionAttempts()->latest('attempt_no')->first();
+    }
+
+    /**
+     * Count the number of failed inspection attempts.
+     */
+    public function failedInspectionCount(): int
+    {
+        return $this->inspectionAttempts()->where('inspection_passed', false)->count();
+    }
+
+    /**
+     * Count the next attempt_no for this record.
+     */
+    public function nextAttemptNo(): int
+    {
+        return (MaintenanceInspection::where('maintenance_record_id', $this->id)->max('attempt_no') ?? 0) + 1;
     }
 
     /**
@@ -142,9 +197,6 @@ class MaintenanceRecord extends Model
         return $this->inspectionPassed() ? 'Passed ✅' : 'Failed ❌';
     }
 
-    /**
-     * Get workflow progress as percentage
-     */
     public function getProgressPercentage(): int
     {
         if ($this->status === 'cancelled') {
@@ -156,14 +208,11 @@ class MaintenanceRecord extends Model
         }
 
         if ($this->status === 'scheduled') {
-            return 20;
+            return 30;
         }
 
         if ($this->status === 'in_progress') {
-            if ($this->hasBeenInspected()) {
-                return $this->inspectionPassed() ? 80 : 50;
-            }
-            return 40;
+            return 60;
         }
 
         return 0;

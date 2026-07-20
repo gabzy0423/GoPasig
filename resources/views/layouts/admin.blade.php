@@ -12,7 +12,10 @@
     
     <!-- Leaflet Map CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Leaflet Draw Plugin -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js" defer></script>
     <!-- Google Maps API & Leaflet Mutant Plugin -->
     <script src="https://maps.googleapis.com/maps/api/js?key={{ config('services.google.maps_api_key') }}" defer></script>
     <script src="https://unpkg.com/leaflet.gridlayer.googlemutant@latest/dist/Leaflet.GoogleMutant.js" defer></script>
@@ -41,6 +44,7 @@
     <script src="{{ asset('js/admin-dashboard/analytics-interactions.js') }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/drivers.js') }}?v={{ time() }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/routes.js') }}?v={{ time() }}" defer></script>
+    <script src="{{ asset('js/admin-dashboard/route-editor.js') }}?v={{ time() }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/alerts.js') }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/settings.js') }}?v={{ time() }}" defer></script>
     @livewireScripts

@@ -61,7 +61,7 @@ class DriverPerformanceService
             ->count();
 
         if ($totalSchedules === 0) {
-            return 100;
+            return (int) SystemSetting::get('driver_performance_default_on_time_score', 100);
         }
 
         $onTimeSchedules = self::scheduleWindowQuery($driverId, $start, $end)
@@ -229,6 +229,10 @@ class DriverPerformanceService
             return false;
         }
 
+        if (Incident::isTrafficDelay($incidentType) || Incident::isPassengerConcern($incidentType)) {
+            return true;
+        }
+
         $driver->update([
             'incidents_30' => ((int) $driver->incidents_30) + 1,
             'performance_score' => max(0, ((int) $driver->performance_score) - self::incidentPenalty()),
@@ -273,6 +277,11 @@ class DriverPerformanceService
     {
         return Incident::where('driver_id', $driverId)
             ->whereBetween('created_at', [$start, $end])
+            ->get()
+            ->filter(function ($incident) {
+                return !Incident::isTrafficDelay($incident->type) 
+                    && !Incident::isPassengerConcern($incident->type);
+            })
             ->count();
     }
 

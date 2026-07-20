@@ -37,17 +37,19 @@
     @yield('content')
     @livewireScripts
 
-    <!-- Fleet Dashboard Scripts -->
-    <script src="{{ asset('js/fleet-dashboard/overview.js') }}?v={{ time() }}" defer></script>
-    <script src="{{ asset('js/fleet-dashboard/navigation.js') }}?v={{ filemtime(public_path('js/fleet-dashboard/navigation.js')) }}" defer></script>
-    <script src="{{ asset('js/fleet-dashboard/performance.js') }}?v={{ time() }}" defer></script>
-    <script src="{{ asset('js/fleet-dashboard/schedule-compliance.js') }}?v={{ time() }}" defer></script>
-    <script src="{{ asset('js/fleet-dashboard/incidents.js') }}?v={{ time() }}" defer></script>
-    <script src="{{ asset('js/fleet-dashboard/maintenance-management.js') }}?v={{ time() }}" defer></script>
-    <script src="{{ asset('js/fleet-dashboard/announcements.js') }}?v={{ time() }}" defer></script>
-    <script src="{{ asset('js/fleet-dashboard/analytics.js') }}?v={{ time() }}" defer></script>
-    <script src="{{ asset('js/fleet-dashboard/dispatch-intelligence.js') }}?v={{ time() }}" defer></script>
-    <script src="{{ asset('js/fleet-dashboard/commuter-trips.js') }}?v={{ time() }}" defer></script>
-    <script src="{{ asset('js/fleet-dashboard/commuter-sessions.js') }}?v={{ time() }}" defer></script>
+    @if(request()->routeIs('fleet.dashboard'))
+        <!-- Fleet Dashboard Scripts -->
+        <script src="{{ asset('js/fleet-dashboard/overview.js') }}?v={{ time() }}" defer></script>
+        <script src="{{ asset('js/fleet-dashboard/navigation.js') }}?v={{ filemtime(public_path('js/fleet-dashboard/navigation.js')) }}" defer></script>
+        <script src="{{ asset('js/fleet-dashboard/performance.js') }}?v={{ time() }}" defer></script>
+        <script src="{{ asset('js/fleet-dashboard/schedule-compliance.js') }}?v={{ time() }}" defer></script>
+        <script src="{{ asset('js/fleet-dashboard/incidents.js') }}?v={{ time() }}" defer></script>
+        <script src="{{ asset('js/fleet-dashboard/maintenance-management.js') }}?v={{ time() }}" defer></script>
+        <script src="{{ asset('js/fleet-dashboard/announcements.js') }}?v={{ time() }}" defer></script>
+        <script src="{{ asset('js/fleet-dashboard/analytics.js') }}?v={{ time() }}" defer></script>
+        <script src="{{ asset('js/fleet-dashboard/dispatch-intelligence.js') }}?v={{ time() }}" defer></script>
+        <script src="{{ asset('js/fleet-dashboard/commuter-trips.js') }}?v={{ time() }}" defer></script>
+        <script src="{{ asset('js/fleet-dashboard/commuter-sessions.js') }}?v={{ time() }}" defer></script>
+    @endif
 </body>
 </html>
