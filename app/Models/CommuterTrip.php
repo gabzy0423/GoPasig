@@ -31,6 +31,12 @@ class CommuterTrip extends Model
         return $this->belongsTo(Route::class);
     }
 
+
+    public function bus()
+    {
+        return $this->belongsTo(Bus::class);
+    }
+
     public function originStop()
     {
         return $this->belongsTo(Stop::class, 'origin_stop_id');

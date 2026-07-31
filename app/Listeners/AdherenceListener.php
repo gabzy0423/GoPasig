@@ -7,12 +7,16 @@ use App\Events\RouteDeviationDetected;
 use App\Models\Trip;
 use App\Models\TripProgress;
 use App\Models\RouteDeviation;
+use App\Services\Routing\AuthoritativeRouteResolver;
 use App\Services\Routing\RouteAdherenceService;
 use App\Services\ValueObjects\Coordinate;
 
 class AdherenceListener
 {
-    public function __construct(protected RouteAdherenceService $service) {}
+    public function __construct(
+        protected RouteAdherenceService $service,
+        protected AuthoritativeRouteResolver $routeResolver
+    ) {}
 
     public function handle(PositionUpdated $event): void
     {
@@ -21,13 +25,18 @@ class AdherenceListener
             return;
         }
 
-        $trip = Trip::with('route')->find($position->trip_id);
-        if (!$trip || !$trip->route || empty($trip->route->polyline_coordinates)) {
+        $trip = Trip::find($position->trip_id);
+        if (!$trip) {
+            return;
+        }
+
+        $plan = $this->routeResolver->resolveForTrip($trip);
+        if (empty($plan->polylineCoordinates)) {
             return;
         }
 
         $coord = new Coordinate($position->lat, $position->lng);
-        $deviation = $this->service->checkAdherence($position->trip_id, $coord, $trip->route->polyline_coordinates);
+        $deviation = $this->service->checkAdherence($position->trip_id, $coord, $plan->polylineCoordinates);
 
         $progress = TripProgress::where('trip_id', $position->trip_id)->first();
 
@@ -65,3 +74,4 @@ class AdherenceListener
         }
     }
 }
+

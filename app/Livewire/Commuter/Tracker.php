@@ -6,8 +6,9 @@ use Livewire\Component;
 use App\Models\Route;
 use App\Models\Bus;
 use App\Models\ServiceAlert;
-use App\Models\Schedule;
+use App\Services\CommuterEtaProvenanceService;
 use App\Services\GPSKalmanFilter;
+use Carbon\CarbonInterface;
 
 class Tracker extends Component
 {
@@ -38,7 +39,7 @@ class Tracker extends Component
     {
         if ($this->selectedRouteId) {
             $selectedRouteObj = Route::find($this->selectedRouteId);
-            if ($selectedRouteObj && in_array(strtolower($selectedRouteObj->status), ['suspended', 'inactive'])) {
+            if ($selectedRouteObj && ! Route::getCanonicalProductionCached()->contains('id', $selectedRouteObj->id)) {
                 $this->dispatch('route-suspended', [
                     'message' => 'This route has been suspended due to an operational issue. Please select another route.'
                 ]);
@@ -48,16 +49,21 @@ class Tracker extends Component
 
         // 1. Fetch active alerts   
         $activeAlerts = ServiceAlert::activeAlerts()
+            ->publicCommuterVisible()
             ->orderBy('created_at', 'desc')
             ->get();
 
         // 2. Fetch routes
-        $routes = Route::getAllCached()->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive']);
+        $routes = Route::getCanonicalProductionCached();
 
         // 3. Fetch active buses
-        $activeBusIds = \App\Models\Trip::where('status', 'ongoing')->pluck('bus_id')->toArray();
+        $activeBusIds = \App\Models\Trip::where('status', 'ongoing')
+            ->whereHas('route', fn ($query) => $query->publicCommuterActiveService())
+            ->pluck('bus_id')
+            ->toArray();
 
-        $busesQuery = Bus::with(['route', 'route.stops'])
+        $busesQuery = Bus::with(['route', 'route.stops', 'vehiclePosition'])
+            ->whereHas('route', fn ($query) => $query->publicCommuterActiveService())
             ->where('status', '!=', 'inactive')
             ->where('status', '!=', 'maintenance')
             ->where(function($q) use ($activeBusIds) {
@@ -71,7 +77,9 @@ class Tracker extends Component
             $busesQuery->where('route_id', $this->selectedRouteId);
         }
 
-        $activeBuses = $busesQuery->get()->map(function ($bus) {
+        $etaProvenanceService = app(CommuterEtaProvenanceService::class);
+
+        $activeBuses = $busesQuery->get()->map(function ($bus) use ($etaProvenanceService) {
             // Route color: read from the database column
             $color = $bus->route?->color ?: config('brand.route_color_unassigned', '#888780');
 
@@ -95,6 +103,10 @@ class Tracker extends Component
                 $driverName = $driver ? (trim(($driver->first_name ?? '') . ' ' . ($driver->last_name ?? '')) ?: 'No Driver Assigned') : 'No Driver Assigned';
             }
 
+            $lastGpsFixAt = $bus->vehiclePosition?->last_gps_fix_at;
+            $freshness = $this->gpsFreshness($lastGpsFixAt);
+            $etaProvenance = $etaProvenanceService->forBus($bus);
+
             return (object) [
                 'bus_id' => $bus->id,
                 'plate_number' => $bus->plate_number,
@@ -102,7 +114,11 @@ class Tracker extends Component
                 'route_color' => $color,
                 'status' => $status,
                 'next_stop_name' => $bus->next_stop ?: 'Terminal',
-                'eta_minutes' => $bus->eta,
+                'eta_minutes' => $etaProvenance->minutes,
+                'eta_provenance_state' => $etaProvenance->state,
+                'eta_label' => $etaProvenance->label,
+                'eta_description' => $etaProvenance->description,
+                'eta_is_authoritative' => $etaProvenance->is_authoritative,
                 'passenger_count' => $bus->passengers,
                 'capacity' => $bus->capacity,
                 'lat' => (float) $bus->lat,
@@ -110,7 +126,9 @@ class Tracker extends Component
                 'driver_name' => $driverName,
                 'speed' => $bus->speed ?: 0,
                 'is_simulated' => (bool) $bus->is_simulated,
-                'updated_at' => $bus->updated_at ? $bus->updated_at->toIso8601String() : now()->toIso8601String(),
+                'last_gps_fix_at' => $lastGpsFixAt?->toIso8601String(),
+                'gps_freshness_state' => $freshness['state'],
+                'gps_freshness_age_seconds' => $freshness['age_seconds'],
             ];
         });
 
@@ -137,11 +155,17 @@ class Tracker extends Component
                     'route_name' => $closest->route_name,
                     'route_color' => $closest->route_color,
                     'eta_minutes' => $closest->eta_minutes,
+                    'eta_provenance_state' => $closest->eta_provenance_state,
+                    'eta_label' => $closest->eta_label,
+                    'eta_description' => $closest->eta_description,
+                    'eta_is_authoritative' => $closest->eta_is_authoritative,
                     'distance_km' => $minDistance,
                     'passenger_count' => $closest->passenger_count,
                     'capacity' => $closest->capacity,
                     'is_simulated' => $closest->is_simulated,
-                    'updated_at' => $closest->updated_at,
+                    'last_gps_fix_at' => $closest->last_gps_fix_at,
+                    'gps_freshness_state' => $closest->gps_freshness_state,
+                    'gps_freshness_age_seconds' => $closest->gps_freshness_age_seconds,
                 ];
             }
         }
@@ -202,4 +226,29 @@ class Tracker extends Component
     {
         return round(GPSKalmanFilter::calculateDistance($lat1, $lng1, $lat2, $lng2) / 1000, 1);
     }
+
+    private function gpsFreshness(?CarbonInterface $lastGpsFixAt): array
+    {
+        if (! $lastGpsFixAt) {
+            return [
+                'state' => 'UNKNOWN',
+                'age_seconds' => null,
+            ];
+        }
+
+        $ageSeconds = max(0, (int) $lastGpsFixAt->diffInSeconds(now()));
+
+        return [
+            'state' => match (true) {
+                $ageSeconds < 30 => 'LIVE',
+                $ageSeconds < 120 => 'STALE',
+                default => 'OFFLINE',
+            },
+            'age_seconds' => $ageSeconds,
+        ];
+    }
 }
+
+
+
+

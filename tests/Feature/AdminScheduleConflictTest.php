@@ -90,7 +90,7 @@ class AdminScheduleConflictTest extends TestCase
             'emp_id' => 'EMP-001',
             'license_number' => 'LIC-001',
             'license_expiry' => now()->addYear(),
-            'status' => 'inactive'
+            'status' => 'active'
         ]);
 
         $driver2 = Driver::create([
@@ -99,7 +99,7 @@ class AdminScheduleConflictTest extends TestCase
             'emp_id' => 'EMP-003',
             'license_number' => 'LIC-003',
             'license_expiry' => now()->addYear(),
-            'status' => 'inactive'
+            'status' => 'active'
         ]);
 
         // Create initial schedule
@@ -123,7 +123,7 @@ class AdminScheduleConflictTest extends TestCase
         $response->assertStatus(422);
         $response->assertJson([
             'success' => false,
-            'message' => 'Bus is inactive'
+            'message' => 'Bus is already scheduled from 08:00 with 15min buffer'
         ]);
     }
 
@@ -366,7 +366,7 @@ class AdminScheduleConflictTest extends TestCase
 
         $bus = Bus::create([
             'plate_number' => 'PAS-666',
-            'status' => 'active'
+            'status' => 'inactive'
         ]);
 
         $driver = Driver::create([
@@ -455,5 +455,92 @@ class AdminScheduleConflictTest extends TestCase
         ]);
 
         $response->assertCreated();
+    }
+
+    public function test_create_schedule_resource_apis_expose_eligible_resources_for_loader(): void
+    {
+        $this->actingAsAdmin();
+
+        $bus = Bus::create([
+            'plate_number' => 'PAS-STANDBY',
+            'status' => 'inactive',
+            'route_id' => null,
+            'driver_name' => Bus::DEFAULT_DRIVER_NAME,
+        ]);
+        $readyBus = Bus::create([
+            'plate_number' => 'PAS-READY',
+            'status' => 'ready',
+            'route_id' => null,
+            'driver_name' => Bus::DEFAULT_DRIVER_NAME,
+        ]);
+        $driver = Driver::create([
+            'first_name' => 'Juan',
+            'last_name' => 'dela Cruz',
+            'emp_id' => 'EMP-LOAD-1',
+            'license_number' => 'LIC-LOAD-1',
+            'license_expiry' => now()->addYear(),
+            'status' => 'active',
+            'operational_status' => 'available',
+            'assigned_bus' => null,
+            'assigned_route' => null,
+        ]);
+        $assignedDriver = Driver::create([
+            'first_name' => 'Assigned',
+            'last_name' => 'Driver',
+            'emp_id' => 'EMP-LOAD-2',
+            'license_number' => 'LIC-LOAD-2',
+            'license_expiry' => now()->addYear(),
+            'status' => 'active',
+            'operational_status' => 'assigned',
+            'assigned_bus' => $readyBus->plate_number,
+            'assigned_route' => '1',
+        ]);
+
+        $fleet = collect($this->getJson(route('admin.api.fleet-data'))->assertOk()->json('buses'));
+        $drivers = collect($this->getJson(route('admin.api.drivers.index'))->assertOk()->json('drivers'));
+
+        $this->assertTrue($fleet->firstWhere('id', $bus->id)['dispatch_eligible']);
+        $this->assertFalse($fleet->firstWhere('id', $readyBus->id)['dispatch_eligible']);
+        $this->assertTrue($drivers->firstWhere('id', $driver->id)['dispatch_eligible']);
+        $this->assertFalse($drivers->firstWhere('id', $assignedDriver->id)['dispatch_eligible']);
+    }
+
+    public function test_opening_create_schedule_invokes_resource_loading_before_dropdown_sync(): void
+    {
+        $path = resource_path('views/admin/schedules/create.blade.php');
+        if (! file_exists($path)) {
+            $this->markTestSkipped('views/admin/schedules/create.blade.php is not present.');
+        }
+        $blade = file_get_contents($path);
+
+        $this->assertStringContainsString('async function openCreateScheduleForm', $blade);
+        $this->assertStringContainsString('await loadSchedulesAndResourcePools();', $blade);
+
+        preg_match('/async function openCreateScheduleForm[\s\S]*?\n    }/', $blade, $matches);
+        $this->assertNotEmpty($matches);
+        $openFunction = $matches[0];
+
+        $this->assertLessThan(
+            strpos($openFunction, 'onRouteSelectChange();'),
+            strpos($openFunction, 'await loadSchedulesAndResourcePools();')
+        );
+    }
+
+    public function test_create_schedule_loader_distinguishes_failure_loading_and_empty_states(): void
+    {
+        $path = resource_path('views/admin/schedules/create.blade.php');
+        if (! file_exists($path)) {
+            $this->markTestSkipped('views/admin/schedules/create.blade.php is not present.');
+        }
+        $blade = file_get_contents($path);
+
+        $this->assertStringContainsString('createScheduleResourcesLoading', $blade);
+        $this->assertStringContainsString('createScheduleResourceLoadFailed', $blade);
+        $this->assertStringContainsString('Loading buses...', $blade);
+        $this->assertStringContainsString('Unable to load buses', $blade);
+        $this->assertStringContainsString('Unable to load drivers', $blade);
+        $this->assertStringContainsString('No dispatchable standby buses', $blade);
+        $this->assertStringContainsString('No dispatchable drivers', $blade);
+        $this->assertStringContainsString("String(s.status || '').toLowerCase() === 'cancelled'", $blade);
     }
 }

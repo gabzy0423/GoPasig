@@ -39,7 +39,7 @@ class FleetScheduleComplianceTest extends TestCase
 
     public function test_dispatcher_can_access_schedule_compliance(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $response = $this->actingAs($dispatcher)->get('/fleet/schedule');
         $response->assertRedirect('/fleet/dashboard?tab=schedule');
@@ -70,7 +70,7 @@ class FleetScheduleComplianceTest extends TestCase
 
     public function test_export_compliance_report_works(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $response = $this->actingAs($dispatcher)->get('/fleet/api/schedule-compliance-export?route_id=all');
 
@@ -81,7 +81,7 @@ class FleetScheduleComplianceTest extends TestCase
 
     public function test_api_schedule_compliance_filtering_works(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $response = $this->actingAs($dispatcher)->get('/fleet/api/schedule-compliance-data', [
             'route_id' => '1',

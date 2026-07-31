@@ -104,7 +104,7 @@ function initAnalyticsCharts() {
 function updateAnalyticsChartsData(routeSummary, hourlyRidership) {
     if (routeSummaryChart && routeSummary) {
         const sortedData = [...routeSummary].reverse();
-        const names = sortedData.map(d => d.route_name.split(' — ')[0]);
+        const names = sortedData.map(d => d.route_name.split(' â€” ')[0]);
         const values = sortedData.map(d => ({
             value: d.total_passengers,
             itemStyle: { color: d.color || '#378ADD' }
@@ -130,7 +130,7 @@ function updateAnalyticsChartsData(routeSummary, hourlyRidership) {
         let totalPassengers = 0;
 
         hourlyRidership.forEach(item => {
-            const routeName = item.route.split(' — ')[0];
+            const routeName = item.route.split(' â€” ')[0];
             if (!routesData[routeName]) {
                 routesData[routeName] = {
                     name: routeName,
@@ -417,9 +417,13 @@ function showAnalyticsAlert(message) {
 }
 
 // Document ready and events registration
-document.addEventListener('DOMContentLoaded', () => {
-    // Only initialize if we are on the Analytics screen page or container is visible
-    if (document.getElementById('routePassengersChart')) {
+let fleetAnalyticsModuleInitialized = false;
+
+function initFleetAnalyticsModule() {
+    if (fleetAnalyticsModuleInitialized || !document.getElementById('routePassengersChart')) return;
+    fleetAnalyticsModuleInitialized = true;
+
+
         initAnalyticsCharts();
         setupTableSortingObserver();
 
@@ -447,7 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const btnPdf = document.getElementById('btn-export-pdf');
         if (btnPdf) {
             btnPdf.addEventListener('click', () => {
-                showAnalyticsAlert("PDF export triggered — use your browser's Print dialog (Ctrl+P) to save as PDF.");
+                showAnalyticsAlert("PDF export triggered â€” use your browser's Print dialog (Ctrl+P) to save as PDF.");
                 setTimeout(() => window.print(), 300);
             });
         }
@@ -471,5 +475,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (routeSummaryChart) routeSummaryChart.resize();
             if (hourlyRidershipChart) hourlyRidershipChart.resize();
         });
-    }
-});
+}
+
+window.initFleetAnalyticsModule = initFleetAnalyticsModule;
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFleetAnalyticsModule, { once: true });
+} else {
+    initFleetAnalyticsModule();
+}

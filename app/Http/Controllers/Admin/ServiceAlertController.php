@@ -4,13 +4,18 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ServiceAlert;
+use App\Models\ServiceAlertLog;
 use App\Models\Route;
 use App\Models\User;
 use App\Models\Driver;
 use App\Models\Schedule;
+use App\Models\Trip;
 use App\Services\ValidationService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Database\Seeders\UATSuspendRouteFixtureSeeder;
 
 class ServiceAlertController extends Controller
 {
@@ -69,6 +74,29 @@ class ServiceAlertController extends Controller
         ]);
     }
 
+    public function targetingRoutes()
+    {
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins can view alert targeting routes'
+            ], 403);
+        }
+
+        $routes = $this->adminAlertTargetRoutes()
+            ->map(fn ($route) => [
+                'id' => $route->id,
+                'name' => $route->name,
+                'status' => $route->status,
+            ])
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'all_official_label' => $this->allOfficialRoutesLabel(),
+            'routes' => $routes,
+        ]);
+    }
     /**
      * Store a newly created service alert.
      * Issue 5.1.3: XSS sanitization added
@@ -107,6 +135,8 @@ class ServiceAlertController extends Controller
             'suspend_route' => 'nullable|boolean',
         ]);
 
+        $this->validateSuspensionPolicy($validated);
+
         // Sanitize message for XSS protection (Issue 5.1.3)
         $messageValidation = ValidationService::validateServiceAlertMessage($validated['message'], 500);
         if (!$messageValidation['valid']) {
@@ -126,11 +156,8 @@ class ServiceAlertController extends Controller
         ];
         $dbSeverity = $severityMap[strtolower($validated['severity'])] ?? 'info';
 
-        $routeId = null;
-        if (count($validated['affects']) === 1) {
-            $route = Route::where('name', $validated['affects'][0])->first();
-            $routeId = $route?->id;
-        }
+        $targeting = $this->normalizePublicAlertTargets($validated['affects']);
+        $routeId = $targeting['route_id'];
 
         $createdAt = Carbon::now();
         if ($validated['timing'] === 'later' && !empty($validated['schedule_time'])) {
@@ -143,7 +170,7 @@ class ServiceAlertController extends Controller
             'message' => $sanitizedMessage,
             'severity' => $dbSeverity,
             'type' => $validated['type'],
-            'affected_routes' => implode(',', $validated['affects']),
+            'affected_routes' => implode(',', $targeting['stored_affects']),
             'status' => 'active',
             'suspend_route' => !empty($validated['suspend_route']) && $validated['suspend_route'],
         ]);
@@ -152,7 +179,7 @@ class ServiceAlertController extends Controller
         $alert->save();
 
         if (!empty($validated['suspend_route']) && $validated['suspend_route']) {
-            Route::whereIn('name', $validated['affects'])->update(['status' => 'Suspended']);
+            Route::whereIn('name', $targeting['suspension_route_names'])->update(['status' => 'Suspended']);
         }
 
         // Notify commuters/drivers (simulated notification broadcast)
@@ -207,6 +234,8 @@ class ServiceAlertController extends Controller
             'suspend_route' => 'nullable|boolean',
         ]);
 
+        $this->validateSuspensionPolicy($validated, $alert);
+
         // Sanitize message for XSS protection (Issue 5.1.3)
         $messageValidation = ValidationService::validateServiceAlertMessage($validated['message'], 500);
         if (!$messageValidation['valid']) {
@@ -226,11 +255,8 @@ class ServiceAlertController extends Controller
         ];
         $dbSeverity = $severityMap[strtolower($validated['severity'])] ?? 'info';
 
-        $routeId = null;
-        if (count($validated['affects']) === 1) {
-            $route = Route::where('name', $validated['affects'][0])->first();
-            $routeId = $route?->id;
-        }
+        $targeting = $this->normalizePublicAlertTargets($validated['affects']);
+        $routeId = $targeting['route_id'];
 
         $createdAt = $alert->created_at;
         if ($validated['timing'] === 'later' && !empty($validated['schedule_time'])) {
@@ -245,7 +271,7 @@ class ServiceAlertController extends Controller
             'message' => $sanitizedMessage,
             'severity' => $dbSeverity,
             'type' => $validated['type'],
-            'affected_routes' => implode(',', $validated['affects']),
+            'affected_routes' => implode(',', $targeting['stored_affects']),
             'suspend_route' => !empty($validated['suspend_route']) && $validated['suspend_route'],
         ]);
         $alert->created_at = $createdAt;
@@ -253,7 +279,7 @@ class ServiceAlertController extends Controller
         $alert->save();
 
         if (!empty($validated['suspend_route']) && $validated['suspend_route']) {
-            Route::whereIn('name', $validated['affects'])->update(['status' => 'Suspended']);
+            Route::whereIn('name', $targeting['suspension_route_names'])->update(['status' => 'Suspended']);
         }
 
         return response()->json([
@@ -267,7 +293,7 @@ class ServiceAlertController extends Controller
      * Resolve the specified service alert and notify affected parties.
      * Issue 3.2.3: Notify commuters/drivers on suspension/resolution
      */
-    public function resolve($id)
+    public function resolve(Request $request, $id)
     {
         if (auth()->user()->role !== 'admin') {
             return response()->json([
@@ -276,25 +302,43 @@ class ServiceAlertController extends Controller
             ], 403);
         }
         $alert = ServiceAlert::findOrFail($id);
+
+        $isConfirmed = $request->boolean('confirm')
+            || $request->boolean('confirm_active_trips')
+            || $request->input('confirm') === 'true'
+            || $request->input('confirm') === 1;
+
+        if ($alert->suspend_route && ! $isConfirmed) {
+            $routeNames = $this->alertSuspensionRouteNames($alert);
+            $routeIds = Route::whereIn('name', $routeNames)->pluck('id')->all();
+
+            if (! empty($routeIds)) {
+                $ongoingTripsCount = Trip::whereIn('route_id', $routeIds)
+                    ->where('status', 'ongoing')
+                    ->count();
+
+                if ($ongoingTripsCount > 0) {
+                    $tripText = $ongoingTripsCount === 1 ? '1 ongoing trip' : "{$ongoingTripsCount} ongoing trips";
+                    $message = "This route still has {$tripText}. Resolving the suspension will allow new dispatches. Continue?";
+
+                    return response()->json([
+                        'success' => false,
+                        'requiresConfirmation' => true,
+                        'remainingActiveTrips' => $ongoingTripsCount,
+                        'message' => $message,
+                    ], 200);
+                }
+            }
+        }
+
         $alert->update([
             'status' => 'resolved',
             'updated_at' => Carbon::now()
         ]);
 
         if ($alert->suspend_route && !empty($alert->affected_routes)) {
-            $affectedRoutes = explode(',', $alert->affected_routes);
-            foreach ($affectedRoutes as $routeName) {
-                $otherActiveSuspensionExists = ServiceAlert::where('status', 'active')
-                    ->where('id', '!=', $alert->id)
-                    ->where('suspend_route', true)
-                    ->where(function($q) use ($routeName) {
-                        $q->where('affected_routes', $routeName)
-                          ->orWhere('affected_routes', 'like', $routeName . ',%')
-                          ->orWhere('affected_routes', 'like', '%,' . $routeName)
-                          ->orWhere('affected_routes', 'like', '%,' . $routeName . ',%');
-                    })
-                    ->exists();
-                if (!$otherActiveSuspensionExists) {
+            foreach ($this->alertSuspensionRouteNames($alert) as $routeName) {
+                if (! $this->otherActiveSuspensionExistsForRoute($routeName, $alert->id)) {
                     Route::where('name', $routeName)->update(['status' => 'Active']);
                 }
             }
@@ -340,19 +384,8 @@ class ServiceAlertController extends Controller
             ]);
 
             if ($alert->suspend_route && !empty($alert->affected_routes)) {
-                $affectedRoutes = explode(',', $alert->affected_routes);
-                foreach ($affectedRoutes as $routeName) {
-                    $otherActiveSuspensionExists = ServiceAlert::where('status', 'active')
-                        ->where('id', '!=', $alert->id)
-                        ->where('suspend_route', true)
-                        ->where(function($q) use ($routeName) {
-                            $q->where('affected_routes', $routeName)
-                              ->orWhere('affected_routes', 'like', $routeName . ',%')
-                              ->orWhere('affected_routes', 'like', '%,' . $routeName)
-                              ->orWhere('affected_routes', 'like', '%,' . $routeName . ',%');
-                        })
-                        ->exists();
-                    if (!$otherActiveSuspensionExists) {
+                foreach ($this->alertSuspensionRouteNames($alert) as $routeName) {
+                    if (! $this->otherActiveSuspensionExistsForRoute($routeName, $alert->id)) {
                         Route::where('name', $routeName)->update(['status' => 'Active']);
                     }
                 }
@@ -376,26 +409,234 @@ class ServiceAlertController extends Controller
         ]);
     }
 
+    public function historyLogs()
+    {
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins can view alert history'
+            ], 403);
+        }
+
+        $logs = ServiceAlertLog::orderByDesc('archived_at')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (ServiceAlertLog $log) => [
+                'id' => $log->id,
+                'service_alert_id' => $log->service_alert_id,
+                'title' => $log->title,
+                'message' => $log->message,
+                'type' => $log->type,
+                'severity' => $log->severity,
+                'affected_routes' => $this->splitAffectedRoutes($log->affected_routes),
+                'status' => $log->status,
+                'suspend_route' => (bool) $log->suspend_route,
+                'alert_created_at' => $log->alert_created_at?->toJSON(),
+                'resolved_at' => $log->resolved_at?->toJSON(),
+                'archived_at' => $log->archived_at?->toJSON(),
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'history' => $logs,
+        ]);
+    }
+
     /**
-     * Remove the specified service alert.
+     * Archive the specified service alert.
      */
     public function destroy($id)
     {
         if (auth()->user()->role !== 'admin') {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthorized: Only admins can delete alerts'
+                'message' => 'Unauthorized: Only admins can archive alerts'
             ], 403);
         }
-        $alert = ServiceAlert::findOrFail($id);
-        $alert->delete();
+
+        $alert = ServiceAlert::find($id);
+
+        if (! $alert) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Service Alert was already archived or no longer exists.',
+            ], 404);
+        }
+
+        if ($alert->status === 'active' && (bool) $alert->suspend_route) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Operational suspension alerts must be resolved before they can be archived.',
+                'errors' => [
+                    'alert' => ['Operational suspension alerts must be resolved before they can be archived.'],
+                ],
+            ], 422);
+        }
+
+        DB::transaction(function () use ($id) {
+            $alert = ServiceAlert::whereKey($id)->lockForUpdate()->firstOrFail();
+
+            ServiceAlertLog::firstOrCreate(
+                ['service_alert_id' => $alert->id],
+                [
+                    'title' => $alert->title,
+                    'message' => $alert->message,
+                    'type' => $alert->type,
+                    'severity' => $alert->severity,
+                    'affected_routes' => $alert->affected_routes,
+                    'status' => $alert->status,
+                    'suspend_route' => (bool) $alert->suspend_route,
+                    'alert_created_at' => $alert->created_at,
+                    'resolved_at' => $alert->status === 'resolved' ? $alert->updated_at : null,
+                    'archived_at' => Carbon::now(),
+                ]
+            );
+
+            $alert->delete();
+        });
 
         return response()->json([
             'success' => true,
-            'message' => 'Alert successfully deleted!'
+            'message' => 'Alert successfully archived!'
         ]);
     }
 
+    private function normalizePublicAlertTargets(array $affects): array
+    {
+        $allOfficialLabel = $this->allOfficialRoutesLabel();
+        $canonicalRoutes = Route::canonicalProduction()
+            ->whereNotIn('status', ['inactive', 'Inactive'])
+            ->get(['id', 'name'])
+            ->keyBy('name');
+        $canonicalNames = $canonicalRoutes->keys()->all();
+        $adminRoutes = $this->adminAlertTargetRoutes()->keyBy('name');
+
+        $requested = collect($affects)
+            ->map(fn ($routeName) => trim((string) $routeName))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($requested->isEmpty()) {
+            throw ValidationException::withMessages([
+                'affects' => 'Select at least one official route target.',
+            ]);
+        }
+
+        $containsAllOfficial = $requested->contains(fn ($routeName) => strcasecmp($routeName, $allOfficialLabel) === 0 || strcasecmp($routeName, 'All routes') === 0 || strcasecmp($routeName, 'All Routes') === 0);
+
+        if ($containsAllOfficial) {
+            return [
+                'stored_affects' => [$allOfficialLabel],
+                'suspension_route_names' => $canonicalNames,
+                'route_id' => null,
+            ];
+        }
+
+        $invalidTargets = $requested->reject(fn ($routeName) => $adminRoutes->has($routeName))->values();
+        if ($invalidTargets->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'affects' => 'Service alert targeting is limited to official Route 1, Route 2, Route 3, and the active UAT suspend-route fixture when present.',
+            ]);
+        }
+
+        return [
+            'stored_affects' => $requested->all(),
+            'suspension_route_names' => $requested->all(),
+            'route_id' => $requested->count() === 1 ? $adminRoutes->get($requested->first())->id : null,
+        ];
+    }
+
+    private function validateSuspensionPolicy(array $validated, ?ServiceAlert $existingAlert = null): void
+    {
+        $routeSuspensionRequested = !empty($validated['suspend_route']) || ($existingAlert?->suspend_route ?? false);
+
+        if (! $routeSuspensionRequested) {
+            return;
+        }
+
+        if (! $this->allowsRouteSuspension((string) $validated['type'], (string) $validated['severity'])) {
+            throw ValidationException::withMessages([
+                'suspend_route' => 'Suspend Route is allowed only for Suspension alerts, Emergency or High emergency alerts, and Emergency-severity weather, breakdown, or delay alerts.',
+            ]);
+        }
+    }
+
+    private function allowsRouteSuspension(string $type, string $severity): bool
+    {
+        $normalizedType = strtolower(str_replace([' ', '-'], '_', trim($type)));
+        $normalizedSeverity = strtolower(trim($severity));
+
+        return match ($normalizedType) {
+            'suspension' => true,
+            'weather', 'breakdown', 'delay' => $normalizedSeverity === 'emergency',
+            'emergency' => in_array($normalizedSeverity, ['high', 'emergency'], true),
+            default => false,
+        };
+    }
+
+    private function adminAlertTargetRoutes()
+    {
+        $canonical = Route::canonicalProduction()
+            ->whereNotIn('status', ['inactive', 'Inactive'])
+            ->orderBy('id')
+            ->get(['id', 'name', 'status']);
+
+        $uatRoute = Route::where('name', UATSuspendRouteFixtureSeeder::ROUTE_NAME)
+            ->whereNotIn('status', ['inactive', 'Inactive'])
+            ->first(['id', 'name', 'status']);
+
+        return $uatRoute
+            ? $canonical->push($uatRoute)->unique('id')->values()
+            : $canonical->values();
+    }
+
+    private function splitAffectedRoutes(?string $affectedRoutes): array
+    {
+        return collect(explode(',', (string) $affectedRoutes))
+            ->map(fn ($routeName) => trim($routeName))
+            ->filter()
+            ->values()
+            ->all();
+    }
+    private function alertSuspensionRouteNames(ServiceAlert $alert): array
+    {
+        $affectedRoutes = collect(explode(',', (string) $alert->affected_routes))
+            ->map(fn ($routeName) => trim($routeName))
+            ->filter()
+            ->values();
+
+        if ($affectedRoutes->contains(fn ($routeName) => strcasecmp($routeName, $this->allOfficialRoutesLabel()) === 0 || strcasecmp($routeName, 'All routes') === 0 || strcasecmp($routeName, 'All Routes') === 0)) {
+            return Route::canonicalProduction()
+                ->whereNotIn('status', ['inactive', 'Inactive'])
+                ->pluck('name')
+                ->all();
+        }
+
+        return $affectedRoutes->all();
+    }
+
+    private function otherActiveSuspensionExistsForRoute(string $routeName, int $excludedAlertId): bool
+    {
+        return ServiceAlert::where('status', 'active')
+            ->where('id', '!=', $excludedAlertId)
+            ->where('suspend_route', true)
+            ->where(function ($q) use ($routeName) {
+                $q->where('affected_routes', $routeName)
+                    ->orWhere('affected_routes', $this->allOfficialRoutesLabel())
+                    ->orWhere('affected_routes', 'All routes')
+                    ->orWhere('affected_routes', 'All Routes')
+                    ->orWhere('affected_routes', 'like', $routeName . ',%')
+                    ->orWhere('affected_routes', 'like', '%,' . $routeName)
+                    ->orWhere('affected_routes', 'like', '%,' . $routeName . ',%');
+            })
+            ->exists();
+    }
+
+    private function allOfficialRoutesLabel(): string
+    {
+        return 'All official routes';
+    }
     /**
      * Show the service alerts history page.
      */
@@ -404,3 +645,4 @@ class ServiceAlertController extends Controller
         return redirect(route('admin.dashboard') . '#alerts-history');
     }
 }
+

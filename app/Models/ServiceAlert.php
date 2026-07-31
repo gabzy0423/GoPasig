@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ServiceAlert extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'service_alerts';
 
@@ -31,6 +32,30 @@ class ServiceAlert extends Model
         return $query->where('status', 'active')->where('created_at', '<=', now());
     }
 
+
+    public function scopePublicCommuterVisible($query)
+    {
+        $canonicalRouteIds = Route::publicCommuterVisible()->pluck('id')->all();
+        $canonicalRouteNames = Route::canonicalProductionNames();
+
+        return $query->where(function ($visibility) use ($canonicalRouteIds, $canonicalRouteNames) {
+            $visibility->whereIn('route_id', $canonicalRouteIds)
+                ->orWhere(function ($globalOrNamed) use ($canonicalRouteNames) {
+                    $globalOrNamed->whereNull('route_id')
+                        ->where(function ($routeText) use ($canonicalRouteNames) {
+                            $routeText->whereNull('affected_routes')
+                                ->orWhere('affected_routes', '')
+                                ->orWhere('affected_routes', 'All Routes')
+                                ->orWhere('affected_routes', 'All routes')
+                                ->orWhere('affected_routes', 'All official routes');
+
+                            foreach ($canonicalRouteNames as $routeName) {
+                                $routeText->orWhere('affected_routes', 'like', '%' . $routeName . '%');
+                            }
+                        });
+                });
+        });
+    }
     public function route()
     {
         return $this->belongsTo(Route::class);
@@ -41,3 +66,4 @@ class ServiceAlert extends Model
         return $this->hasMany(ServiceAlertRead::class, 'service_alert_id');
     }
 }
+

@@ -9,29 +9,30 @@ use App\Http\Controllers\Admin\BusController as AdminBusController;
 use App\Http\Controllers\Admin\DriverController as AdminDriverController;
 use App\Http\Controllers\Admin\ScheduleController as AdminScheduleController;
 use App\Http\Controllers\Admin\RouteController as AdminRouteController;
+use App\Http\Controllers\Admin\RouteServiceScheduleController as AdminRouteServiceScheduleController;
 use App\Http\Controllers\Admin\StopController as AdminStopController;
 use App\Http\Controllers\Admin\MaintenanceController as AdminMaintenanceController;
 use App\Http\Controllers\Admin\ServiceAlertController as AdminServiceAlertController;
+use App\Http\Controllers\Admin\ProfileController as AdminProfileController;
 use App\Http\Controllers\Fleet\FleetController;
 use App\Http\Controllers\Fleet\DriverPerformanceController;
 use App\Http\Controllers\Fleet\RoutePerformanceController;
 use App\Http\Controllers\Fleet\ScheduleComplianceController;
 use App\Http\Controllers\Fleet\IncidentController;
 use App\Http\Controllers\Fleet\MaintenanceManagementController;
-use App\Http\Controllers\Fleet\AnnouncementController;
 use App\Http\Controllers\Fleet\AnalyticsController as FleetAnalyticsController;
 use App\Http\Controllers\Fleet\DispatchIntelligenceController;
+use App\Http\Controllers\Fleet\ProfileController as FleetProfileController;
 use App\Http\Controllers\Driver\DriverController;
 
 
-Route::redirect('/', '/login');
+Route::redirect('/', '/commuter/dashboard')->middleware('commuter_session');
 
-Route::get('/autologin-dispatcher', [LoginController::class, 'autoLoginDispatcher']);
+Route::get('/autologin-fleet-manager', [LoginController::class, 'autoLoginFleetManager']);
 
 Route::get('/login', [LoginController::class, 'index'])->name('login');
 Route::post('/login', [LoginController::class, 'authenticate']);
 Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
-Route::get('/logout', [LoginController::class, 'logout']);
 
 Route::prefix('commuter')->middleware('commuter_session')->name('commuter.')->group(function () {
     Route::redirect('/', '/commuter/dashboard')->name('index');
@@ -66,6 +67,13 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::get('/maintenance/{id}', [AdminMaintenanceController::class, 'showPage'])->name('maintenance.show');
     Route::get('/maintenance/{id}/edit', [AdminMaintenanceController::class, 'editPage'])->name('maintenance.edit');
     Route::get('/alerts/history', [AdminServiceAlertController::class, 'history'])->name('alerts.history');
+
+    // Admin Profile Management (Phase 1, Phase 3, Phase 4)
+    Route::get('/api/profile', [AdminProfileController::class, 'show'])->name('api.profile.show');
+    Route::put('/api/profile', [AdminProfileController::class, 'update'])->name('api.profile.update');
+    Route::post('/api/profile/photo', [AdminProfileController::class, 'uploadPhoto'])->name('api.profile.photo.upload');
+    Route::delete('/api/profile/photo', [AdminProfileController::class, 'deletePhoto'])->name('api.profile.photo.delete');
+    Route::put('/api/profile/password', [AdminProfileController::class, 'updatePassword'])->name('api.profile.password.update');
 });
 
 // Admin API Routes (Protected by Auth, role checks done inside controllers)
@@ -87,8 +95,11 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::delete('/api/drivers/{driver}', [AdminDriverController::class, 'destroy'])->name('api.drivers.destroy');
     Route::post('/api/drivers/{driver}/suspend', [AdminDriverController::class, 'toggleSuspend'])->name('api.drivers.suspend');
 
+    Route::get('/api/route-service-schedules', [AdminRouteServiceScheduleController::class, 'index'])->name('api.route-service-schedules.index');
+    Route::get('/api/route-service-schedules/{routeServiceSchedule}', [AdminRouteServiceScheduleController::class, 'show'])->name('api.route-service-schedules.show');
     Route::get('/api/schedules', [AdminScheduleController::class, 'index'])->name('api.schedules.index');
     Route::get('/api/schedules/dispatch-queue/today', [AdminScheduleController::class, 'getTodayDispatchQueue'])->name('api.schedules.dispatch-queue.today');
+    Route::post('/api/schedules/{schedule}/dispatch', [AdminScheduleController::class, 'dispatch'])->name('api.schedules.dispatch');
     Route::post('/api/schedules', [AdminScheduleController::class, 'store'])->name('api.schedules.store');
     Route::put('/api/schedules/{schedule}', [AdminScheduleController::class, 'update'])->name('api.schedules.update');
     Route::patch('/api/schedules/{schedule}/status', [AdminScheduleController::class, 'updateStatus'])->name('api.schedules.status');
@@ -105,6 +116,15 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::post('/api/routes/{route}/accept-preview', [AdminRouteController::class, 'acceptPreview'])->name('api.routes.geometry.accept_preview');
     Route::post('/api/routes/{route}/reject-preview', [AdminRouteController::class, 'rejectPreview'])->name('api.routes.geometry.reject_preview');
     Route::post('/api/routes/{route}/advanced-analysis', [AdminRouteController::class, 'runAdvancedAnalysis'])->name('api.routes.geometry.advanced_analysis');
+    Route::post('/api/route-variants/{routeVariant}/generate-preview', [\App\Http\Controllers\Admin\RouteVariantGeometryController::class, 'generatePreview'])->name('api.route-variants.geometry.generate_preview');
+    Route::post('/api/route-variants/{routeVariant}/accept-preview', [\App\Http\Controllers\Admin\RouteVariantGeometryController::class, 'acceptPreview'])->name('api.route-variants.geometry.accept_preview');
+    Route::post('/api/route-variants/{routeVariant}/reject-preview', [\App\Http\Controllers\Admin\RouteVariantGeometryController::class, 'rejectPreview'])->name('api.route-variants.geometry.reject_preview');
+    Route::get('/api/route-variants/{routeVariant}/geometry/history', [\App\Http\Controllers\Admin\RouteVariantGeometryController::class, 'history'])->name('api.route-variants.geometry.history');
+    Route::get('/api/route-variants/{routeVariant}/stops', [App\Http\Controllers\Admin\RouteVariantStopCoordinateController::class, 'index'])->name('api.route-variants.stops.index');
+    Route::patch('/api/route-variants/{routeVariant}/stops/{routeVariantStop}/coordinates', [App\Http\Controllers\Admin\RouteVariantStopCoordinateController::class, 'saveCandidate'])->name('api.route-variants.stops.coordinates');
+    Route::post('/api/route-variants/{routeVariant}/stops/{routeVariantStop}/verify', [App\Http\Controllers\Admin\RouteVariantStopCoordinateController::class, 'verify'])->name('api.route-variants.stops.verify');
+    Route::post('/api/route-variants/{routeVariant}/stops/{routeVariantStop}/reject', [App\Http\Controllers\Admin\RouteVariantStopCoordinateController::class, 'reject'])->name('api.route-variants.stops.reject');
+    Route::get('/api/service-alert-target-routes', [AdminServiceAlertController::class, 'targetingRoutes'])->name('api.alerts.target-routes');
     Route::get('/api/routes/telemetry', [AdminRouteController::class, 'getTelemetry'])->name('api.routes.telemetry');
 
     Route::post('/api/stops', [AdminStopController::class, 'store'])->name('api.stops.store');
@@ -122,6 +142,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::delete('/api/maintenance/{id}', [AdminMaintenanceController::class, 'destroy'])->name('api.maintenance.destroy');
 
     Route::get('/api/alerts', [AdminServiceAlertController::class, 'index'])->name('api.alerts.index');
+    Route::get('/api/alerts/history', [AdminServiceAlertController::class, 'historyLogs'])->name('api.alerts.history');
     Route::post('/api/alerts', [AdminServiceAlertController::class, 'store'])->name('api.alerts.store');
     Route::put('/api/alerts/{id}', [AdminServiceAlertController::class, 'update'])->name('api.alerts.update');
     Route::delete('/api/alerts/{id}', [AdminServiceAlertController::class, 'destroy'])->name('api.alerts.destroy');
@@ -129,8 +150,8 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::post('/api/alerts/resolve-all', [AdminServiceAlertController::class, 'resolveAll'])->name('api.alerts.resolve-all');
 });
 
-// Fleet / Dispatcher Dashboard (Protected)
-Route::middleware(['auth', 'role:dispatcher'])->prefix('fleet')->name('fleet.')->group(function () {
+// Fleet / Fleet Operations Manager Dashboard (Protected)
+Route::middleware(['auth', 'role:fleet_manager'])->prefix('fleet')->name('fleet.')->group(function () {
     Route::get('/dashboard', [FleetController::class, 'dashboard'])->name('dashboard');
     Route::get('/api/overview-data', [FleetController::class, 'getOverviewData'])->name('api.overview-data');
     Route::post('/api/incidents', [FleetController::class, 'submitIncident'])->name('api.incidents.store');
@@ -179,12 +200,6 @@ Route::middleware(['auth', 'role:dispatcher'])->prefix('fleet')->name('fleet.')-
     Route::delete('/api/maintenance-delete/{id}', [MaintenanceManagementController::class, 'destroy'])->name('api.maintenance-delete');
     Route::get('/api/maintenance-export', [MaintenanceManagementController::class, 'exportCsv'])->name('api.maintenance-export');
 
-    Route::get('/announcements', fn() => redirect()->route('fleet.dashboard', ['tab' => 'announcements']))->name('announcements');
-    Route::get('/api/announcements-data', [AnnouncementController::class, 'getAnnouncementsData'])->name('api.announcements-data');
-    Route::get('/api/announcements-details/{id}', [AnnouncementController::class, 'getDetails'])->name('api.announcements-details');
-    Route::post('/api/announcements-store', [AnnouncementController::class, 'storeOrUpdate'])->name('api.announcements-store');
-    Route::delete('/api/announcements-delete/{id}', [AnnouncementController::class, 'destroy'])->name('api.announcements-delete');
-
     Route::get('/analytics', fn() => redirect()->route('fleet.dashboard', ['tab' => 'analytics']))->name('analytics');
     Route::get('/api/analytics-data', [FleetAnalyticsController::class, 'getAnalyticsData'])->name('api.analytics-data');
     Route::get('/api/analytics-export', [FleetAnalyticsController::class, 'exportCsv'])->name('api.analytics-export');
@@ -206,6 +221,15 @@ Route::middleware(['auth', 'role:dispatcher'])->prefix('fleet')->name('fleet.')-
     Route::get('/api/bus-gps-positions', [FleetController::class, 'getBusGpsPositions'])->name('api.bus-gps-positions');
 });
 
+// Fleet Manager Profile Management
+Route::middleware(['auth', 'role:fleet_manager'])->prefix('fleet')->name('fleet.')->group(function () {
+    Route::get('/api/profile', [FleetProfileController::class, 'show'])->name('api.profile.show');
+    Route::put('/api/profile', [FleetProfileController::class, 'update'])->name('api.profile.update');
+    Route::post('/api/profile/photo', [FleetProfileController::class, 'uploadPhoto'])->name('api.profile.photo.upload');
+    Route::delete('/api/profile/photo', [FleetProfileController::class, 'deletePhoto'])->name('api.profile.photo.delete');
+    Route::put('/api/profile/password', [FleetProfileController::class, 'updatePassword'])->name('api.profile.password.update');
+});
+
 // Driver Dashboard (Protected)
 Route::middleware(['auth', 'role:driver'])->prefix('driver')->name('driver.')->group(function () {
     Route::get('/', [DriverController::class, 'index'])->name('index');
@@ -216,8 +240,13 @@ Route::middleware(['auth', 'role:driver'])->prefix('driver')->name('driver.')->g
 
     // Dynamic endpoints for driver real-time actions
     Route::post('/trip/toggle', [DriverController::class, 'toggleTrip'])->name('trip.toggle');
+    Route::post('/trip/next', [DriverController::class, 'startNextTrip'])->name('trip.next');
     Route::post('/trip/incident', [DriverController::class, 'reportIncident'])->name('trip.incident');
     Route::post('/trip/pax', [DriverController::class, 'updatePassengers'])->name('trip.pax');
     Route::post('/trip/stop', [DriverController::class, 'updateStop'])->name('trip.stop');
     Route::post('/trip/gps', [DriverController::class, 'updateGPS'])->middleware('throttle:15,1')->name('trip.gps');
 });
+
+
+
+

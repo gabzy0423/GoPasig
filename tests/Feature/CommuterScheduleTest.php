@@ -4,11 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\Bus;
 use App\Models\Driver;
-use App\Models\Schedule;
 use App\Models\Route;
+use App\Models\RouteServiceSchedule;
+use App\Models\RouteVariant;
+use App\Models\Schedule;
 use App\Models\Stop;
-use App\Models\SystemSetting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -16,90 +18,157 @@ class CommuterScheduleTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_commuter_schedule_maps_customized_status_labels(): void
+    public function test_public_commuter_schedule_reads_route_service_schedules_by_direction(): void
     {
-        // Set custom status labels in System Settings
-        SystemSetting::create(['key' => 'db_status_ontime_label', 'value' => 'On Time (Punctual)']);
-        SystemSetting::create(['key' => 'db_status_delayed_label', 'value' => 'Delayed (Late)']);
-        SystemSetting::create(['key' => 'db_status_cancelled_label', 'value' => 'Cancelled (No Service)']);
+        [$route1, $route1Outbound, $route1Inbound] = $this->canonicalRouteWithDirections('Route 1', 'SPED', 'Ligaya');
+        [$route2, $route2Outbound, $route2Inbound] = $this->canonicalRouteWithDirections('Route 2', 'San Joaquin', 'Ortigas');
+        [$route3] = $this->canonicalRouteWithDirections('Route 3', 'Pasig City Hall', 'Rosario');
+        [$legacyRoute, $legacyOutbound] = $this->routeWithDirections('Route A', 'Legacy Origin', 'Legacy Destination');
+        [$uatRoute, $uatOutbound] = $this->routeWithDirections('PHASE3C-UAT Point-to-Point A-B', 'UAT A', 'UAT B');
 
-        // Create a test route
-        $route = Route::create([
-            'name' => 'Route A',
-            'description' => 'Test Route A Description',
-            'polyline_coordinates' => [[14.5690, 121.0680]],
-            'status' => 'Active',
+        RouteServiceSchedule::create([
+            'route_id' => $route1->id,
+            'route_variant_id' => $route1Outbound->id,
+            'first_trip_time' => '05:30',
+            'last_trip_time' => '17:00',
+            'service_configuration' => 'continuous',
+            'service_days' => ['mon', 'tue', 'wed', 'thu', 'fri'],
+            'is_active' => true,
+            'source' => 'beneficiary_official',
         ]);
 
-        // Create a bus
-        $bus = Bus::create([
-            'plate_number' => 'PAS-123',
-            'status' => 'inactive',
-            'capacity' => 45,
-            'lat' => 14.5690,
-            'lng' => 121.0680,
-            'speed' => 0,
-            'passengers' => 0,
+        RouteServiceSchedule::create([
+            'route_id' => $route1->id,
+            'route_variant_id' => $route1Inbound->id,
+            'first_trip_time' => '06:00',
+            'last_trip_time' => '18:00',
+            'service_configuration' => 'continuous',
+            'service_days' => ['mon', 'tue', 'wed', 'thu', 'fri'],
+            'is_active' => true,
+            'source' => 'beneficiary_official',
+            'effective_from' => '2026-07-01',
+            'effective_until' => '2026-12-31',
         ]);
 
-        // Create a driver
-        $driver = Driver::create([
-            'emp_id' => 'EMP-0021',
-            'first_name' => 'Juan',
-            'last_name' => 'Dela Cruz',
-            'license_number' => 'N01-23-456789',
-            'license_expiry' => '2027-12-12',
-            'status' => 'inactive',
+        RouteServiceSchedule::create([
+            'route_id' => $route2->id,
+            'route_variant_id' => $route2Outbound->id,
+            'first_trip_time' => '07:00',
+            'last_trip_time' => '16:30',
+            'service_configuration' => 'continuous',
+            'service_days' => ['sat', 'sun'],
+            'is_active' => false,
+            'source' => 'beneficiary_official',
         ]);
 
-        // Create test schedules with matching custom status values
-        $schedule1 = Schedule::create([
-            'route_id' => $route->id,
+        RouteServiceSchedule::create([
+            'route_id' => $legacyRoute->id,
+            'route_variant_id' => $legacyOutbound->id,
+            'first_trip_time' => '01:00',
+            'last_trip_time' => '02:00',
+            'service_configuration' => 'continuous',
+            'service_days' => ['mon'],
+            'is_active' => true,
+            'source' => 'beneficiary_official',
+        ]);
+
+        RouteServiceSchedule::create([
+            'route_id' => $uatRoute->id,
+            'route_variant_id' => $uatOutbound->id,
+            'first_trip_time' => '03:00',
+            'last_trip_time' => '04:00',
+            'service_configuration' => 'continuous',
+            'service_days' => ['mon'],
+            'is_active' => true,
+            'source' => 'beneficiary_official',
+        ]);
+
+        $bus = Bus::factory()->create(['plate_number' => 'BUS-LEGACY']);
+        $driver = Driver::factory()->create();
+        Schedule::create([
+            'route_id' => $route1->id,
+            'route_variant_id' => $route1Outbound->id,
             'bus_id' => $bus->id,
             'driver_id' => $driver->id,
-            'departure_time' => '08:00:00',
+            'departure_time' => '08:15:00',
             'arrival_time' => '09:00:00',
-            'status' => 'On Time (Punctual)',
-            'delay_minutes' => 0,
+            'status' => 'Delayed',
+            'delay_minutes' => 12,
         ]);
 
-        $schedule2 = Schedule::create([
+        $component = Livewire::test('commuter.commuter-schedule')
+            ->assertSee('Route 1')
+            ->assertSee('Route 2')
+            ->assertSee('Route 3')
+            ->assertSee('Outbound')
+            ->assertSee('SPED')
+            ->assertSee('Ligaya')
+            ->assertSee('5:30 AM')
+            ->assertSee('5:00 PM')
+            ->assertSee('Inbound')
+            ->assertSee('6:00 AM')
+            ->assertSee('6:00 PM')
+            ->assertSee('Monday - Friday')
+            ->assertSee('Continuous')
+            ->assertSee('Active')
+            ->assertSee('Inactive')
+            ->assertSee('2026-07-01 to 2026-12-31')
+            ->assertSee('Beneficiary Official')
+            ->assertSee('Official operating hours not configured')
+            ->assertDontSee('Route A')
+            ->assertDontSee('PHASE3C-UAT')
+            ->assertDontSee('1:00 AM')
+            ->assertDontSee('3:00 AM')
+            ->assertDontSee('BUS-LEGACY')
+            ->assertDontSee($driver->name)
+            ->assertDontSee('8:15 AM')
+            ->assertDontSee('Delayed')
+            ->assertDontSee('On time')
+            ->assertDontSee('Cancelled');
+
+        $serviceRoutes = $component->viewData('serviceRoutes');
+        $route1Directions = collect($serviceRoutes)->firstWhere('name', 'Route 1')['directions'];
+
+        $this->assertSame(['outbound', 'inbound'], collect($route1Directions)->pluck('direction')->all());
+        $this->assertSame('5:30 AM', $route1Directions[0]['first_trip_time']);
+        $this->assertSame('6:00 PM', $route1Directions[1]['last_trip_time']);
+
+        $route2Directions = collect($serviceRoutes)->firstWhere('name', 'Route 2')['directions'];
+        $this->assertSame('Missing Configuration', $route2Directions[1]['status_label']);
+    }
+
+    public function test_public_commuter_schedule_page_is_guest_accessible_without_trip_slot_fields(): void
+    {
+        [$route, $outbound] = $this->canonicalRouteWithDirections('Route 1', 'SPED', 'Ligaya');
+
+        RouteServiceSchedule::create([
             'route_id' => $route->id,
-            'bus_id' => $bus->id,
-            'driver_id' => $driver->id,
-            'departure_time' => '14:00:00',
-            'arrival_time' => '15:00:00',
-            'status' => 'Delayed (Late)',
-            'delay_minutes' => 15,
+            'route_variant_id' => $outbound->id,
+            'first_trip_time' => '05:30',
+            'last_trip_time' => '17:00',
+            'service_configuration' => 'continuous',
+            'service_days' => ['mon', 'tue', 'wed', 'thu', 'fri'],
+            'is_active' => true,
+            'source' => 'beneficiary_official',
         ]);
 
-        $schedule3 = Schedule::create([
-            'route_id' => $route->id,
-            'bus_id' => $bus->id,
-            'driver_id' => $driver->id,
-            'departure_time' => '18:00:00',
-            'arrival_time' => '19:00:00',
-            'status' => 'Cancelled (No Service)',
-            'delay_minutes' => 0,
-        ]);
+        $response = $this->get('/commuter/schedule');
 
-        // Test the Livewire component maps these correctly
-        Livewire::test('commuter.commuter-schedule')
-            ->assertSee('On time') // Renders mapped status representation in list
-            ->assertSee('Delayed')
-            ->assertSee('Cancelled')
-            ->call('selectTrip', $schedule1->id)
-            ->assertSet('selectedTrip.status', 'on_time')
-            ->call('selectTrip', $schedule2->id)
-            ->assertSet('selectedTrip.status', 'delayed')
-            ->assertSet('selectedTrip.delay_minutes', 15)
-            ->call('selectTrip', $schedule3->id)
-            ->assertSet('selectedTrip.status', 'cancelled');
+        $response->assertOk();
+        $response->assertCookie('commuter_session_token');
+        $response->assertSee('Official operating windows by route direction');
+        $response->assertSee('First Trip');
+        $response->assertSee('Last Trip');
+        $response->assertDontSee('Bus assigned');
+        $response->assertDontSee('Driver assigned');
+        $response->assertDontSee('Departure Time');
+        $response->assertDontSee('Estimated Arrival Time');
+        $response->assertDontSee('Trip details');
+        $response->assertDontSee('Set arrival alert');
     }
 
     public function test_offsets_respect_database_segment_weights(): void
     {
-        // 1. Create a route
         $route = Route::create([
             'name' => 'Route B',
             'description' => 'Test Route B',
@@ -107,10 +176,6 @@ class CommuterScheduleTest extends TestCase
             'status' => 'Active',
         ]);
 
-        // 2. Create 3 stops with distinct segment weights:
-        // Stop 1: sequence 1, weight null (origin)
-        // Stop 2: sequence 2, weight 1.0
-        // Stop 3: sequence 3, weight 3.0
         $stop1 = Stop::create([
             'route_id' => $route->id,
             'name' => 'Stop 1',
@@ -138,14 +203,7 @@ class CommuterScheduleTest extends TestCase
             'segment_weight' => 3.0,
         ]);
 
-        $stops = collect([$stop1, $stop2, $stop3]);
-        
-        // Duration: 40 minutes.
-        // segment 1->2 has weight 1.0. Segment 2->3 has weight 3.0.
-        // Total weight = 4.0.
-        // Offset at Stop 2: 1/4 * 40 = 10 minutes.
-        // Offset at Stop 3: (1+3)/4 * 40 = 40 minutes.
-        $offsets = Stop::getDistanceWeightedOffsets($stops, 40.0);
+        $offsets = Stop::getDistanceWeightedOffsets(collect([$stop1, $stop2, $stop3]), 40.0);
 
         $this->assertEquals(0.0, $offsets[0]);
         $this->assertEquals(10.0, $offsets[1]);
@@ -154,7 +212,6 @@ class CommuterScheduleTest extends TestCase
 
     public function test_offsets_fallback_to_distance_when_segment_weights_missing(): void
     {
-        // 1. Create a route
         $route = Route::create([
             'name' => 'Route C',
             'description' => 'Test Route C',
@@ -162,9 +219,6 @@ class CommuterScheduleTest extends TestCase
             'status' => 'Active',
         ]);
 
-        // Stops at different coords
-        // Distance 1->2 is ~111km (1 deg lat). Distance 2->3 is ~111km (1 deg lat).
-        // If we set segment_weight to null, it should fallback to distance-weighted offsets
         $stop1 = Stop::create([
             'route_id' => $route->id,
             'name' => 'Stop 1',
@@ -192,13 +246,47 @@ class CommuterScheduleTest extends TestCase
             'segment_weight' => null,
         ]);
 
-        $stops = collect([$stop1, $stop2, $stop3]);
-        
-        $offsets = Stop::getDistanceWeightedOffsets($stops, 30.0);
+        $offsets = Stop::getDistanceWeightedOffsets(collect([$stop1, $stop2, $stop3]), 30.0);
 
-        // Since distances are equal (~111km each), it should distribute evenly: [0, 15, 30]
         $this->assertEquals(0.0, $offsets[0]);
         $this->assertEquals(15.0, $offsets[1]);
         $this->assertEquals(30.0, $offsets[2]);
     }
+
+    private function canonicalRouteWithDirections(string $name, string $origin, string $destination): array
+    {
+        return $this->routeWithDirections($name, $origin, $destination);
+    }
+
+    private function routeWithDirections(string $name, string $origin, string $destination): array
+    {
+        Cache::flush();
+
+        $route = Route::create([
+            'name' => $name,
+            'description' => $origin . ' to ' . $destination,
+            'status' => 'Active',
+            'color' => '#003F87',
+        ]);
+
+        $outbound = $this->variantFor($route, 'outbound', $origin, $destination);
+        $inbound = $this->variantFor($route, 'inbound', $destination, $origin);
+
+        return [$route, $outbound, $inbound];
+    }
+
+    private function variantFor(Route $route, string $direction, string $origin, string $destination): RouteVariant
+    {
+        return RouteVariant::create([
+            'route_id' => $route->id,
+            'direction' => $direction,
+            'origin_name' => $origin,
+            'destination_name' => $destination,
+            'polyline_coordinates' => [[14.5593, 121.0805], [14.5603, 121.0815]],
+            'geometry_version' => 1,
+            'geometry_status' => 'valid',
+            'is_default' => $direction === 'outbound',
+        ]);
+    }
 }
+

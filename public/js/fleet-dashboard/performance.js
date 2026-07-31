@@ -34,9 +34,9 @@ function formatNumber(num) {
     return new Intl.NumberFormat().format(num);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // 1. DRIVER PERFORMANCE MODULE
-// ─────────────────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 async function fetchDriversData() {
     const startDate = document.getElementById('driver-start-date')?.value || '';
@@ -199,7 +199,7 @@ function updateDriverTableDOM(drivers) {
             <td class="py-3 px-4 text-center font-mono-custom text-slate-700">${formatNumber(row.total_passengers_moved)}</td>
             <td class="py-3 px-4 text-center font-mono-custom">${incidentMarkup}</td>
             <td class="py-3 px-4 text-center font-mono-custom text-slate-700">
-                ${row.avg_trip_time_minutes > 0 ? row.avg_trip_time_minutes + ' min' : '—'}
+                ${row.avg_trip_time_minutes > 0 ? row.avg_trip_time_minutes + ' min' : 'Ã¢â‚¬â€'}
             </td>
             <td class="py-3 px-4 text-center">
                 <span class="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide ${scoreBg}">${row.performance_score}</span>
@@ -427,7 +427,7 @@ function renderDrawerData(driver, trips, incidents) {
             <div class="bg-slate-50 rounded p-3 flex flex-col justify-between">
                 <span class="text-[11px] text-slate-500 uppercase font-semibold">Avg trip duration</span>
                 <span class="text-[20px] font-semibold text-[#001F44] mt-1">
-                    ${driver.avg_trip_time_minutes > 0 ? driver.avg_trip_time_minutes + ' min' : '—'}
+                    ${driver.avg_trip_time_minutes > 0 ? driver.avg_trip_time_minutes + ' min' : 'Ã¢â‚¬â€'}
                 </span>
             </div>
         </div>
@@ -463,7 +463,7 @@ function closeDriverDrawer() {
 }
 
 async function messageDriverAction(driverId) {
-    const message = prompt("Enter the message to send to the driver:");
+    const message = await GoPasigUI.prompt("Enter the message to send to the driver:");
     if (!message || message.trim() === '') {
         return; // User cancelled or entered empty string
     }
@@ -579,9 +579,9 @@ function exportDriverReport() {
     window.location.href = `${window.FleetPerformanceConfig.driverExportUrl}?${queryParams.toString()}`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // 2. ROUTE PERFORMANCE MODULE
-// ─────────────────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 let activeRouteTab = 'all';
 let selectedDeviationTypes = [];
@@ -1136,66 +1136,60 @@ function exportRouteReport() {
     window.location.href = `${window.FleetPerformanceConfig.routeExportUrl}?${queryParams.toString()}`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // 3. INITIALIZATION & ROUTING OBSERVER
-// ─────────────────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 function setupSortingObservers() {
     // We bind sort listeners directly in table header elements onclick,
     // which simplifies MVC layout hooks.
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    // Detect which performance screen is active
+const fleetPerformanceInitialized = { drivers: false, routes: false };
 
-    // DRIVERS LOGIC INITIALIZATION
-    if (document.getElementById('metric-total-drivers')) {
-        // Init Driver Performance Distribution EChart
+function initFleetPerformanceModule(screenName = null) {
+    const shouldInitDrivers = (!screenName || screenName === 'drivers') && !fleetPerformanceInitialized.drivers && document.getElementById('metric-total-drivers');
+    const shouldInitRoutes = (!screenName || screenName === 'routes') && !fleetPerformanceInitialized.routes && document.getElementById('metric-trips-completed');
+
+    if (shouldInitDrivers) {
+        fleetPerformanceInitialized.drivers = true;
         if (window.GoPasigDriversInitialData) {
             initDriverScoreChart(window.GoPasigDriversInitialData);
         }
 
-        // Attach Drivers Filter Listeners
         ['driver-start-date', 'driver-end-date', 'driver-route-id', 'driver-status'].forEach(id => {
             document.getElementById(id)?.addEventListener('change', fetchDriversData);
         });
 
-        // Search Input Debounced Filter
         let searchDebounceTimeout = null;
-        document.getElementById('driver-search-input')?.addEventListener('input', (e) => {
+        document.getElementById('driver-search-input')?.addEventListener('input', () => {
             clearTimeout(searchDebounceTimeout);
             searchDebounceTimeout = setTimeout(fetchDriversData, 300);
         });
 
-        // Export Drivers Trigger
         document.getElementById('btn-export-drivers-csv')?.addEventListener('click', exportDriverReport);
     }
 
-    // ROUTES LOGIC INITIALIZATION
-    if (document.getElementById('metric-trips-completed')) {
-        // Init Route Regularity and Compliance ECharts
+    if (shouldInitRoutes) {
+        fleetPerformanceInitialized.routes = true;
         if (window.GoPasigRoutesInitialData) {
             allStopsData = window.GoPasigRoutesInitialData.stops;
             initRouteCharts(window.GoPasigRoutesInitialData.headway, window.GoPasigRoutesInitialData.schedule);
             renderStopPaginationControls();
         }
 
-        // Attach Routes Date Filter Listeners
         ['route-start-date', 'route-end-date'].forEach(id => {
             document.getElementById(id)?.addEventListener('change', fetchRoutesData);
         });
 
-        // Deviation Type Filter checkboxes
         document.querySelectorAll('.deviation-filter-checkbox').forEach(cb => {
-            cb.addEventListener('change', (e) => {
+            cb.addEventListener('change', () => {
                 toggleDeviationFilter(cb.value);
             });
         });
 
-        // Export Routes Trigger
         document.getElementById('btn-export-routes-csv')?.addEventListener('click', exportRouteReport);
 
-        // Click outside deviation filter dropdown to close it
         document.addEventListener('click', (e) => {
             const dropdown = document.getElementById('deviation-filter-dropdown');
             const toggleBtn = document.getElementById('btn-deviation-dropdown-toggle');
@@ -1204,7 +1198,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-});
+}
+
+window.initFleetPerformanceModule = initFleetPerformanceModule;
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => initFleetPerformanceModule(), { once: true });
+} else {
+    initFleetPerformanceModule();
+}
 
 // Single-page dashboard tab navigation visibility listener
 window.addEventListener('screen-shown', event => {

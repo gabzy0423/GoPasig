@@ -5,11 +5,15 @@ namespace App\Services;
 use App\Models\Bus;
 use App\Models\Driver;
 use App\Models\Route;
+use App\Models\RouteVariant;
+use App\Models\Schedule;
 use App\Models\Trip;
 use App\Validators\BusDispatchValidator;
 use App\Validators\DriverDispatchValidator;
+use App\Validators\RouteDispatchValidator;
 use App\Exceptions\DuplicateDispatchException;
 use App\Exceptions\ScheduleConflictException;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -23,9 +27,11 @@ class SimulationDispatchService
         Driver $driver,
         Route $route,
         ?int $dispatcherId = null,
-        string $notes = ''
+        string $notes = '',
+        ?RouteVariant $routeVariant = null,
+        ?Schedule $schedule = null
     ): Trip {
-        return DB::transaction(function () use ($bus, $driver, $route, $dispatcherId, $notes) {
+        return DB::transaction(function () use ($bus, $driver, $route, $dispatcherId, $notes, $routeVariant, $schedule) {
             // 1. Lock in the official global hierarchy sequence: Bus -> Driver
             $bus = Bus::where('id', $bus->id)->lockForUpdate()->first();
             $driver = Driver::where('id', $driver->id)->lockForUpdate()->first();
@@ -37,8 +43,12 @@ class SimulationDispatchService
             // 2. Validate availability using dedicated validators
             BusDispatchValidator::validate($bus);
             DriverDispatchValidator::validate($driver);
+            RouteDispatchValidator::validate($route);
 
-            // 3. Idempotency checks: verify no existing ongoing or dispatched trips
+            // 3. Resolve the service day before checking same-day runtime state.
+            $serviceDay = self::resolveServiceDay($schedule);
+
+            // 4. Idempotency checks: verify no existing ongoing or dispatched trips
             $busTripExists = Trip::where('bus_id', $bus->id)->whereIn('status', ['ongoing', 'dispatched'])->exists();
             if ($busTripExists) {
                 throw new DuplicateDispatchException("Bus {$bus->plate_number} already has an ongoing or dispatched trip.");
@@ -49,36 +59,12 @@ class SimulationDispatchService
                 throw new DuplicateDispatchException("Driver {$driver->first_name} {$driver->last_name} already has an ongoing or dispatched trip.");
             }
 
-            // 4. Validate schedule conflicts (overlaps, rest periods, daily hours)
-            $timeSlot = now()->toTimeString();
-            $duration = 120; // standard trip travel time window
+            $selectedVariant = app(RouteVariantSelectionService::class)->resolveForDispatch($route, $routeVariant?->id, $schedule);
 
-            // A. Check bus overlapping schedule conflict via reflection helper
-            $busConflict = self::checkTimeSlotConflict($bus->id, $timeSlot, $duration, 'bus');
-            if ($busConflict['conflict']) {
-                throw new ScheduleConflictException("Bus {$bus->plate_number} already scheduled: {$busConflict['conflict_details']}");
-            }
-
-            // B. Check driver overlapping schedule conflict via reflection helper
-            $driverConflict = self::checkTimeSlotConflict($driver->id, $timeSlot, $duration, 'driver');
-            if ($driverConflict['conflict']) {
-                throw new ScheduleConflictException("Driver already scheduled: {$driverConflict['conflict_details']}");
-            }
-
-            // C. Check driver rest periods
-            $restCheck = \App\Services\ScheduleConflictService::checkDriverRestPeriod($driver->id, $timeSlot);
-            if (!$restCheck['compliant']) {
-                throw new ScheduleConflictException($restCheck['message']);
-            }
-
-            // D. Check driver daily hours limit
-            $dailyHoursCheck = \App\Services\ScheduleConflictService::checkDailyHoursLimit($driver->id, $timeSlot, $duration);
-            if (!$dailyHoursCheck['allowed']) {
-                throw new ScheduleConflictException($dailyHoursCheck['message']);
-            }
+            self::resetStaleRuntimeOccupancyBeforeFirstDispatch($bus, $serviceDay);
 
             // 5. Start Trip via TripService (lifecycle service) - starts in 'dispatched'
-            $trip = TripService::startTrip($bus, $driver, $route, $bus->passengers ?: 0);
+            $trip = TripService::startTrip($bus, $driver, $route, $bus->passengers ?: 0, $selectedVariant, $schedule);
 
             // 6. Transition Bus state to 'ready' (dispatched state) via BusStateService
             BusStateService::transition($bus, 'ready', $notes ?: 'Simulation Dispatch', $driver, $route);
@@ -93,17 +79,81 @@ class SimulationDispatchService
         });
     }
 
-    /**
-     * Reflection helper to call protected checkTimeSlotConflict on ScheduleConflictService.
-     */
-    private static function checkTimeSlotConflict(
-        int $entityId,
-        string $departureTime,
-        int $durationMinutes,
-        string $entityType
-    ): array {
-        $method = new \ReflectionMethod(\App\Services\ScheduleConflictService::class, 'checkTimeSlotConflict');
-        $method->setAccessible(true);
-        return $method->invoke(null, $entityId, $departureTime, $durationMinutes, null, $entityType);
+
+    public static function dispatchFromSchedule(
+        Schedule $schedule,
+        ?int $dispatcherId = null,
+        string $notes = ''
+    ): Trip {
+        return DB::transaction(function () use ($schedule, $dispatcherId, $notes) {
+            $schedule = Schedule::where('id', $schedule->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $schedule->loadMissing(['bus', 'driver', 'route', 'routeVariant']);
+
+            if (Trip::where('schedule_id', $schedule->id)->lockForUpdate()->exists()) {
+                throw new \RuntimeException('Schedule has already been dispatched and linked to a trip.');
+            }
+
+            if (! $schedule->bus || ! $schedule->driver || ! $schedule->route) {
+                throw new \InvalidArgumentException('Schedule must have a bus, driver, and route before dispatch.');
+            }
+
+            return self::dispatch(
+                $schedule->bus,
+                $schedule->driver,
+                $schedule->route,
+                $dispatcherId,
+                $notes ?: 'Scheduled dispatch.',
+                $schedule->routeVariant,
+                $schedule
+            );
+        });
+    }
+
+    private static function resolveServiceDay(?Schedule $schedule): string
+    {
+        if ($schedule?->service_date) {
+            return Carbon::parse($schedule->service_date)->toDateString();
+        }
+
+        return now('Asia/Manila')->toDateString();
+    }
+
+    private static function resetStaleRuntimeOccupancyBeforeFirstDispatch(Bus $bus, string $serviceDay): void
+    {
+        if ((int) $bus->passengers <= 0) {
+            return;
+        }
+
+        if ($bus->status === 'operating') {
+            return;
+        }
+
+        if (Trip::where('bus_id', $bus->id)->whereIn('status', ['ongoing', 'dispatched'])->exists()) {
+            return;
+        }
+
+        if (self::hasDispatchForServiceDay($bus, $serviceDay)) {
+            return;
+        }
+
+        $bus->update(['passengers' => 0]);
+        $bus->refresh();
+    }
+
+    private static function hasDispatchForServiceDay(Bus $bus, string $serviceDay): bool
+    {
+        return Trip::where('bus_id', $bus->id)
+            ->where(function ($query) use ($serviceDay) {
+                $query->whereHas('schedule', function ($scheduleQuery) use ($serviceDay) {
+                    $scheduleQuery->whereDate('service_date', $serviceDay);
+                })->orWhere(function ($tripQuery) use ($serviceDay) {
+                    $tripQuery->whereNull('schedule_id')
+                        ->whereDate('dispatched_at', $serviceDay);
+                });
+            })
+            ->exists();
     }
 }

@@ -26,12 +26,15 @@
             @endphp
 
             @foreach($pills as $key => $pill)
-                <button 
-                    wire:click="filterAlerts('{{ $key }}')" 
-                    class="flex-shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-all active:scale-95
+                <button
+                    wire:click="filterAlerts('{{ $key }}')"
+                    wire:loading.attr="disabled"
+                    wire:target="filterAlerts"
+                    class="flex-shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-all active:scale-95 disabled:opacity-60 disabled:pointer-events-none inline-flex items-center gap-1.5
                            {{ $filter === $key ? $pill['active'] : 'bg-transparent text-slate-400 border-[0.5px] border-slate-200 hover:bg-slate-50' }}"
                 >
-                    {{ $pill['label'] }}
+                    <i wire:loading wire:target="filterAlerts('{{ $key }}')" class="ti ti-loader-2 animate-spin"></i>
+                    <span>{{ $pill['label'] }}</span>
                 </button>
             @endforeach
         </div>
@@ -125,20 +128,26 @@
                 <div class="text-[13px] text-slate-500 font-medium leading-[1.6]">
                     @if($isLongMessage && !$isExpanded)
                         <span>{{ Str::limit($alert->message, 180) }}</span>
-                        <button 
-                            wire:click="toggleExpand({{ $alert->id }})" 
-                            class="text-[#003F87] font-bold ml-1 active:underline inline-flex items-center gap-0.5"
+                        <button
+                            wire:click="toggleExpand({{ $alert->id }})"
+                            wire:loading.attr="disabled"
+                            wire:target="toggleExpand({{ $alert->id }})"
+                            class="text-[#003F87] font-bold ml-1 active:underline inline-flex items-center gap-0.5 disabled:opacity-60 disabled:pointer-events-none"
                         >
-                            Read more
+                            <i wire:loading wire:target="toggleExpand({{ $alert->id }})" class="ti ti-loader-2 animate-spin"></i>
+                            <span>Read more</span>
                         </button>
                     @else
                         <span>{{ $alert->message }}</span>
                         @if($isLongMessage && $isExpanded)
-                            <button 
-                                wire:click="toggleExpand({{ $alert->id }})" 
-                                class="text-[#003F87] font-bold ml-1 active:underline inline-flex items-center gap-0.5"
+                            <button
+                                wire:click="toggleExpand({{ $alert->id }})"
+                                wire:loading.attr="disabled"
+                                wire:target="toggleExpand({{ $alert->id }})"
+                                class="text-[#003F87] font-bold ml-1 active:underline inline-flex items-center gap-0.5 disabled:opacity-60 disabled:pointer-events-none"
                             >
-                                Show less
+                                <i wire:loading wire:target="toggleExpand({{ $alert->id }})" class="ti ti-loader-2 animate-spin"></i>
+                                <span>Show less</span>
                             </button>
                         @endif
                     @endif
@@ -172,11 +181,15 @@
                 <!-- Row 6: Mark as Read Button -->
                 @if(!$alert->is_read)
                     <div class="flex justify-end border-t border-slate-50 pt-2 mt-1">
-                        <button 
-                            wire:click="markRead({{ $alert->id }})" 
-                            class="text-xs font-bold text-[#003F87]/80 hover:text-[#003F87] active:scale-95 transition-transform"
+                        <button
+                            wire:click="markRead({{ $alert->id }})"
+                            wire:loading.attr="disabled"
+                            wire:target="markRead({{ $alert->id }})"
+                            class="text-xs font-bold text-[#003F87]/80 hover:text-[#003F87] active:scale-95 transition-transform disabled:opacity-60 disabled:pointer-events-none inline-flex items-center gap-1"
                         >
-                            Mark as read
+                            <i wire:loading wire:target="markRead({{ $alert->id }})" class="ti ti-loader-2 animate-spin"></i>
+                            <span wire:loading.remove wire:target="markRead({{ $alert->id }})">Mark as read</span>
+                            <span wire:loading wire:target="markRead({{ $alert->id }})">Marking</span>
                         </button>
                     </div>
                 @endif
@@ -189,11 +202,14 @@
                     <i class="ti ti-bell-off text-[28px]"></i>
                 </div>
                 <h3 class="text-[14px] text-slate-400 font-medium">No active alerts for this category</h3>
-                <button 
-                    wire:click="filterAlerts('all')" 
-                    class="text-[13px] font-bold text-[#003F87] mt-2 active:underline hover:underline"
+                <button
+                    wire:click="filterAlerts('all')"
+                    wire:loading.attr="disabled"
+                    wire:target="filterAlerts"
+                    class="text-[13px] font-bold text-[#003F87] mt-2 active:underline hover:underline disabled:opacity-60 disabled:pointer-events-none inline-flex items-center gap-1.5"
                 >
-                    Check back later or view all alerts
+                    <i wire:loading wire:target="filterAlerts('all')" class="ti ti-loader-2 animate-spin"></i>
+                    <span>Check back later or view all alerts</span>
                 </button>
             </div>
         @endforelse
@@ -202,9 +218,11 @@
     <!-- SECTION 4 — RESOLVED / ARCHIVED ALERTS -->
     <div class="mt-6 flex flex-col gap-3">
         <!-- Accordion Header -->
-        <button 
-            wire:click="toggleResolved" 
-            class="w-full flex justify-between items-center py-3 px-4 bg-white border border-slate-200 rounded-xl shadow-2xs active:bg-slate-50 transition-colors"
+        <button
+            wire:click="toggleResolved"
+            wire:loading.attr="disabled"
+            wire:target="toggleResolved"
+            class="w-full flex justify-between items-center py-3 px-4 bg-white border border-slate-200 rounded-xl shadow-2xs active:bg-slate-50 transition-colors disabled:opacity-60 disabled:pointer-events-none"
         >
             <span class="text-[14px] font-semibold text-slate-700">Resolved alerts</span>
             
@@ -212,7 +230,8 @@
                 <span class="text-xs font-semibold text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full leading-normal">
                     {{ $resolvedCount }} resolved
                 </span>
-                <i class="ti ti-chevron-down text-[16px] text-slate-400 transition-transform duration-250 {{ $showResolved ? 'rotate-180' : '' }}"></i>
+                <i wire:loading.remove wire:target="toggleResolved" class="ti ti-chevron-down text-[16px] text-slate-400 transition-transform duration-250 {{ $showResolved ? 'rotate-180' : '' }}"></i>
+                <i wire:loading wire:target="toggleResolved" class="ti ti-loader-2 text-[16px] text-slate-400 animate-spin"></i>
             </div>
         </button>
 

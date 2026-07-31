@@ -15,6 +15,7 @@ class StopArrival extends Model
     protected $fillable = [
         'trip_id',
         'stop_id',
+        'route_variant_stop_id',
         'arrival_time',
         'departure_time',
         'arrival_source',
@@ -33,5 +34,10 @@ class StopArrival extends Model
     public function stop(): BelongsTo
     {
         return $this->belongsTo(Stop::class);
+    }
+
+    public function routeVariantStop(): BelongsTo
+    {
+        return $this->belongsTo(RouteVariantStop::class);
     }
 }

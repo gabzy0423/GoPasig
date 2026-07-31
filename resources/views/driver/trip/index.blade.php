@@ -39,22 +39,17 @@
                 
                 // If it is a breakdown, automatically update UI and turn off live trip session
                 if (this.selectedType === 'Breakdown') {
-                    const layoutDot = document.querySelector('.status-indicator-dot');
-                    const layoutText = document.querySelector('.status-indicator-text');
                     const btn = document.getElementById('btn-toggle-tracking');
                     const desc = document.getElementById('tracking-desc-text');
-                    
-                    if (layoutDot) {
-                        layoutDot.className = 'relative inline-flex rounded-full h-2 w-2 bg-rose-500 status-indicator-dot';
-                        layoutText.innerText = 'BREAKDOWN';
-                        layoutText.className = 'status-indicator-text text-rose-500 font-bold';
-                    }
                     
                     if (typeof stopTelemetry === 'function') {
                         stopTelemetry();
                     }
                     
                     isTrackingActive = false;
+                    if (typeof setPassengerControlsAvailability === 'function') {
+                        setPassengerControlsAvailability(false);
+                    }
                     if (btn) {
                         btn.innerText = 'START LIVE TRIP SESSION';
                         btn.className = 'w-full py-4 rounded-xl font-black text-[15px] tracking-wide shadow-md border premium-transition active:scale-[0.98] bg-[#003F87] hover:bg-[#0050a3] text-white border-[#003F87]/15 shadow-[0_4px_16px_rgba(0,63,135,0.15)]';
@@ -134,38 +129,110 @@
     </div>
 
     @if($driver && $driver->assigned_bus && $bus)
+        @php
+            $activeTripStatus = $activeTrip?->status;
+            $hasNextTrip = (bool) ($nextTripPreview['available'] ?? false);
+            $primaryAction = 'unavailable';
+            $primaryLabel = 'UNAVAILABLE';
+            $primaryDisabled = false;
+            $primaryUnavailableMessage = $nextTripPreview['message'] ?? 'Trip lifecycle action is unavailable. Contact Dispatch.';
+            $canManagePassengerLoad = $driver
+                && $bus
+                && $activeTrip
+                && $activeTrip->driver_id === $driver->id
+                && $activeTrip->bus_id === $bus->id
+                && $activeTrip->status === 'ongoing'
+                && filled($activeTrip->started_at)
+                && $activeTrip->gps_session === 'ACTIVE'
+                && $bus->status === 'operating';
+
+            if ($activeTripStatus === 'ongoing') {
+                $primaryAction = 'toggleTracking()';
+                $primaryLabel = 'END TRIP';
+            } elseif ($activeTripStatus === 'dispatched') {
+                $primaryAction = 'toggleTracking()';
+                $primaryLabel = 'START TRIP';
+            } elseif ($hasNextTrip) {
+                $primaryAction = 'startNextTrip()';
+                $primaryLabel = 'START NEXT TRIP';
+            } else {
+                $primaryDisabled = true;
+            }
+        @endphp
+
         <!-- TRIP CONTROL TOGGLE BUTTON -->
         <div class="bg-white border border-slate-100 rounded-2xl p-5 shadow-[0_4px_24px_rgba(15,23,42,0.02)] flex flex-col gap-4">
             <div class="flex justify-between items-start">
                 <div class="flex flex-col gap-0.5">
                     <span class="text-xs font-black text-slate-700 uppercase tracking-wider">Tracking Session</span>
                     <span class="text-[11px] text-slate-450 font-semibold" id="tracking-desc-text">
-                        {{ $bus->status === 'operating' ? 'LIVE — GPS coordinates are actively transmitting.' : 'Offline — coordinates are frozen.' }}
+                        @if($activeTripStatus === 'ongoing')
+                            LIVE � GPS coordinates are actively transmitting.
+                        @elseif($activeTripStatus === 'dispatched')
+                            Ready � dispatched trip is waiting to start.
+                        @elseif($hasNextTrip)
+                            Trip completed � ready for next trip.
+                        @else
+                            {{ $primaryUnavailableMessage }}
+                        @endif
                     </span>
                 </div>
                 <div class="flex flex-col items-end gap-1">
                     <div class="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-450">
                         <i class="ti ti-satellite text-lg" id="satellite-icon"></i>
                     </div>
-                    {{-- GPS source indicator: updated dynamically by updateGpsSourceBadge() JS --}}
                     <span id="gps-source-badge" class="text-[9px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full bg-slate-100 text-slate-400 border border-slate-200">
-                        ◌ WAITING
+                        ? WAITING
                     </span>
                 </div>
             </div>
 
-            <button id="btn-toggle-tracking" onclick="toggleTracking()" class="w-full py-4 rounded-xl font-black text-[15px] tracking-wide shadow-md border premium-transition active:scale-[0.98]
-                {{ $bus->status === 'operating' ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500/20 shadow-[0_4px_16px_rgba(225,29,72,0.2)]' : 'bg-[#003F87] hover:bg-[#0050a3] text-white border-[#003F87]/15 shadow-[0_4px_16px_rgba(0,63,135,0.15)]' }}">
-                @if($bus->status === 'operating')
-                    STOP LIVE TRIP SESSION
-                @elseif($bus->status === 'ready')
-                    START LIVE TRIP SESSION
-                @else
-                    START LIVE TRIP SESSION
-                @endif
+            <button id="btn-toggle-tracking" @disabled($primaryDisabled) onclick="{{ $primaryDisabled ? '' : $primaryAction }}" class="w-full py-4 rounded-xl font-black text-[15px] tracking-wide shadow-md border premium-transition active:scale-[0.98]
+                {{ $activeTripStatus === 'ongoing' ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500/20 shadow-[0_4px_16px_rgba(225,29,72,0.2)]' : ($primaryDisabled ? 'bg-slate-200 text-slate-500 border-slate-200 cursor-not-allowed shadow-none' : 'bg-[#003F87] hover:bg-[#0050a3] text-white border-[#003F87]/15 shadow-[0_4px_16px_rgba(0,63,135,0.15)]') }}">
+                {{ $primaryLabel }}
             </button>
         </div>
 
+        @if($bus->status !== 'operating')
+            <div class="bg-white border border-slate-100 rounded-2xl p-5 shadow-[0_4px_24px_rgba(15,23,42,0.02)] flex flex-col gap-4">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex flex-col gap-1">
+                        <span class="text-xs font-black text-slate-700 uppercase tracking-wider">Current Assignment</span>
+                        <span class="text-[11px] text-slate-500 font-semibold">{{ $route?->name ?? 'Assigned route' }}</span>
+                    </div>
+                    <div class="w-8 h-8 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+                        <i class="ti ti-arrows-exchange text-lg"></i>
+                    </div>
+                </div>
+
+                @if($lastCompletedTrip?->routeVariant)
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                        <span class="block text-[9px] font-black uppercase tracking-widest text-slate-500">Last Completed Leg</span>
+                        <span class="block text-sm font-black text-slate-800 mt-0.5">{{ $lastCompletedTrip->routeVariant->origin_name }} to {{ $lastCompletedTrip->routeVariant->destination_name }}</span>
+                    </div>
+                @elseif($activeTrip?->routeVariant)
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                        <span class="block text-[9px] font-black uppercase tracking-widest text-slate-500">Current Leg</span>
+                        <span class="block text-sm font-black text-slate-800 mt-0.5">{{ $activeTrip->routeVariant->origin_name }} to {{ $activeTrip->routeVariant->destination_name }}</span>
+                    </div>
+                @endif
+
+                @if($nextTripPreview['available'])
+                    <div class="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
+                        <span class="block text-[9px] font-black uppercase tracking-widest text-emerald-700">Next Trip</span>
+                        <span class="block text-sm font-black text-slate-800 mt-0.5">{{ $nextTripPreview['label'] }}</span>
+                    </div>
+                @else
+                    <div class="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-[11px] font-bold text-amber-700 leading-snug">
+                        {{ $nextTripPreview['message'] }}
+                    </div>
+                @endif
+
+                <div class="rounded-xl border border-slate-100 bg-white px-3 py-2.5 text-[11px] font-bold text-slate-500 leading-snug">
+                    Bus {{ $bus->plate_number }} assigned to {{ $driver->name }}
+                </div>
+            </div>
+        @endif
         <!-- TWO COLUMN INTERACTIVE PANEL: SPEED & PASSENGERS -->
         <div class="grid grid-cols-2 gap-3.5">
             
@@ -217,97 +284,104 @@
 
                 <!-- Large Big Action Buttons -->
                 <div class="flex gap-2">
-                    <button onclick="changePassengers(-1)" class="flex-grow py-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 font-black text-lg active:scale-90 transition-transform">
+                    <button type="button" data-pax-button onclick="changePassengers(-1)" @disabled(!$canManagePassengerLoad) class="flex-grow py-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 font-black text-lg transition-transform disabled:opacity-60 disabled:cursor-wait {{ $canManagePassengerLoad ? 'active:scale-90' : '' }}">
                         -
                     </button>
-                    <button onclick="changePassengers(1)" class="flex-grow py-2 rounded-xl bg-[#003F87] text-white font-black text-lg hover:bg-[#0050a3] active:scale-90 transition-transform">
+                    <button type="button" data-pax-button onclick="changePassengers(1)" @disabled(!$canManagePassengerLoad) class="flex-grow py-2 rounded-xl bg-[#003F87] text-white font-black text-lg hover:bg-[#0050a3] transition-transform disabled:opacity-60 disabled:cursor-wait {{ $canManagePassengerLoad ? 'active:scale-90' : '' }}">
                         +
                     </button>
                 </div>
+                <span data-pax-helper class="{{ $canManagePassengerLoad ? 'hidden' : '' }} text-[10px] font-bold text-slate-400 leading-snug">
+                    Start the trip to manage passenger load.
+                </span>
             </div>
 
         </div>
 
         <!-- INTERACTIVE STOP ARRIVAL CONTROL -->
         @if($route)
+            @php
+                $hasActiveDispatchTrip = $activeTrip && in_array($activeTrip->status, ['dispatched', 'ongoing'], true);
+                $displayStops = $hasActiveDispatchTrip ? $tripOrderedStops : collect();
+                $usesVariantStops = $activeRoutePlan?->usesVariant() ?? false;
+                $nextStopModel = null;
+                $currentStopModel = null;
+
+                if ($tripProgress) {
+                    $nextStopModel = $usesVariantStops
+                        ? $tripProgress->nextRouteVariantStop
+                        : $tripProgress->nextStop;
+                    $currentStopModel = $usesVariantStops
+                        ? $tripProgress->currentRouteVariantStop
+                        : $tripProgress->currentStop;
+                }
+
+                $activeStopModel = $nextStopModel ?: $currentStopModel;
+                $activeStopLabel = $activeStopModel?->name;
+                $etaLabel = 'Awaiting telemetry';
+
+                if ($tripProgress && !empty($tripProgress->upcoming_etas)) {
+                    $firstEta = $tripProgress->upcoming_etas[0] ?? null;
+                    if (!empty($firstEta['eta_timestamp'])) {
+                        $etaLabel = max(0, (int) round(now()->diffInMinutes(\Carbon\Carbon::parse($firstEta['eta_timestamp'])))) . ' mins';
+                    }
+                } elseif ($tripProgress && $activeVehiclePosition && $bus->eta !== null) {
+                    $etaLabel = (int) $bus->eta . ' mins';
+                }
+            @endphp
+
             <div class="bg-white border border-slate-100 rounded-2xl p-5 shadow-[0_4px_24px_rgba(15,23,42,0.02)] flex flex-col gap-4">
                 <div class="flex items-center gap-2 pb-2 border-b border-slate-100">
                     <i class="ti ti-map-pin text-[#003F87] text-[18px]"></i>
                     <span class="text-xs font-black text-slate-700 uppercase tracking-widest">Next Stop Dispatch</span>
                 </div>
 
-                <!-- Active Stop indicator -->
-                <div class="flex flex-col gap-1 px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl">
-                    <span class="text-[9.5px] font-extrabold text-slate-450 uppercase tracking-widest leading-none">Arriving Next Stop</span>
-                    <span class="text-[15px] font-black text-[#003F87] leading-tight mt-1" id="active-stop-label">
-                        {{ $bus->next_stop ?: 'Not Dispatched yet' }}
-                    </span>
-                    @php
-                        $defaultEta = 5;
-                        if ($route && $route->stops->count() > 1) {
-                            $routeStops = $route->stops->sortBy('sequence')->values();
-                            $offsets = \App\Models\Stop::getDistanceWeightedOffsets($routeStops, $route->travel_time_minutes ?? 30);
-                            
-                            $nextStopName = $bus->next_stop;
-                            $nextStopIndex = $routeStops->search(function ($s) use ($nextStopName) {
-                                return stripos($s->name, (string)$nextStopName) !== false || stripos((string)$nextStopName, $s->name) !== false;
-                            });
-                            
-                            if ($nextStopIndex !== false && $nextStopIndex > 0) {
-                                $defaultEta = (int) round($offsets[$nextStopIndex] - $offsets[$nextStopIndex - 1]);
-                            } else {
-                                $defaultEta = (int) round($offsets[1] ?? 5);
-                            }
-                        }
-                        $defaultEta = max(1, $defaultEta);
-                    @endphp
-                    <div class="flex justify-between items-center mt-2.5 pt-2 border-t border-slate-200 text-[11px] font-bold text-slate-500">
-                        <span>ETA to Stop</span>
-                        <div class="flex items-center gap-1.5">
-                            <input type="number" id="eta-input" min="1" max="60" value="{{ $bus->eta ?: $defaultEta }}" onchange="updateNextStop()" class="w-12 h-6 px-1 text-center bg-white border border-slate-250 rounded-md text-slate-800 font-mono font-bold focus:outline-none focus:border-[#003F87]">
-                            <span>mins</span>
+                @if(!$hasActiveDispatchTrip)
+                    <div class="flex flex-col gap-1 px-3 py-3 bg-slate-50 border border-slate-100 rounded-xl">
+                        <span class="text-[9.5px] font-extrabold text-slate-450 uppercase tracking-widest leading-none">Inactive</span>
+                        <span class="text-[15px] font-black text-[#003F87] leading-tight mt-1" data-inactive-stop-label>Trip completed � ready for next trip</span>
+                        <div class="mt-2.5 pt-2 border-t border-slate-200 text-[11px] font-bold text-slate-500">No active next-stop tracking between legs.</div>
+                    </div>
+                @else
+                    <div class="flex flex-col gap-1 px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl" data-dispatch-state="active">
+                        <span class="text-[9.5px] font-extrabold text-slate-450 uppercase tracking-widest leading-none">Arriving Next Stop</span>
+                        <span class="text-[15px] font-black text-[#003F87] leading-tight mt-1" id="active-stop-label">
+                            {{ $activeStopLabel ?: 'Awaiting telemetry' }}
+                        </span>
+                        <div class="flex justify-between items-center mt-2.5 pt-2 border-t border-slate-200 text-[11px] font-bold text-slate-500">
+                            <span>ETA to Stop</span>
+                            <span id="eta-display" class="font-black text-slate-700">{{ $etaLabel }}</span>
                         </div>
                     </div>
-                </div>
 
-                <!-- Stops Stack Scroll (Radio Picker) -->
-                @php
-                    $nextStopSeq = 0;
-                    if ($bus->next_stop && $route) {
-                        $foundStop = $route->stops->first(function ($s) use ($bus) {
-                            return stripos($s->name, (string)$bus->next_stop) !== false || stripos((string)$bus->next_stop, $s->name) !== false;
-                        });
-                        if ($foundStop) {
-                            $nextStopSeq = $foundStop->sequence;
-                        }
-                    }
-                @endphp
-                <div class="flex flex-col gap-2.5 max-h-[175px] overflow-y-auto pr-1 no-scrollbar">
-                    @forelse($route->stops->sortBy('sequence') as $stop)
-                        @php
-                            $isPassed = $stop->sequence < $nextStopSeq;
-                            $isCurrent = $bus->next_stop === $stop->name;
-                        @endphp
-                        <label data-stop-seq="{{ $stop->sequence }}" data-stop-name="{{ $stop->name }}" 
-                            class="stop-label-item flex items-center justify-between p-3 rounded-xl border cursor-pointer active:scale-[0.99] transition-all select-none
-                            {{ $isPassed ? 'opacity-50 bg-slate-100/70 border-slate-150' : 'bg-slate-50/40 border-slate-100 hover:bg-slate-50' }}
-                            {{ $isCurrent ? 'border-[#003F87]/30 bg-[#003F87]/5' : '' }}">
-                            <div class="flex items-center gap-3">
-                                <input type="radio" name="next_stop_radio" value="{{ $stop->name }}" 
-                                    {{ $isCurrent ? 'checked' : '' }} 
-                                    onchange="selectNextStop('{{ $stop->name }}')"
-                                    class="w-4 h-4 text-[#003F87] bg-white border-slate-250 focus:ring-[#003F87]/20 focus:ring-2">
-                                <div class="flex flex-col">
-                                    <span class="stop-name-text text-xs font-bold {{ $isPassed ? 'line-through text-slate-400' : 'text-slate-700' }}">{{ $stop->name }}</span>
-                                    <span class="text-[9px] font-semibold text-slate-450">Stop Order #{{ $stop->sequence }}</span>
+                    <div class="flex flex-col gap-2.5 max-h-[175px] overflow-y-auto pr-1 no-scrollbar">
+                        @forelse($displayStops as $stop)
+                            @php
+                                $stopId = (int) $stop->id;
+                                $nextId = $usesVariantStops ? (int) ($tripProgress?->next_route_variant_stop_id ?? 0) : (int) ($tripProgress?->next_stop_id ?? 0);
+                                $currentId = $usesVariantStops ? (int) ($tripProgress?->current_route_variant_stop_id ?? 0) : (int) ($tripProgress?->current_stop_id ?? 0);
+                                $lastCompletedId = $usesVariantStops ? (int) ($tripProgress?->last_completed_route_variant_stop_id ?? 0) : (int) ($tripProgress?->last_completed_stop_id ?? 0);
+                                $isPassed = $lastCompletedId === $stopId || ($tripProgress && $tripProgress->completed_stops_count > 0 && $stop->sequence <= $tripProgress->completed_stops_count);
+                                $isCurrent = $nextId === $stopId || $currentId === $stopId;
+                            @endphp
+                            <div data-stop-seq="{{ $stop->sequence }}" data-stop-name="{{ $stop->name }}"
+                                class="stop-label-item flex items-center justify-between p-3 rounded-xl border select-none
+                                {{ $isPassed ? 'opacity-50 bg-slate-100/70 border-slate-150' : 'bg-slate-50/40 border-slate-100' }}
+                                {{ $isCurrent ? 'border-[#003F87]/30 bg-[#003F87]/5' : '' }}">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-4 h-4 rounded-full border {{ $isCurrent ? 'border-[#003F87] bg-[#003F87]' : 'border-slate-250 bg-white' }}"></div>
+                                    <div class="flex flex-col">
+                                        <span class="stop-name-text text-xs font-bold {{ $isPassed ? 'line-through text-slate-400' : 'text-slate-700' }}">{{ $stop->name }}</span>
+                                        <span class="text-[9px] font-semibold text-slate-450">Stop Order #{{ $stop->sequence }}</span>
+                                    </div>
                                 </div>
+                                <span class="text-[10px] font-extrabold text-slate-400 font-mono">STOP</span>
                             </div>
-                            <span class="text-[10px] font-extrabold text-slate-400 font-mono">STOP</span>
-                        </label>
-                    @empty
-                        <div class="py-4 text-center text-xs text-slate-450 font-bold">No stops found along this route.</div>
-                    @endforelse
-                </div>
+                        @empty
+                            <div class="py-4 text-center text-xs text-slate-450 font-bold">Awaiting route stop data for this trip.</div>
+                        @endforelse
+                    </div>
+                @endif
             </div>
         @endif
 
@@ -516,6 +590,55 @@
     let prevLng = null;
     let lastCoordTime = null;
     let gpsRetryTimeout = null;
+    let tripToggleInFlight = false;
+    let passengerRequestInFlight = false;
+    let passengerControlsAvailable = @json($canManagePassengerLoad ?? false);
+
+    function setDriverButtonLoading(button, isLoading, label = null) {
+        if (window.GoPasigUI && typeof window.GoPasigUI.setButtonLoading === 'function') {
+            window.GoPasigUI.setButtonLoading(button, isLoading, label);
+            return;
+        }
+
+        if (!button) return;
+        if (isLoading) {
+            if (!button.dataset.originalHtml) button.dataset.originalHtml = button.innerHTML;
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+            button.innerText = label || 'Working...';
+            return;
+        }
+
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        if (button.dataset.originalHtml) {
+            button.innerHTML = button.dataset.originalHtml;
+            delete button.dataset.originalHtml;
+        }
+    }
+
+    function setPassengerButtonsLoading(isLoading) {
+        passengerRequestInFlight = isLoading;
+        document.querySelectorAll('[data-pax-button]').forEach(button => {
+            button.disabled = isLoading || !passengerControlsAvailable;
+            if (isLoading) {
+                button.setAttribute('aria-busy', 'true');
+            } else {
+                button.removeAttribute('aria-busy');
+            }
+        });
+    }
+
+    function setPassengerControlsAvailability(isAvailable) {
+        passengerControlsAvailable = isAvailable;
+        document.querySelectorAll('[data-pax-button]').forEach(button => {
+            button.disabled = !isAvailable || passengerRequestInFlight;
+            button.classList.toggle('active:scale-90', isAvailable);
+        });
+        document.querySelectorAll('[data-pax-helper]').forEach(helper => {
+            helper.classList.toggle('hidden', isAvailable);
+        });
+    }
 
     // GPS acquisition state — prevents simulation fallback during GPS hardware cold-start.
     // Set to false on start; becomes true only after the FIRST real position fix arrives.
@@ -598,7 +721,9 @@
     });
 
     // Interactive Passenger Occupancy Counter
-    function changePassengers(change) {
+    async function changePassengers(change) {
+        if (passengerRequestInFlight || !passengerControlsAvailable) return;
+
         const paxCountEl = document.getElementById('pax-count');
         const paxCapEl = document.getElementById('pax-cap');
         const paxBarEl = document.getElementById('pax-bar');
@@ -612,16 +737,19 @@
             return;
         }
 
-        fetch("{{ route('driver.trip.pax') }}", {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-            },
-            body: JSON.stringify({ change: change })
-        })
-        .then(response => response.json())
-        .then(data => {
+        setPassengerButtonsLoading(true);
+
+        try {
+            const response = await fetch("{{ route('driver.trip.pax') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                },
+                body: JSON.stringify({ change: change })
+            });
+            const data = await response.json();
+
             if (data.success) {
                 paxCountEl.innerText = data.passengers;
                 const percent = capacity > 0 ? (data.passengers / capacity) * 100 : 0;
@@ -637,8 +765,11 @@
                     }
                 }
             }
-        })
-        .catch(err => console.error("Error updating passenger count:", err));
+        } catch (err) {
+            console.error("Error updating passenger count:", err);
+        } finally {
+            setPassengerButtonsLoading(false);
+        }
     }
 
     // Interactive Stop & ETA updates
@@ -1054,82 +1185,134 @@
         if (watchIdEl) watchIdEl.innerText = "None";
     }
 
-    function toggleTracking() {
+    async function toggleTracking() {
+        if (tripToggleInFlight) return;
+
         const nextStatus = isTrackingActive ? 'inactive' : 'active';
-        
-        fetch("{{ route('driver.trip.toggle') }}", {
+        const btn = document.getElementById('btn-toggle-tracking');
+        const loadingLabel = nextStatus === 'active' ? 'Starting...' : 'Ending...';
+        const previousPassengerControlsAvailable = passengerControlsAvailable;
+        tripToggleInFlight = true;
+        setPassengerControlsAvailability(false);
+        if (btn) btn.classList.add('opacity-70');
+        setDriverButtonLoading(btn, true, loadingLabel);
+
+        try {
+            const response = await fetch("{{ route('driver.trip.toggle') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                },
+                body: JSON.stringify({ status: nextStatus })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                isTrackingActive = (nextStatus === 'active');
+
+                const desc = document.getElementById('tracking-desc-text');
+                const ping = document.getElementById('live-trip-ping');
+                const sat = document.getElementById('satellite-icon');
+                const statsTrips = document.getElementById('stats-trips');
+
+                if (isTrackingActive) {
+                    if (btn) {
+                        setDriverButtonLoading(btn, false);
+                        btn.classList.remove('opacity-70');
+                        btn.innerText = 'END TRIP';
+                        btn.className = "w-full py-4 rounded-xl font-black text-[15px] tracking-wide shadow-md border premium-transition active:scale-[0.98] bg-rose-600 hover:bg-rose-500 text-white border-rose-500/20 shadow-[0_4px_16px_rgba(225,29,72,0.2)]";
+                    }
+                    if (desc) desc.innerText = "LIVE - GPS coordinates are actively transmitting.";
+                    if (ping) ping.classList.remove('hidden');
+                    if (sat) {
+                        sat.classList.add('text-[#003F87]');
+                        sat.classList.add('animate-pulse');
+                    }
+                    if (statsTrips && data.trips_today) {
+                        statsTrips.innerText = data.trips_today;
+                    }
+                    setPassengerControlsAvailability(true);
+                    startTelemetry();
+                } else {
+                    setPassengerControlsAvailability(false);
+                    stopTelemetry();
+                    window.location.reload();
+                }
+            } else {
+                if (btn) {
+                    setDriverButtonLoading(btn, false);
+                    btn.classList.remove('opacity-70');
+                }
+                const msg = data.message || 'Failed to update trip session. Please try again.';
+                setPassengerControlsAvailability(previousPassengerControlsAvailable);
+                const toastEl = document.querySelector('[x-data]')?.__x;
+                if (toastEl) {
+                    toastEl.$data.triggerToast(msg, 'error');
+                } else {
+                    GoPasigUI.alert(msg);
+                }
+            }
+        } catch (err) {
+            console.error('toggleTracking error:', err);
+            if (btn) {
+                setDriverButtonLoading(btn, false);
+                btn.classList.remove('opacity-70');
+            }
+            GoPasigUI.alert('Connection error - could not update trip session. Please check your internet connection.');
+            setPassengerControlsAvailability(previousPassengerControlsAvailable);
+        } finally {
+            tripToggleInFlight = false;
+        }
+    }
+
+    function startNextTrip() {
+        const btn = document.getElementById('btn-toggle-tracking');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = 'STARTING...';
+            btn.classList.add('opacity-70');
+        }
+        setPassengerControlsAvailability(false);
+
+        fetch("{{ route('driver.trip.next') }}", {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             },
-            body: JSON.stringify({ status: nextStatus })
+            body: JSON.stringify({})
         })
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                isTrackingActive = (nextStatus === 'active');
-                
-                // Update UI Buttons
-                const btn = document.getElementById('btn-toggle-tracking');
-                const desc = document.getElementById('tracking-desc-text');
-                const ping = document.getElementById('live-trip-ping');
-                const sat = document.getElementById('satellite-icon');
-                
-                // Update header live indicator dot dynamically (layout global status)
-                const layoutBadge = document.getElementById('driver-status-badge');
-                const layoutDot = document.querySelector('.status-indicator-dot');
-                const layoutText = document.querySelector('.status-indicator-text');
-                const statsTrips = document.getElementById('stats-trips');
-                
-                if (isTrackingActive) {
-                    btn.innerText = 'STOP LIVE TRIP SESSION';
-                    btn.className = "w-full py-4 rounded-xl font-black text-[15px] tracking-wide shadow-md border premium-transition active:scale-[0.98] bg-rose-600 hover:bg-rose-500 text-white border-rose-500/20 shadow-[0_4px_16px_rgba(225,29,72,0.2)]";
-                    desc.innerText = "LIVE — GPS coordinates are actively transmitting.";
-                    ping.classList.remove('hidden');
-                    sat.classList.add('text-[#003F87]');
-                    sat.classList.add('animate-pulse');
-                    
-                    if (layoutDot) {
-                        layoutDot.className = "relative inline-flex rounded-full h-2 w-2 bg-rose-500 status-indicator-dot";
-                        layoutText.innerText = "LIVE";
-                    }
-                    if (statsTrips && data.trips_today) {
-                        statsTrips.innerText = data.trips_today;
-                    }
-                    startTelemetry();
-                } else {
-                    btn.innerText = 'START LIVE TRIP SESSION';
-                    btn.className = "w-full py-4 rounded-xl font-black text-[15px] tracking-wide shadow-md border premium-transition active:scale-[0.98] bg-[#003F87] hover:bg-[#0050a3] text-white border-[#003F87]/15 shadow-[0_4px_16px_rgba(0,63,135,0.15)]";
-                    desc.innerText = "Offline — coordinates are frozen.";
-                    ping.classList.add('hidden');
-                    sat.classList.remove('text-[#003F87]');
-                    sat.classList.remove('animate-pulse');
-                    
-                    if (layoutDot) {
-                        layoutDot.className = "relative inline-flex rounded-full h-2 w-2 bg-slate-400 status-indicator-dot";
-                        layoutText.innerText = "OFFLINE";
-                    }
-                    stopTelemetry();
-                }
+                window.location.reload();
+
             } else {
-                // Surface the backend error message to the driver
-                const msg = data.message || 'Failed to update trip session. Please try again.';
-                // Use Alpine toast if available, otherwise fallback to native alert
+                const msg = data.message || 'Failed to start next trip. Please contact Dispatch.';
                 const toastEl = document.querySelector('[x-data]')?.__x;
                 if (toastEl) {
                     toastEl.$data.triggerToast(msg, 'error');
                 } else {
-                    alert(msg);
+                    GoPasigUI.alert(msg);
+                }
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = 'START NEXT TRIP';
+                    btn.classList.remove('opacity-70');
                 }
             }
         })
         .catch(err => {
-            console.error('toggleTracking error:', err);
-            alert('Connection error — could not update trip session. Please check your internet connection.');
+            console.error('startNextTrip error:', err);
+            GoPasigUI.alert('Connection error - could not start the next trip. Please check your internet connection.');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = 'START NEXT TRIP';
+                btn.classList.remove('opacity-70');
+            }
         });
     }
-
     // GPS Telemetry Transmission Loop
     function startTelemetry() {
         // Clear any existing intervals/watches to prevent duplicates
@@ -1281,7 +1464,7 @@
                     console.log('[GPS] DB Sync OK:', data.lat, data.lng);
                     if (data.next_stop) {
                         const stopLabel = document.getElementById('active-stop-label');
-                        if (stopLabel) {
+                        if (stopLabel && stopLabel.closest('[data-dispatch-state="active"]')) {
                             stopLabel.innerText = data.next_stop;
                             updatePassedStopsUI(data.next_stop);
                         }
@@ -1350,6 +1533,7 @@
     });
 </script>
 @endsection
+
 
 
 

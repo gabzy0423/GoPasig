@@ -1,4 +1,4 @@
-{{-- ==================== SCHEDULE & ROUTES MANAGEMENT SCREEN ==================== --}}
+{{-- ==================== ROUTE SERVICE SCHEDULE MANAGEMENT SCREEN ==================== --}}
 <section id="screen-routes" class="hidden"
     style="--color-background-primary:#ffffff;--color-background-secondary:#F8F7F4;--color-background-tertiary:#F4F3EF;--color-text-primary:#1A1917;--color-text-secondary:#5F5E5A;--color-border-secondary:#D6D3C9;--color-border-tertiary:#E8E6DF;">
 
@@ -6,23 +6,19 @@
     <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-6 shrink-0">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-                <h1 class="text-xl font-bold text-slate-900">Schedule & Routes</h1>
+                <h1 class="text-xl font-bold text-slate-900">Route Service Schedule Management</h1>
                 <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
                     <span>Dashboard</span>
                     <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
                     <span>Operations</span>
                     <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
-                    <span class="text-slate-600 font-bold">Schedule & Routes</span>
+                    <span class="text-slate-600 font-bold">Route Service Schedules</span>
                 </div>
-                <p class="text-[11px] text-slate-505 font-semibold mt-1">Manage trip timetables, route configurations, and stop sequences</p>
+                <p class="text-[11px] text-slate-505 font-semibold mt-1">Official operating windows per route direction. Actual Trips are created by Dispatch and Driver trip lifecycle.</p>
             </div>
-            <div class="flex items-center gap-2">
-                <button onclick="switchScreen('schedules-conflict'); return false;" id="btn-conflict-check-header" class="rm-btn-conflict flex items-center justify-center gap-1.5 hover:scale-[1.02] active:scale-[0.98] transition-all border-none">
-                    <i class="ti ti-alert-triangle"></i> Conflict check
-                </button>
-                <button onclick="openCreateScheduleForm(null, null); return false;" class="rm-btn-primary flex items-center justify-center gap-1.5 hover:scale-[1.02] active:scale-[0.98] transition-all border-none">
-                    <i class="ti ti-plus"></i> Create schedule
-                </button>
+            <div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-600">
+                <i class="ti ti-info-circle text-[#003F87]"></i>
+                Central Dispatch owns vehicle and personnel assignment.
             </div>
         </div>
     </div>
@@ -31,56 +27,163 @@
     <div class="rm-tab-row">
         <div class="rm-pill-group">
             <button id="rm-tab-btn-schedule" class="rm-tab-btn active"
-                onclick="switchRoutesTab('schedule')">Schedule</button>
+                onclick="switchRoutesTab('schedule')">Route service schedules</button>
             <button id="rm-tab-btn-stops" class="rm-tab-btn" onclick="switchRoutesTab('stops')">Routes & stops</button>
         </div>
     </div>
 
-    {{-- ==================== SCREEN CONTAINER 1: SCHEDULE VIEW ==================== --}}
+    {{-- ==================== SCREEN CONTAINER 1: ROUTE SERVICE SCHEDULE VIEW ==================== --}}
     <div id="rm-panel-schedule" class="rm-panel-content">
-        {{-- SCHEDULE SUB-HEADER --}}
         <div class="rm-sub-header">
-            <div class="rm-sub-header-left">
-                <div class="rm-date-selector">
-                    <button class="rm-icon-btn-square" onclick="adjustDate(-1)"><i
-                            class="ti ti-chevron-left"></i></button>
-                    <span id="rm-schedule-date-label" class="rm-date-label">{{ now()->format('l, M d, Y') }}</span>
-                    <button class="rm-icon-btn-square" onclick="adjustDate(1)"><i
-                            class="ti ti-chevron-right"></i></button>
-                </div>
-                <button class="rm-btn-outline rm-btn-sm active" id="btn-week-view" onclick="toggleWeekView()">
-                    <i class="ti ti-calendar-week"></i> Week view
-                </button>
+            <div class="rm-sub-header-left flex-col items-start gap-1">
+                <span class="text-xs font-black uppercase tracking-widest text-slate-700">Official Operating Windows</span>
+                <span class="text-[11px] font-semibold text-slate-500">Configured from route_service_schedules and displayed separately for each RouteVariant direction.</span>
             </div>
             <div class="rm-sub-header-right">
-                <button class="rm-btn-outline rm-btn-sm" onclick="exportScheduleCSV()">
-                    <i class="ti ti-download"></i> Export schedule
-                </button>
-                <button onclick="openCreateScheduleForm(null, null); return false;" class="rm-btn-primary rm-btn-sm flex items-center justify-center gap-1 hover:scale-[1.02] active:scale-[0.98] transition-all border-none">
-                    <i class="ti ti-plus"></i> Create schedule
+                <button class="rm-btn-outline rm-btn-sm" onclick="loadRouteServiceSchedules()">
+                    <i class="ti ti-refresh"></i> Refresh
                 </button>
             </div>
         </div>
 
-        {{-- 2A. WEEKLY SCHEDULE GRID CARD --}}
-        <div class="rm-card rm-grid-card">
-            <div class="rm-grid-scroll-wrapper">
-                <div class="rm-schedule-grid" id="rm-schedule-grid-container">
-                    {{-- Header Row and Route rows will be dynamically drawn by JS --}}
-                </div>
-            </div>
+        <div id="route-service-schedule-state" class="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-600">
+            Loading official route service schedules...
         </div>
 
-        {{-- 4A. CONFLICT DETECTION PANEL (INLINE VERSION REMOVED) --}}
-
-        {{-- 2B. UPCOMING TRIPS TODAY LIST --}}
-        <div class="rm-section-label">Upcoming trips today</div>
-        <div class="rm-upcoming-list" id="rm-upcoming-trips-list">
-            {{-- Loaded dynamically by JS --}}
-        </div>
+        <div id="route-service-schedule-list" class="flex flex-col gap-4"></div>
     </div>
 
+    <script>
+        function formatRouteServiceText(value, fallback = 'Not configured') {
+            return value || fallback;
+        }
 
+        function routeServiceStatusBadge(schedule) {
+            if (!schedule) {
+                return '<span class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-amber-700">Missing configuration</span>';
+            }
+
+            if (schedule.isActive) {
+                return '<span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-emerald-700">Active</span>';
+            }
+
+            return '<span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-slate-600">Inactive</span>';
+        }
+
+        function renderRouteServiceVariant(route, variant) {
+            const schedule = variant.serviceSchedule;
+            const direction = variant.directionLabel || variant.direction || 'Direction';
+            const origin = variant.originName || 'Origin not configured';
+            const destination = variant.destinationName || 'Destination not configured';
+
+            if (!schedule) {
+                return `
+                    <div class="rounded-xl border border-amber-100 bg-amber-50/60 px-4 py-3">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <div class="text-[10px] font-black uppercase tracking-widest text-amber-700">${direction}</div>
+                                <div class="mt-1 text-sm font-black text-slate-800">${origin} ? ${destination}</div>
+                            </div>
+                            ${routeServiceStatusBadge(null)}
+                        </div>
+                        <div class="mt-3 text-xs font-bold text-amber-700">Official operating hours not configured</div>
+                    </div>`;
+            }
+
+            return `
+                <div class="rounded-xl border ${schedule.isActive ? 'border-emerald-100 bg-emerald-50/40' : 'border-slate-200 bg-slate-50'} px-4 py-3">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-black uppercase tracking-widest ${schedule.isActive ? 'text-emerald-700' : 'text-slate-500'}">${direction}</span>
+                                ${routeServiceStatusBadge(schedule)}
+                            </div>
+                            <div class="mt-1 text-sm font-black text-slate-800">${origin} ? ${destination}</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 lg:min-w-[560px]">
+                            <div class="rounded-lg border border-white/80 bg-white px-3 py-2">
+                                <div class="text-[9px] font-black uppercase tracking-widest text-slate-400">First Trip</div>
+                                <div class="mt-0.5 font-black text-slate-800">${formatRouteServiceText(schedule.firstTripTime)}</div>
+                            </div>
+                            <div class="rounded-lg border border-white/80 bg-white px-3 py-2">
+                                <div class="text-[9px] font-black uppercase tracking-widest text-slate-400">Last Trip</div>
+                                <div class="mt-0.5 font-black text-slate-800">${formatRouteServiceText(schedule.lastTripTime)}</div>
+                            </div>
+                            <div class="rounded-lg border border-white/80 bg-white px-3 py-2">
+                                <div class="text-[9px] font-black uppercase tracking-widest text-slate-400">Service Days</div>
+                                <div class="mt-0.5 font-black text-slate-800">${formatRouteServiceText(schedule.serviceDaysLabel)}</div>
+                            </div>
+                            <div class="rounded-lg border border-white/80 bg-white px-3 py-2">
+                                <div class="text-[9px] font-black uppercase tracking-widest text-slate-400">Configuration</div>
+                                <div class="mt-0.5 font-black text-slate-800">${formatRouteServiceText(schedule.serviceConfigurationLabel)}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
+                        <span class="rounded-md bg-white px-2 py-1 border border-slate-100">${formatRouteServiceText(schedule.effectiveRangeLabel, 'No effective date limit')}</span>
+                        <span class="rounded-md bg-white px-2 py-1 border border-slate-100">Source: ${formatRouteServiceText(schedule.sourceLabel)}</span>
+                    </div>
+                </div>`;
+        }
+
+        function renderRouteServiceSchedules(routes) {
+            const container = document.getElementById('route-service-schedule-list');
+            const state = document.getElementById('route-service-schedule-state');
+            if (!container || !state) return;
+
+            if (!routes.length) {
+                state.className = 'mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-700';
+                state.innerText = 'No routes are available for route service schedule display.';
+                container.innerHTML = '';
+                return;
+            }
+
+            state.className = 'mb-3 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-700';
+            state.innerText = 'Route service schedules loaded from route_service_schedules.';
+            container.innerHTML = routes.map(route => `
+                <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_4px_24px_rgba(15,23,42,0.03)]">
+                    <div class="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                        <div>
+                            <div class="text-[10px] font-black uppercase tracking-widest text-[#003F87]">Route</div>
+                            <h2 class="mt-0.5 text-base font-black text-slate-900">${route.name}</h2>
+                        </div>
+                        <span class="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">${route.variants.length} directions</span>
+                    </div>
+                    <div class="flex flex-col gap-3">
+                        ${route.variants.length ? route.variants.map(variant => renderRouteServiceVariant(route, variant)).join('') : '<div class="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-700">No route directions configured for this route.</div>'}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadRouteServiceSchedules() {
+            const state = document.getElementById('route-service-schedule-state');
+            const container = document.getElementById('route-service-schedule-list');
+            if (state) {
+                state.className = 'mb-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-600';
+                state.innerText = 'Loading official route service schedules...';
+            }
+            if (container) container.innerHTML = '';
+
+            try {
+                const response = await fetch(window.GoPasigConfig?.routeServiceSchedulesUrl || '/admin/api/route-service-schedules');
+                const payload = await response.json();
+                if (!response.ok || !payload.success || !Array.isArray(payload.routes)) {
+                    throw new Error(payload.message || 'Unable to load route service schedules.');
+                }
+                renderRouteServiceSchedules(payload.routes);
+            } catch (error) {
+                if (state) {
+                    state.className = 'mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700';
+                    state.innerText = error.message || 'Unable to load route service schedules.';
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadRouteServiceSchedules();
+        });
+    </script>
     {{-- ==================== SCREEN CONTAINER 2: ROUTES & STOPS VIEW ==================== --}}
     <div id="rm-panel-stops" class="rm-panel-content hidden">
         <div class="rm-two-column-split">
@@ -118,6 +221,7 @@
                     <div class="flex items-center gap-1.5">
                         <!-- Provider Selection & Generate Preview -->
                         <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-0.5 shrink-0">
+                            <select id="route-variant-select" onchange="syncVariantGeometrySelection()" class="rounded-md border-none bg-transparent px-2 py-1 text-[11px] font-semibold text-slate-800 outline-none transition focus:bg-white cursor-pointer" title="Official directional variant"><option value="">Legacy Route Geometry</option></select>
                             <select id="route-provider-select" class="rounded-md border-none bg-transparent px-2 py-1 text-[11px] font-semibold text-slate-800 outline-none transition focus:bg-white cursor-pointer">
                                 <option value="osrm">OSRM Road Router</option>
                                 <option value="google">Google Directions</option>
@@ -130,13 +234,13 @@
                         <button class="rm-btn-primary rm-btn-xs bg-[#003F87] text-white" onclick="toggleGeometryEditing()" id="btn-edit-geometry">
                             <i class="ti ti-map-pin"></i> Edit Geometry
                         </button>
-                        <button class="rm-btn-outline rm-btn-xs" onclick="openGeometryHistoryModal()">
+                        <button id="btn-route-geometry-history" class="rm-btn-outline rm-btn-xs" onclick="openGeometryHistoryModal()">
                             <i class="ti ti-history"></i> History
                         </button>
-                        <button class="rm-btn-outline rm-btn-xs" onclick="openGeometryImportModal()">
+                        <button id="btn-route-geometry-import" class="rm-btn-outline rm-btn-xs" onclick="openGeometryImportModal()">
                             <i class="ti ti-upload"></i> Import
                         </button>
-                        <button class="rm-btn-outline rm-btn-xs" onclick="editRouteDetails()">
+                        <button id="btn-route-edit-details" class="rm-btn-outline rm-btn-xs" onclick="editRouteDetails()">
                             <i class="ti ti-edit"></i> Edit route
                         </button>
                         <button class="rm-btn-outline rm-btn-xs rm-btn-danger-text"
@@ -146,6 +250,8 @@
                     </div>
                 </div>
 
+                <div id="route-variant-geometry-meta" class="hidden mb-3 rounded border border-slate-200 bg-slate-50 p-2 text-[10px] leading-4 text-slate-600"></div>
+                <div id="route-variant-stop-coordinate-editor" class="hidden mb-3 rounded border border-slate-200 bg-white p-2"></div>
                 <div class="rm-right-panel-body">
                     {{-- STOP TIMELINE (LEFT SIDE: 55%) --}}
                     <div class="rm-stop-timeline-column">
@@ -153,7 +259,7 @@
                         <div class="rm-vertical-timeline" id="rm-stop-timeline-container">
                             {{-- Timelines nodes populated by JS --}}
                         </div>
-                        <button class="rm-btn-dashed-add" onclick="openAddStopToRouteModal()">
+                        <button id="btn-add-legacy-stop" class="rm-btn-dashed-add" onclick="openAddStopToRouteModal()">
                             <i class="ti ti-plus"></i> Add a stop to this route
                         </button>
                     </div>
@@ -2096,3 +2202,4 @@
         display: none !important;
     }
 </style>
+

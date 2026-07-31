@@ -2,7 +2,24 @@
 
 
 @section('title', 'GoPasig Fleet Ops - Dashboard')
-@section('breadcrumb', 'Overview')
+@php
+    $fleetBreadcrumbs = [
+        'overview' => 'Overview',
+        'monitor' => 'Live Monitor',
+        'utilization' => 'Fleet Utilization',
+        'drivers' => 'Driver Performance',
+        'routes' => 'Route Performance',
+        'schedule' => 'Schedule Compliance',
+        'incidents' => 'Incident Reports',
+        'maintenance' => 'Maintenance',
+        'analytics' => 'Analytics',
+        'dispatch-intelligence' => 'Dispatch Intelligence',
+        'commuter-trips' => 'Commuter Trip Log',
+        'commuter-sessions' => 'Active Commuter Sessions',
+        'profile' => 'Account Profile',
+    ];
+@endphp
+@section('breadcrumb', $fleetBreadcrumbs[$activeFleetTab ?? 'overview'] ?? 'Overview')
 
 @section('content')
     <div class="flex h-screen w-screen overflow-hidden bg-white">
@@ -17,49 +34,24 @@
             <!-- MAIN SCROLLABLE CANVAS -->
             <main class="flex-grow overflow-y-auto bg-white p-6 relative">
                 <div class="mx-auto w-full max-w-[1366px]">
-
                     @include('fleet.overview-content')
 
-                    @include('fleet.monitor.index')
-
-                    @include('fleet.utilization.index')
-
-                    @include('fleet.performance.drivers.index')
-
-                    @include('fleet.performance.routes.index')
-
-                    @include('fleet.schedule.index')
-
-                    @include('fleet.incidents.index')
-
-                    @include('fleet.announcements.index')
-
-                    @include('fleet.analytics.index')
-
-                    @include('fleet.dispatch-intelligence.index')
-
-                    @include('fleet.commuter-trips.index')
-
-                    @include('fleet.commuter-sessions.index')
-
-
-                    <!-- ==================== GENERIC PLACEHOLDER SCREEN ==================== -->
-                    <section id="screen-placeholder" class="hidden py-16 text-center space-y-4" style="display: none;">
-                        <div
-                            class="flex h-16 w-16 mx-auto items-center justify-center rounded-2xl bg-[#E6F1FB] text-[#003F87]">
-                            <i id="placeholder-icon" class="ti ti-settings text-3xl"></i>
-                        </div>
-                        <div class="space-y-1">
-                            <h2 id="placeholder-title" class="text-lg font-black text-slate-900">Module Screen</h2>
-                            <p class="text-slate-500 text-xs font-semibold">This dispatch operational database module is
-                                fully wired to
-                                local mock records.</p>
-                        </div>
-                        <button onclick="switchScreen('overview')"
-                            class="rounded-lg bg-[#003F87] px-4 py-2 text-xs font-extrabold text-white hover:bg-[#002D62] transition cursor-pointer">
-                            Back to Overview
-                        </button>
-                    </section>
+                    @foreach($fleetBreadcrumbs as $fleetTab => $fleetLabel)
+                        @continue($fleetTab === 'overview')
+                        <section id="screen-{{ $fleetTab }}" class="hidden animate-fade-in" style="display: none;" data-fleet-module-placeholder="{{ $fleetTab }}" data-loaded="false">
+                            <div class="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/70 text-center">
+                                <div class="space-y-3">
+                                    <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#003F87] shadow-sm">
+                                        <i class="ti ti-loader-2 text-lg"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-extrabold text-slate-800">{{ $fleetLabel }}</p>
+                                        <p class="text-xs font-semibold text-slate-500">Module loads when opened.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    @endforeach
 
                 </div>
             </main>
@@ -68,12 +60,34 @@
 
     <!-- ==================== FRONTEND CONTROLLER JAVASCRIPT ==================== -->
 
+
     <script>
-        window.GoPasigOverviewInitialData = {
-            routes: @json($routes),
-            buses: @json($buses),
-            scheduleCompliance: @json($scheduleCompliance)
+        window.GoPasigFleetModuleLoaderConfig = {
+            initialTab: @json($activeFleetTab ?? 'overview'),
+            fragmentUrl: @json(route('fleet.dashboard')),
+            scripts: {
+                analytics: @json(asset('js/fleet-dashboard/analytics.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/analytics.js'))),
+                drivers: @json(asset('js/fleet-dashboard/performance.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/performance.js'))),
+                routes: @json(asset('js/fleet-dashboard/performance.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/performance.js'))),
+                schedule: @json(asset('js/fleet-dashboard/schedule-compliance.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/schedule-compliance.js'))),
+                incidents: @json(asset('js/fleet-dashboard/incidents.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/incidents.js'))),
+                maintenance: @json(asset('js/fleet-dashboard/maintenance-management.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/maintenance-management.js'))),
+                'dispatch-intelligence': @json(asset('js/fleet-dashboard/dispatch-intelligence.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/dispatch-intelligence.js'))),
+                'commuter-trips': @json(asset('js/fleet-dashboard/commuter-trips.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/commuter-trips.js'))),
+                'commuter-sessions': @json(asset('js/fleet-dashboard/commuter-sessions.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/commuter-sessions.js'))),
+                profile: @json(asset('js/shared/staff-profile.js') . '?v=' . filemtime(public_path('js/shared/staff-profile.js')))
+            },
+            assets: {
+                echarts: @json(asset('js/echarts.min.js') . '?v=' . filemtime(public_path('js/echarts.min.js')))
+            }
         };
     </script>
+    <script>
+            window.GoPasigOverviewInitialData = {
+                routes: @json($routes),
+                buses: @json($buses),
+                scheduleCompliance: @json($scheduleCompliance)
+            };
+        </script>
 
 @endsection

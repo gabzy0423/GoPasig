@@ -341,13 +341,18 @@ function initOverviewPreviewMap(routes, buses) {
     // Draw route polylines
     const palette = ['#378ADD', '#639922', '#BA7517', '#E24B4A', '#0F6E56', '#DC2626', '#0891B2', '#D97706'];
     routes.forEach(route => {
-        if (route.polyline_coordinates) {
-            L.polyline(route.polyline_coordinates, {
-                color: palette[(route.id - 1) % palette.length],
-                weight: 3,
-                opacity: 0.85
-            }).addTo(previewMapInstance);
-        }
+        const geometries = route.map_geometry_source === 'route_variant'
+            ? (route.map_variant_geometries || []).filter(item => item.polyline_coordinates?.length > 0)
+            : [{ polyline_coordinates: route.polyline_coordinates }];
+        geometries.forEach(geometry => {
+            if (geometry.polyline_coordinates) {
+                L.polyline(geometry.polyline_coordinates, {
+                    color: palette[(route.id - 1) % palette.length],
+                    weight: 3,
+                    opacity: 0.85
+                }).addTo(previewMapInstance);
+            }
+        });
     });
 
     updatePreviewMapMarkers(buses);
@@ -419,7 +424,7 @@ function showToastNotification(message, isError = false) {
 
 // Resolve Incident Action (AJAX POST)
 async function resolveIncidentAction(id) {
-    if (!confirm('Are you sure you want to mark this incident as resolved?')) return;
+    if (!(await GoPasigUI.confirm('Are you sure you want to mark this incident as resolved?'))) return;
     
     try {
         const url = `/fleet/api/incidents/${id}/resolve`;
@@ -640,3 +645,5 @@ document.addEventListener('DOMContentLoaded', () => {
     // Set polling interval: every 30 seconds
     setInterval(fetchOverviewDashboardData, 30000);
 });
+
+

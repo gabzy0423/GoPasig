@@ -120,7 +120,7 @@ function updateActiveIncidentsFeedDOM() {
             <div class="mt-1 h-[46px] w-[3px] shrink-0 rounded-full ${barColor}"></div>
             <div class="min-w-0 flex-1 space-y-1.5">
                 <h3 class="truncate text-[14px] font-medium text-[#001F44]">${incident.title}</h3>
-                <p class="text-[12px] text-slate-500">${incident.incident_id} • ${incident.bus_plate} • ${incident.driver_name} • ${incident.route_name}</p>
+                <p class="text-[12px] text-slate-500">${incident.incident_id} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${incident.bus_plate} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${incident.driver_name} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${incident.route_name}</p>
             </div>
             <div class="min-w-[150px] space-y-1 text-right">
                 <p class="text-[12px] text-slate-400">Reported ${timeDiff}</p>
@@ -499,8 +499,14 @@ function clearIncidentsFormErrors() {
 }
 
 // Document ready entry
-document.addEventListener('DOMContentLoaded', () => {
-    if (document.getElementById('active-incidents-list')) {
+let fleetIncidentsModuleInitialized = false;
+let fleetIncidentsPollingId = null;
+
+function initFleetIncidentsModule() {
+    if (fleetIncidentsModuleInitialized || !document.getElementById('active-incidents-list')) return;
+    fleetIncidentsModuleInitialized = true;
+
+
         // Load initial dataset if injected
         if (window.GoPasigIncidentsInitialData) {
             currentActiveIncidents = window.GoPasigIncidentsInitialData.activeIncidents;
@@ -568,6 +574,15 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('incident-creation-form')?.addEventListener('submit', submitDetailedIncidentForm);
 
         // Polling interval
-        setInterval(fetchIncidentsData, 15000);
-    }
-});
+        if (!fleetIncidentsPollingId) {
+            fleetIncidentsPollingId = setInterval(fetchIncidentsData, 15000);
+        }
+}
+
+window.initFleetIncidentsModule = initFleetIncidentsModule;
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFleetIncidentsModule, { once: true });
+} else {
+    initFleetIncidentsModule();
+}

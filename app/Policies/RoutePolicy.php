@@ -9,7 +9,7 @@ class RoutePolicy
 {
     public function view(User $user, Route $route): bool
     {
-        return $user->role === 'admin' || $user->role === 'dispatcher';
+        return $user->role === 'admin' || $user->role === 'fleet_manager';
     }
 
     public function create(User $user): bool

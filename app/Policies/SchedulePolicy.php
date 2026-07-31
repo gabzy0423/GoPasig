@@ -9,17 +9,17 @@ class SchedulePolicy
 {
     public function view(User $user, Schedule $schedule): bool
     {
-        return $user->role === 'admin' || $user->role === 'dispatcher';
+        return $user->role === 'admin' || $user->role === 'fleet_manager';
     }
 
     public function create(User $user): bool
     {
-        return $user->role === 'admin' || $user->role === 'dispatcher';
+        return $user->role === 'admin' || $user->role === 'fleet_manager';
     }
 
     public function update(User $user, Schedule $schedule): bool
     {
-        return $user->role === 'admin' || $user->role === 'dispatcher';
+        return $user->role === 'admin' || $user->role === 'fleet_manager';
     }
 
     public function delete(User $user, Schedule $schedule): bool

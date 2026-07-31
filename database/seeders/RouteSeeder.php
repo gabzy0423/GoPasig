@@ -8,7 +8,10 @@ use App\Models\Stop;
 use App\Models\Bus;
 use App\Models\Geofence;
 use App\Models\RouteCorridor;
+use App\Models\RouteVariant;
+use App\Models\RouteVariantStop;
 use App\Enums\GeofenceType;
+use Illuminate\Support\Facades\Schema;
 
 class RouteSeeder extends Seeder
 {
@@ -207,6 +210,8 @@ class RouteSeeder extends Seeder
             'amenities' => 'Shelter, Security Post'
         ]);
 
+        $this->backfillDefaultVariants();
+
         // 3. Create Geofences corresponding to Stops
         $uniqueStops = Stop::all()->unique('name');
         foreach ($uniqueStops as $stop) {
@@ -262,5 +267,45 @@ class RouteSeeder extends Seeder
                 ]);
             }
         }
+    }
+
+    private function backfillDefaultVariants(): void
+    {
+        if (!Schema::hasTable('route_variants') || !Schema::hasTable('route_variant_stops')) {
+            return;
+        }
+
+        Route::with(['stops' => fn ($query) => $query->orderBy('sequence')])
+            ->orderBy('id')
+            ->get()
+            ->each(function (Route $route) {
+                if ($route->variants()->where('direction', 'outbound')->exists()) {
+                    return;
+                }
+
+                $stops = $route->stops;
+                $variant = RouteVariant::create([
+                    'route_id' => $route->id,
+                    'direction' => 'outbound',
+                    'origin_name' => $stops->first()?->name,
+                    'destination_name' => $stops->last()?->name,
+                    'polyline_coordinates' => $route->polyline_coordinates ?: [],
+                    'geometry_version' => $route->geometry_version ?? 0,
+                    'geometry_status' => empty($route->polyline_coordinates) ? 'pending' : 'valid',
+                    'is_default' => true,
+                ]);
+
+                foreach ($stops as $stop) {
+                    RouteVariantStop::create([
+                        'route_variant_id' => $variant->id,
+                        'canonical_stop_id' => $stop->id,
+                        'name' => $stop->name,
+                        'lat' => $stop->lat,
+                        'lng' => $stop->lng,
+                        'radius_meters' => $stop->radius_meters,
+                        'sequence' => $stop->sequence,
+                    ]);
+                }
+            });
     }
 }

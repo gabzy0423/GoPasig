@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Driver;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -55,8 +56,8 @@ class LoginTest extends TestCase
         $response->assertRedirect('/admin/dashboard');
         $this->post('/logout');
 
-        // Dispatcher
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        // Dispatcher / Fleet Manager
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
         $response = $this->post('/login', [
             'email' => $dispatcher->email,
             'password' => 'password',
@@ -110,7 +111,7 @@ class LoginTest extends TestCase
 
     public function test_unauthorized_users_cannot_access_other_dashboards(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         // Log in as dispatcher
         $this->actingAs($dispatcher);
@@ -141,5 +142,253 @@ class LoginTest extends TestCase
 
         $response->assertSessionHasErrors('email');
         $this->assertStringContainsString('Too many login attempts', session('errors')->first('email'));
+    }
+    public function test_dispatcher_login_ignores_api_intended_url(): void
+    {
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
+
+        $response = $this->withSession(['url.intended' => url('/admin/api/maintenance')])
+            ->post('/login', [
+                'email' => $dispatcher->email,
+                'password' => 'password',
+            ]);
+
+        $response->assertRedirect('/fleet/dashboard');
+    }
+
+    public function test_admin_login_ignores_api_intended_url(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $response = $this->withSession(['url.intended' => url('/admin/api/maintenance')])
+            ->post('/login', [
+                'email' => $admin->email,
+                'password' => 'password',
+            ]);
+
+        $response->assertRedirect('/admin/dashboard');
+    }
+
+    public function test_login_preserves_non_api_intended_web_url(): void
+    {
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
+
+        $response = $this->withSession(['url.intended' => url('/fleet/maintenance')])
+            ->post('/login', [
+                'email' => $dispatcher->email,
+                'password' => 'password',
+            ]);
+
+        $response->assertRedirect('/fleet/maintenance');
+    }
+
+    public function test_maintenance_api_route_remains_json(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $response = $this->actingAs($admin)->getJson('/admin/api/maintenance');
+
+        $response->assertOk();
+        $response->assertJsonStructure(['data']);
+    }
+    public function test_login_and_logout_responses_are_not_cached(): void
+    {
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
+
+        $loginPage = $this->get('/login');
+        $this->assertStringContainsString('no-store', $loginPage->headers->get('Cache-Control'));
+        $this->assertStringContainsString('no-cache', $loginPage->headers->get('Cache-Control'));
+        $this->assertStringContainsString('max-age=0', $loginPage->headers->get('Cache-Control'));
+        $this->assertStringContainsString('must-revalidate', $loginPage->headers->get('Cache-Control'));
+        $loginPage->assertHeader('Pragma', 'no-cache');
+
+        $this->withMiddleware();
+        $token = session()->token();
+
+        $this->post('/login', [
+            '_token' => $token,
+            'email' => $dispatcher->email,
+            'password' => 'password',
+        ])->assertRedirect('/fleet/dashboard');
+
+        $logoutResponse = $this->post('/logout', [
+            '_token' => session()->token(),
+        ]);
+
+        $logoutResponse->assertRedirect('/login');
+        $this->assertStringContainsString('no-store', $logoutResponse->headers->get('Cache-Control'));
+        $this->assertStringContainsString('no-cache', $logoutResponse->headers->get('Cache-Control'));
+        $this->assertStringContainsString('max-age=0', $logoutResponse->headers->get('Cache-Control'));
+        $this->assertStringContainsString('must-revalidate', $logoutResponse->headers->get('Cache-Control'));
+        $logoutResponse->assertHeader('Pragma', 'no-cache');
+    }
+
+    public function test_logout_is_post_only(): void
+    {
+        $this->get('/logout')->assertMethodNotAllowed();
+    }
+
+    public function test_users_can_switch_roles_in_same_browser_session_with_fresh_csrf_tokens(): void
+    {
+        $users = [
+            'admin' => User::factory()->create(['role' => 'admin']),
+            'dispatcher' => User::factory()->create(['role' => 'fleet_manager']),
+            'driver' => User::factory()->create(['role' => 'driver']),
+        ];
+
+        $dashboards = [
+            'admin' => '/admin/dashboard',
+            'dispatcher' => '/fleet/dashboard',
+            'driver' => '/driver/dashboard',
+        ];
+
+        $switches = [
+            ['dispatcher', 'dispatcher'],
+            ['dispatcher', 'admin'],
+            ['admin', 'dispatcher'],
+            ['admin', 'driver'],
+            ['driver', 'admin'],
+        ];
+
+        $this->withMiddleware();
+
+        foreach ($switches as [$firstRole, $secondRole]) {
+            $this->get('/login')->assertOk();
+
+            $this->post('/login', [
+                '_token' => session()->token(),
+                'email' => $users[$firstRole]->email,
+                'password' => 'password',
+            ])->assertRedirect($dashboards[$firstRole]);
+
+            $this->assertAuthenticatedAs($users[$firstRole]);
+
+            $this->post('/logout', [
+                '_token' => session()->token(),
+            ])->assertRedirect('/login');
+
+            $this->assertGuest();
+
+            $this->get('/login')->assertOk();
+
+            $this->post('/login', [
+                '_token' => session()->token(),
+                'email' => $users[$secondRole]->email,
+                'password' => 'password',
+            ])->assertRedirect($dashboards[$secondRole]);
+
+            $this->assertAuthenticatedAs($users[$secondRole]);
+
+            $this->post('/logout', [
+                '_token' => session()->token(),
+            ])->assertRedirect('/login');
+        }
+    }
+    public function test_authenticated_dashboards_are_not_cached(): void
+    {
+        $roles = [
+            ['role' => 'admin', 'path' => '/admin/dashboard'],
+            ['role' => 'fleet_manager', 'path' => '/fleet/dashboard'],
+            ['role' => 'driver', 'path' => '/driver/dashboard'],
+        ];
+
+        foreach ($roles as $case) {
+            $user = User::factory()->create(['role' => $case['role']]);
+
+
+            if ($case['role'] === 'driver') {
+                Driver::factory()->create(['user_id' => $user->id]);
+            }
+
+            $response = $this->actingAs($user)->get($case['path']);
+
+            $response->assertOk();
+            $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+            $this->assertStringContainsString('no-cache', $response->headers->get('Cache-Control'));
+            $this->assertStringContainsString('max-age=0', $response->headers->get('Cache-Control'));
+            $this->assertStringContainsString('must-revalidate', $response->headers->get('Cache-Control'));
+            $response->assertHeader('Pragma', 'no-cache');
+
+            $this->post('/logout');
+        }
+    }
+
+    public function test_admin_dashboard_registers_logout_request_lifecycle_manager(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $response = $this->actingAs($admin)->get('/admin/dashboard');
+
+        $response->assertOk();
+        $response->assertSee('request-lifecycle.js', false);
+        $response->assertSee('GoPasigAdminRequestLifecycle', false);
+        $response->assertSee('method="POST"', false);
+        $response->assertSee('/logout', false);
+    }
+    public function test_fleet_dashboard_registers_logout_request_lifecycle_manager(): void
+    {
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
+
+        $response = $this->actingAs($dispatcher)->get('/fleet/dashboard');
+
+        $response->assertOk();
+        $response->assertSee('fleet-dashboard/request-lifecycle.js', false);
+        $response->assertSee('GoPasigFleetRequestLifecycle', false);
+        $this->assertLessThan(
+            strpos($response->getContent(), 'fleet-dashboard/overview.js'),
+            strpos($response->getContent(), 'fleet-dashboard/request-lifecycle.js')
+        );
+        $response->assertSee('method="POST"', false);
+        $response->assertSee('/logout', false);
+    }
+    public function test_all_roles_can_switch_to_all_roles_in_same_browser_session_with_fresh_csrf_tokens(): void
+    {
+        $users = [
+            'admin' => User::factory()->create(['role' => 'admin']),
+            'dispatcher' => User::factory()->create(['role' => 'fleet_manager']),
+            'driver' => User::factory()->create(['role' => 'driver']),
+        ];
+
+        $dashboards = [
+            'admin' => '/admin/dashboard',
+            'dispatcher' => '/fleet/dashboard',
+            'driver' => '/driver/dashboard',
+        ];
+
+        $this->withMiddleware();
+
+        foreach (array_keys($users) as $firstRole) {
+            foreach (array_keys($users) as $secondRole) {
+                $this->get('/login')->assertOk();
+
+                $this->post('/login', [
+                    '_token' => session()->token(),
+                    'email' => $users[$firstRole]->email,
+                    'password' => 'password',
+                ])->assertRedirect($dashboards[$firstRole]);
+
+                $this->assertAuthenticatedAs($users[$firstRole]);
+
+                $this->post('/logout', [
+                    '_token' => session()->token(),
+                ])->assertRedirect('/login');
+
+                $this->assertGuest();
+
+                $this->get('/login')->assertOk();
+
+                $this->post('/login', [
+                    '_token' => session()->token(),
+                    'email' => $users[$secondRole]->email,
+                    'password' => 'password',
+                ])->assertRedirect($dashboards[$secondRole]);
+
+                $this->assertAuthenticatedAs($users[$secondRole]);
+
+                $this->post('/logout', [
+                    '_token' => session()->token(),
+                ])->assertRedirect('/login');
+            }
+        }
     }
 }

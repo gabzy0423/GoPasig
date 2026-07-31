@@ -68,7 +68,7 @@ function renderSessionsTableDOM(sessions) {
                     </button>
                 </div>
             </td>
-            <td class="py-3 px-3 text-slate-700 font-mono">${session.ip_address || '—'}</td>
+            <td class="py-3 px-3 text-slate-700 font-mono">${session.ip_address || 'ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â'}</td>
             <td class="py-3 px-3 text-[12px] text-slate-500 font-mono">${formatTimestamp(session.created_at)}</td>
             <td class="py-3 px-3 text-[12px] text-slate-500 font-mono">${formatTimestamp(session.expires_at)}</td>
             <td class="py-3 px-3">
@@ -119,7 +119,14 @@ function resetSessionsFiltersAction() {
 }
 
 // Setup polling and input events
-document.addEventListener('DOMContentLoaded', () => {
+let fleetCommuterSessionsModuleInitialized = false;
+let fleetCommuterSessionsPollingId = null;
+
+function initFleetCommuterSessionsModule() {
+    if (fleetCommuterSessionsModuleInitialized || !document.getElementById('sessions-search-input')) return;
+    fleetCommuterSessionsModuleInitialized = true;
+
+
     const search = document.getElementById('sessions-search-input');
 
     let debounceTimeout = null;
@@ -129,10 +136,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Register active polling loop check
-    setInterval(() => {
-        const sessionsScreen = document.getElementById('screen-commuter-sessions');
-        if (sessionsScreen && !sessionsScreen.classList.contains('hidden')) {
-            fetchCommuterSessions(sessionsCurrentPage);
-        }
-    }, 15000); // Poll every 15s when tab active
-});
+    if (!fleetCommuterSessionsPollingId) {
+        fleetCommuterSessionsPollingId = setInterval(() => {
+            const sessionsScreen = document.getElementById('screen-commuter-sessions');
+            if (sessionsScreen && !sessionsScreen.classList.contains('hidden')) {
+                fetchCommuterSessions(sessionsCurrentPage);
+            }
+        }, 15000); // Poll every 15s when tab active
+    }
+}
+
+window.initFleetCommuterSessionsModule = initFleetCommuterSessionsModule;
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFleetCommuterSessionsModule, { once: true });
+} else {
+    initFleetCommuterSessionsModule();
+}

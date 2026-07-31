@@ -21,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'commuter_session' => \App\Http\Middleware\EnsureCommuterSession::class,
         ]);
         $middleware->append(\App\Http\Middleware\SecurityHeadersMiddleware::class);
+        $middleware->append(\App\Http\Middleware\AuthLifecycleDiagnostics::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

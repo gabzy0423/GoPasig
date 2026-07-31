@@ -6,18 +6,22 @@ use App\Models\Trip;
 use App\Models\Bus;
 use App\Models\Driver;
 use App\Models\Route;
+use App\Models\RouteVariant;
+use App\Models\Schedule;
 
 use App\Enums\TripStatus;
 use App\Enums\GpsSessionStatus;
 
 class TripService
 {
-    public static function startTrip(Bus $bus, Driver $driver, Route $route, int $peakPassengers = 0): Trip
+    public static function startTrip(Bus $bus, Driver $driver, Route $route, int $peakPassengers = 0, ?RouteVariant $routeVariant = null, ?Schedule $schedule = null): Trip
     {
         return Trip::create([
             'bus_id'          => $bus->id,
             'driver_id'       => $driver->id,
             'route_id'        => $route->id,
+            'route_variant_id' => $routeVariant?->id,
+            'schedule_id'      => $schedule?->id,
             'status'          => TripStatus::DISPATCHED->value,
             'gps_session'     => GpsSessionStatus::OFF->value,
             'peak_passengers' => $peakPassengers,
@@ -47,3 +51,6 @@ class TripService
         ]);
     }
 }
+
+
+

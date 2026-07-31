@@ -300,7 +300,7 @@
         const durationVal = document.getElementById('maintenance-duration').value;
 
         if (!busId || !scheduledAt) {
-            alert('Please select a bus unit and scheduled date/time.');
+            GoPasigUI.alert('Please select a bus unit and scheduled date/time.');
             return;
         }
 
@@ -337,17 +337,17 @@
             const data = await response.json();
 
             if (response.ok && data.success) {
-                alert(data.message);
+                GoPasigUI.alert(data.message);
                 window.location.href = "{{ route('admin.dashboard') }}#maintenance";
             } else {
-                alert(data.message || 'Validation error. Please verify input data.');
+                GoPasigUI.alert(data.message || 'Validation error. Please verify input data.');
                 if (submitBtn) {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Schedule Session';
                 }
             }
         } catch (error) {
-            alert('Server connection error. Failed to schedule maintenance.');
+            GoPasigUI.alert('Server connection error. Failed to schedule maintenance.');
             console.error('AJAX maintenance submit error:', error);
             if (submitBtn) {
                 submitBtn.disabled = false;
@@ -373,3 +373,4 @@
     }
 </style>
 @endsection
+

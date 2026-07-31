@@ -10,6 +10,12 @@ class Route extends Model
 {
     use HasFactory, SoftDeletes;
 
+    private const CANONICAL_PRODUCTION_ROUTE_NAMES = [
+        'Route 1',
+        'Route 2',
+        'Route 3',
+    ];
+
     protected $fillable = ['name', 'color', 'description', 'polyline_coordinates', 'geometry_version', 'status', 'travel_time_minutes', 'delay_threshold_minutes', 'min_speed', 'max_speed', 'target_on_time_rate', 'target_headway_minutes', 'min_buses_required'];
 
     protected $casts = [
@@ -42,6 +48,35 @@ class Route extends Model
         });
     }
 
+    public static function canonicalProductionNames(): array
+    {
+        return self::CANONICAL_PRODUCTION_ROUTE_NAMES;
+    }
+
+    public static function getCanonicalProductionCached()
+    {
+        return self::getAllCached()
+            ->whereIn('name', self::canonicalProductionNames())
+            ->whereNotIn('status', ['inactive', 'Inactive']);
+    }
+
+    public function scopeCanonicalProduction($query)
+    {
+        return $query->whereIn('name', self::canonicalProductionNames());
+    }
+
+    public function scopePublicCommuterVisible($query)
+    {
+        return $query->canonicalProduction()
+            ->whereNotIn('status', ['inactive', 'Inactive']);
+    }
+
+    public function scopePublicCommuterActiveService($query)
+    {
+        return $query->canonicalProduction()
+            ->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive']);
+    }
+
     public function getColorAttribute($value)
     {
         return $value ?: config('brand.route_color_default', '#003F87');
@@ -50,6 +85,16 @@ class Route extends Model
     public function stops()
     {
         return $this->hasMany(Stop::class)->orderBy('sequence');
+    }
+
+    public function variants()
+    {
+        return $this->hasMany(RouteVariant::class);
+    }
+
+    public function defaultVariant()
+    {
+        return $this->hasOne(RouteVariant::class)->where('is_default', true);
     }
 
     public function buses()
@@ -61,9 +106,19 @@ class Route extends Model
     {
         return $this->hasMany(Schedule::class)->orderBy('departure_time');
     }
+    public function serviceSchedules()
+    {
+        return $this->hasMany(RouteServiceSchedule::class);
+    }
+
+    public function activeServiceSchedules()
+    {
+        return $this->hasMany(RouteServiceSchedule::class)->where('is_active', true);
+    }
 
     public function durations()
     {
         return $this->hasMany(RouteDuration::class);
     }
 }
+

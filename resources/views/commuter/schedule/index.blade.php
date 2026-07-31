@@ -1,7 +1,8 @@
 @extends('layouts.commuter')
 
-@section('title', 'GoPasig - Daily Bus Schedules')
+@section('title', 'GoPasig - Route Service Schedules')
 
 @section('content')
     <livewire:commuter.commuter-schedule />
 @endsection
+

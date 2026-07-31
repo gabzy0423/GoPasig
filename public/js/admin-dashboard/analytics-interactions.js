@@ -19,7 +19,7 @@
     // 3A: Real CSV exporter from tripData array
     function exportCSVDataMock() {
         if (!window.tripData || window.tripData.length === 0) {
-            alert("No trip data available to export today.");
+            GoPasigUI.alert("No trip data available to export today.");
             return;
         }
 
@@ -53,7 +53,7 @@
             document.body.removeChild(link);
         } catch (err) {
             console.error("Failed to export CSV:", err);
-            alert("An error occurred while generating the CSV file.");
+            GoPasigUI.alert("An error occurred while generating the CSV file.");
         }
     }
 
@@ -179,7 +179,7 @@
                         </div>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
-                        <button onclick="alert('Downloading Report...')" class="p-1 text-slate-400 hover:text-[#003F87] cursor-pointer" title="Download"><i class="ti ti-download text-sm"></i></button>
+                        <button onclick="GoPasigUI.alert('Downloading Report...')" class="p-1 text-slate-400 hover:text-[#003F87] cursor-pointer" title="Download"><i class="ti ti-download text-sm"></i></button>
                         <button onclick="this.closest('.flex').remove()" class="p-1 text-slate-400 hover:text-[#E24B4A] cursor-pointer" title="Delete"><i class="ti ti-trash text-sm"></i></button>
                     </div>
                 `;
@@ -191,7 +191,7 @@
             btnText.textContent = 'Generate Report';
             btn.classList.remove('opacity-75');
 
-            alert(`Success! "${typeLabel}" generated successfully in ${formatVal} format.`);
+            GoPasigUI.alert(`Success! "${typeLabel}" generated successfully in ${formatVal} format.`);
         }, 3000);
     }
 
@@ -309,3 +309,4 @@
             reportForm.addEventListener('submit', handleGenerateReport);
         }
     }
+

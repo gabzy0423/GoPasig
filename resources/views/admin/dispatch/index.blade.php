@@ -12,5 +12,5 @@
         </div>
     </div>
 
-    <livewire:admin.dispatch-builder />
+    <livewire:admin.dispatch-builder lazy />
 </section>

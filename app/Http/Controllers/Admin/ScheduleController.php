@@ -7,9 +7,13 @@ use App\Models\Bus;
 use App\Models\Driver;
 use App\Models\Route;
 use App\Models\Schedule;
+use App\Models\Trip;
 use App\Models\SystemSetting;
 use App\Services\BusinessLogicService;
 use App\Services\DriverPerformanceService;
+use App\Services\RouteVariantSelectionService;
+use App\Services\SimulationDispatchService;
+use App\Services\CentralDispatchEligibilityService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 
@@ -45,12 +49,15 @@ class ScheduleController extends Controller
      */
     public function index()
     {
-        $schedules = Schedule::with(['route', 'bus', 'driver'])->get();
+        $schedules = Schedule::with(['route', 'routeVariant', 'bus', 'driver', 'trip'])->get();
 
         $formatted = $schedules->map(function ($s) {
             return [
                 'id' => $s->id,
                 'routeId' => (string) $s->route_id,
+                'routeVariantId' => $s->route_variant_id,
+                'direction' => $s->routeVariant?->direction,
+                'directionLabel' => $s->routeVariant ? app(RouteVariantSelectionService::class)->label($s->routeVariant) : null,
                 'time' => substr($s->departure_time, 0, 5), // HH:MM
                 'driver' => $s->driver ? $s->driver->initials : '',
                 'driverName' => $s->driver ? ($s->driver->first_name.' '.$s->driver->last_name) : 'Unassigned',
@@ -83,6 +90,7 @@ class ScheduleController extends Controller
         }
         $validated = $request->validate([
             'route_id' => 'required|exists:routes,id',
+            'route_variant_id' => 'nullable|integer|exists:route_variants,id',
             'bus_plate' => 'required|string',
             'driver_id' => 'required|integer|exists:drivers,id',
             'service_date' => 'nullable|date',
@@ -145,6 +153,9 @@ class ScheduleController extends Controller
                     throw new \Exception($conflictCheck['message']);
                 }
 
+                $route = Route::findOrFail($validated['route_id']);
+                $routeVariant = app(RouteVariantSelectionService::class)->resolveForSchedule($route, isset($validated['route_variant_id']) ? (int) $validated['route_variant_id'] : null);
+
                 // Compute estimated arrival time using route duration
                 $departure = $validated['departure_time'];
                 $duration = $this->resolveRouteTravelDuration($validated['route_id']);
@@ -157,6 +168,7 @@ class ScheduleController extends Controller
 
                 return Schedule::create([
                     'route_id' => $validated['route_id'],
+                    'route_variant_id' => $routeVariant?->id,
                     'service_date' => $validated['service_date'] ?? now('Asia/Manila')->toDateString(),
                     'bus_id' => $busLocked->id,
                     'driver_id' => $driverLocked->id,
@@ -179,6 +191,9 @@ class ScheduleController extends Controller
             'schedule' => [
                 'id' => $schedule->id,
                 'routeId' => (string) $schedule->route_id,
+                'routeVariantId' => $schedule->route_variant_id,
+                'direction' => $schedule->routeVariant?->direction,
+                'directionLabel' => $schedule->routeVariant ? app(RouteVariantSelectionService::class)->label($schedule->routeVariant) : null,
                 'time' => substr($schedule->departure_time, 0, 5),
                 'driver' => $driver->initials,
                 'driverName' => $driver->first_name.' '.$driver->last_name,
@@ -205,6 +220,7 @@ class ScheduleController extends Controller
         }
         $validated = $request->validate([
             'route_id' => 'required|exists:routes,id',
+            'route_variant_id' => 'nullable|integer|exists:route_variants,id',
             'bus_plate' => 'required|string',
             'driver_id' => 'required|integer|exists:drivers,id',
             'service_date' => 'nullable|date',
@@ -271,6 +287,9 @@ class ScheduleController extends Controller
                     throw new \Exception($conflictCheck['message']);
                 }
 
+                $route = Route::findOrFail($validated['route_id']);
+                $routeVariant = app(RouteVariantSelectionService::class)->resolveForSchedule($route, isset($validated['route_variant_id']) ? (int) $validated['route_variant_id'] : null);
+
                 // Compute arrival time
                 $departure = $validated['departure_time'];
                 $duration = $this->resolveRouteTravelDuration($validated['route_id']);
@@ -283,6 +302,7 @@ class ScheduleController extends Controller
 
                 $schedule->update([
                     'route_id' => $validated['route_id'],
+                    'route_variant_id' => $routeVariant?->id,
                     'service_date' => $validated['service_date'] ?? $schedule->service_date ?? now('Asia/Manila')->toDateString(),
                     'bus_id' => $busLocked->id,
                     'driver_id' => $driverLocked->id,
@@ -303,6 +323,9 @@ class ScheduleController extends Controller
             'schedule' => [
                 'id' => $schedule->id,
                 'routeId' => (string) $schedule->route_id,
+                'routeVariantId' => $schedule->route_variant_id,
+                'direction' => $schedule->routeVariant?->direction,
+                'directionLabel' => $schedule->routeVariant ? app(RouteVariantSelectionService::class)->label($schedule->routeVariant) : null,
                 'time' => substr($schedule->departure_time, 0, 5),
                 'driver' => $driver->initials,
                 'driverName' => $driver->first_name.' '.$driver->last_name,
@@ -393,26 +416,90 @@ class ScheduleController extends Controller
 
         $today = Carbon::now('Asia/Manila')->toDateString();
 
-        $dispatches = Schedule::with(['route', 'bus', 'driver'])
+        $schedules = Schedule::with(['route', 'routeVariant.stops', 'route.variants.stops', 'bus', 'driver', 'trip'])
             ->whereDate('service_date', $today)
             ->whereNotIn('status', [Schedule::STATUS_CANCELLED, 'cancelled'])
             ->orderBy('departure_time')
-            ->get()
-            ->map(function (Schedule $schedule) {
-                return [
-                    'id' => $schedule->id,
-                    'routeId' => (string) $schedule->route_id,
-                    'routeName' => $schedule->route?->name ?? 'Unassigned',
-                    'busId' => $schedule->bus_id,
-                    'busPlate' => $schedule->bus?->plate_number ?? 'Unassigned',
-                    'driverId' => $schedule->driver_id,
-                    'driverName' => $schedule->driver?->name ?? 'Unassigned',
-                    'driverInitials' => $schedule->driver?->initials ?? '',
-                    'departureTime' => substr($schedule->departure_time, 0, 5),
-                    'arrivalTime' => $schedule->arrival_time ? substr($schedule->arrival_time, 0, 5) : null,
-                    'status' => $schedule->status,
-                ];
-            });
+            ->get();
+
+        $routeIds = $schedules->pluck('route_id')->filter()->unique()->values()->toArray();
+
+        // N+1 Prevention: Precalculate ongoing trips per route in a single query
+        $ongoingTripCountsByRoute = [];
+        if (! empty($routeIds)) {
+            $ongoingTripCountsByRoute = Trip::whereIn('route_id', $routeIds)
+                ->where('status', 'ongoing')
+                ->selectRaw('route_id, COUNT(*) as total')
+                ->groupBy('route_id')
+                ->pluck('total', 'route_id')
+                ->toArray();
+        }
+
+        // N+1 Prevention: Precalculate active suspension alerts per route in a single query
+        $suspensionReasonByRouteId = [];
+        if (! empty($routeIds)) {
+            $activeSuspensionAlerts = \App\Models\ServiceAlert::where('status', 'active')
+                ->where('suspend_route', true)
+                ->orderBy('created_at', 'desc')
+                ->orderBy('id', 'desc')
+                ->get();
+
+            $routesMap = Route::whereIn('id', $routeIds)->get()->keyBy('id');
+
+            foreach ($routesMap as $rId => $rObj) {
+                if ($rObj->status === 'Suspended') {
+                    $matchingAlert = $activeSuspensionAlerts->first(function ($alert) use ($rObj) {
+                        if ($alert->route_id && (int) $alert->route_id === (int) $rObj->id) {
+                            return true;
+                        }
+                        $affected = array_map('trim', explode(',', (string) $alert->affected_routes));
+                        return in_array($rObj->name, $affected, true) ||
+                               in_array('All official routes', $affected, true) ||
+                               in_array('All routes', $affected, true) ||
+                               in_array('All Routes', $affected, true);
+                    });
+
+                    $suspensionReasonByRouteId[$rId] = $matchingAlert ? $matchingAlert->title : 'Route is currently suspended.';
+                }
+            }
+        }
+
+        $dispatches = $schedules->map(function (Schedule $schedule) use ($ongoingTripCountsByRoute, $suspensionReasonByRouteId) {
+            $isRouteSuspended = $schedule->route?->status === 'Suspended';
+            $suspensionReason = $isRouteSuspended
+                ? ($suspensionReasonByRouteId[$schedule->route_id] ?? 'Route is currently suspended.')
+                : null;
+            $remainingActiveTrips = $schedule->route_id
+                ? ($ongoingTripCountsByRoute[$schedule->route_id] ?? 0)
+                : 0;
+
+            $dispatchState = $this->dispatchQueueState($schedule, $suspensionReason);
+
+            return [
+                'id'                    => $schedule->id,
+                'routeId'               => (string) $schedule->route_id,
+                'routeName'             => $schedule->route?->name ?? 'Unassigned',
+                'routeVariantId'        => $schedule->route_variant_id,
+                'direction'             => $schedule->routeVariant?->direction,
+                'directionLabel'        => $schedule->routeVariant ? app(RouteVariantSelectionService::class)->label($schedule->routeVariant) : null,
+                'busId'                 => $schedule->bus_id,
+                'busPlate'              => $schedule->bus?->plate_number ?? 'Unassigned',
+                'driverId'              => $schedule->driver_id,
+                'driverName'            => $schedule->driver?->name ?? 'Unassigned',
+                'driverInitials'        => $schedule->driver?->initials ?? '',
+                'departureTime'         => substr($schedule->departure_time, 0, 5),
+                'arrivalTime'           => $schedule->arrival_time ? substr($schedule->arrival_time, 0, 5) : null,
+                'status'                => $schedule->status,
+                'tripId'                => $schedule->trip?->id,
+                'isDispatched'          => (bool) $schedule->trip,
+                'isRouteSuspended'      => $isRouteSuspended,
+                'suspensionReason'      => $suspensionReason,
+                'remainingActiveTrips' => (int) $remainingActiveTrips,
+                'dispatchState'         => $dispatchState['state'],
+                'canDispatch'           => $dispatchState['canDispatch'],
+                'dispatchBlockedReason' => $dispatchState['reason'],
+            ];
+        });
 
         return response()->json([
             'success' => true,
@@ -421,6 +508,48 @@ class ScheduleController extends Controller
         ]);
     }
 
+    /**
+     * Dispatch the exact scheduled service instance into a linked Trip.
+     */
+    public function dispatch(Request $request, Schedule $schedule)
+    {
+        if (auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins can dispatch schedules',
+            ], 403);
+        }
+
+        if (in_array($schedule->status, [Schedule::STATUS_CANCELLED, 'cancelled'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cancelled schedules cannot be dispatched.',
+            ], 422);
+        }
+
+        try {
+            $trip = SimulationDispatchService::dispatchFromSchedule($schedule, auth()->id(), 'Scheduled dispatch.');
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Schedule dispatched successfully.',
+            'trip' => [
+                'id' => $trip->id,
+                'scheduleId' => $trip->schedule_id,
+                'busId' => $trip->bus_id,
+                'driverId' => $trip->driver_id,
+                'routeId' => $trip->route_id,
+                'routeVariantId' => $trip->route_variant_id,
+                'status' => $trip->status,
+            ],
+        ], 201);
+    }
     /**
      * Remove the specified schedule.
      */
@@ -442,6 +571,81 @@ class ScheduleController extends Controller
     }
 
     /**
+     * Determine schedule dispatch readiness for the Admin queue display.
+     */
+    private function dispatchQueueState(Schedule $schedule, ?string $suspensionReason = null): array
+    {
+        if ($schedule->trip) {
+            return ['state' => 'dispatched', 'canDispatch' => false, 'reason' => 'Trip #' . $schedule->trip->id];
+        }
+
+        if (in_array($schedule->status, [Schedule::STATUS_CANCELLED, 'cancelled'], true)) {
+            return ['state' => 'cancelled', 'canDispatch' => false, 'reason' => 'Schedule is cancelled.'];
+        }
+
+        if (! $schedule->bus) {
+            return ['state' => 'blocked', 'canDispatch' => false, 'reason' => 'Missing bus assignment.'];
+        }
+
+        if (! $schedule->driver) {
+            return ['state' => 'blocked', 'canDispatch' => false, 'reason' => 'Missing driver assignment.'];
+        }
+
+        if (! $schedule->route) {
+            return ['state' => 'blocked', 'canDispatch' => false, 'reason' => 'Missing route assignment.'];
+        }
+
+        $busEligibility = CentralDispatchEligibilityService::bus($schedule->bus);
+        if (! $busEligibility['eligible']) {
+            return ['state' => 'blocked', 'canDispatch' => false, 'reason' => 'Bus unavailable: ' . $busEligibility['reason'] . '.'];
+        }
+
+        $driverEligibility = CentralDispatchEligibilityService::driver($schedule->driver);
+        if (! $driverEligibility['eligible']) {
+            return ['state' => 'blocked', 'canDispatch' => false, 'reason' => 'Driver unavailable: ' . $driverEligibility['reason'] . '.'];
+        }
+
+        $routeVariantSelection = app(RouteVariantSelectionService::class);
+        $variants = $schedule->route->relationLoaded('variants')
+            ? $schedule->route->variants
+            : $schedule->route->variants()->with('stops')->get();
+
+        if ($variants->isNotEmpty()) {
+            if ($schedule->route_variant_id) {
+                $variant = $schedule->routeVariant;
+                if (! $variant || (int) $variant->route_id !== (int) $schedule->route_id) {
+                    return ['state' => 'blocked', 'canDispatch' => false, 'reason' => 'Scheduled direction does not belong to the route.'];
+                }
+
+                if (! $routeVariantSelection->isUsableForLiveDispatch($variant)) {
+                    return ['state' => 'blocked', 'canDispatch' => false, 'reason' => 'Scheduled direction is not usable for live dispatch.'];
+                }
+            } else {
+                $usableVariants = $variants
+                    ->filter(fn (\App\Models\RouteVariant $variant) => $routeVariantSelection->isUsableForLiveDispatch($variant))
+                    ->values();
+
+                if ($usableVariants->count() === 0) {
+                    return ['state' => 'blocked', 'canDispatch' => false, 'reason' => 'Route has no usable direction for live dispatch.'];
+                }
+
+                if ($usableVariants->count() > 1) {
+                    return ['state' => 'blocked', 'canDispatch' => false, 'reason' => 'Schedule needs a specific direction before dispatch.'];
+                }
+            }
+        }
+
+        if ($schedule->route->status === 'Suspended') {
+            return [
+                'state'       => 'route_suspended',
+                'canDispatch' => false,
+                'reason'      => $suspensionReason ?: 'Route is currently suspended.',
+            ];
+        }
+
+        return ['state' => 'ready', 'canDispatch' => true, 'reason' => null];
+    }
+    /**
      * Resolve duration for a route from the routes table or fallback system setting.
      */
     protected function resolveRouteTravelDuration(int $routeId): int
@@ -457,3 +661,13 @@ class ScheduleController extends Controller
         return (int) $duration;
     }
 }
+
+
+
+
+
+
+
+
+
+

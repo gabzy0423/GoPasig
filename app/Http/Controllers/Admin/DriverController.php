@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Driver;
 use App\Models\SystemSetting;
+use App\Services\CentralDispatchEligibilityService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
@@ -42,6 +43,12 @@ class DriverController extends Controller
     public function index()
     {
         $drivers = Driver::orderBy('created_at', 'desc')->get();
+
+        $drivers->each(function ($driver) {
+            $eligibility = CentralDispatchEligibilityService::driver($driver);
+            $driver->dispatch_eligible = $eligibility['eligible'];
+            $driver->dispatch_reason = $eligibility['reason'];
+        });
 
         // Calculate Stats
         $onDuty = Driver::where('status', 'active')->count();
@@ -152,7 +159,7 @@ class DriverController extends Controller
             'message' => "Driver {$driver->first_name} {$driver->last_name} registered successfully!",
             'driver' => $driver,
             'login_credentials' => [
-                'email'    => $email,
+                'email' => $email,
                 'password' => $defaultPassword,
             ],
         ]);
@@ -256,12 +263,12 @@ class DriverController extends Controller
         }
 
         $name = "{$driver->first_name} {$driver->last_name}";
-        
+
         // Delete associated user account if it exists
         if ($driver->user_id) {
             \App\Models\User::destroy($driver->user_id);
         }
-        
+
         $driver->delete();
 
         return response()->json([

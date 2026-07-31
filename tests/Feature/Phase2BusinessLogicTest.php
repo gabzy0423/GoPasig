@@ -33,7 +33,7 @@ class Phase2BusinessLogicTest extends TestCase
         ]);
 
         $this->bus = Bus::factory()->create([
-            'status' => 'active',
+            'status' => 'inactive',
             'capacity' => 50,
         ]);
 
@@ -134,9 +134,9 @@ class Phase2BusinessLogicTest extends TestCase
     }
 
     /** @test */
-    public function test_schedule_conflict_service_detects_inactive_bus()
+    public function test_schedule_conflict_service_detects_maintenance_bus()
     {
-        $inactiveBus = Bus::factory()->create(['status' => 'inactive']);
+        $inactiveBus = Bus::factory()->create(['status' => 'maintenance']);
 
         $result = ScheduleConflictService::validateSchedule(
             $this->route->id,
@@ -147,7 +147,7 @@ class Phase2BusinessLogicTest extends TestCase
         );
 
         $this->assertFalse($result['valid']);
-        $this->assertStringContainsString('inactive', strtolower($result['message']));
+        $this->assertStringContainsString('maintenance', strtolower($result['message']));
     }
 
     /** @test */
@@ -197,7 +197,7 @@ class Phase2BusinessLogicTest extends TestCase
             'status' => 'On time',
         ]);
 
-        $bus2 = Bus::factory()->create(['status' => 'active', 'capacity' => 50]);
+        $bus2 = Bus::factory()->create(['status' => 'inactive', 'capacity' => 50]);
         $result = ScheduleConflictService::validateSchedule(
             $this->route->id,
             $bus2->id,

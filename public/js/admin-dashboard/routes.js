@@ -104,6 +104,33 @@ function calculatePolylineDistance(coords) {
 }
 
 // ── SYNC WITH DATABASE ───────────────────────────────────────
+function isDirectionAwareRouteRecord(route) {
+    return Array.isArray(route?.variants) && route.variants.some(v => v.direction === 'inbound');
+}
+
+function getActiveVariantForRoute(routeId) {
+    const route = routesDataDb.find(r => r.id.toString() === routeId.toString());
+    if (!isDirectionAwareRouteRecord(route)) return null;
+    if (typeof selectedVariantForGeometry === 'function') {
+        const selected = selectedVariantForGeometry();
+        if (selected && String(selected.route_id) === String(routeId)) return selected;
+    }
+    return route.variants.find(v => v.is_default) || route.variants.find(v => v.direction === 'outbound') || null;
+}
+
+function isUsableVariantGeometry(variant) {
+    return !!variant &&
+        ['authoritative', 'approved', 'verified', 'valid'].includes(String(variant.geometry_status || '').toLowerCase()) &&
+        Array.isArray(variant.polyline_coordinates) &&
+        variant.polyline_coordinates.length >= 2;
+}
+
+function variantDistanceLabel(variant) {
+    return isUsableVariantGeometry(variant)
+        ? calculatePolylineDistance(variant.polyline_coordinates)
+        : 'Pending / unavailable';
+}
+
 function syncRoutesWithDatabase() {
     if (typeof routesDataDb === 'undefined' || routesDataDb.length === 0) return;
 
@@ -111,50 +138,39 @@ function syncRoutesWithDatabase() {
         const idStr = route.id.toString();
         const color = routeColors[idStr] || '#003F87';
         const status = normalizeRouteStatus(route.status);
-        
-        // Find assigned buses from fleetData
+        const directionAware = isDirectionAwareRouteRecord(route);
+        const variants = route.variants || [];
+        const legacyStops = route.stops || [];
+        const stopSummary = directionAware
+            ? variants.map(v => (v.direction === 'outbound' ? 'Outbound ' : 'Inbound ') + ((v.stops || []).length)).join(' / ')
+            : legacyStops.length + ' stops';
         const assigned = fleetData.filter(b => b.route === idStr).map(b => b.plate);
-        
-        // Calculate dynamic statistics
-        let avgPax = route.avg_passengers || 120;
-        let distance = calculatePolylineDistance(route.polyline_coordinates);
-        
-        // Busiest stop: find the stop in the route with the highest boarding + alighting
+        const avgPax = route.avg_passengers || 120;
+        const distance = directionAware
+            ? 'Pending / unavailable'
+            : calculatePolylineDistance(route.polyline_coordinates);
+
         let busiestStop = 'None';
-        if (route.stops && route.stops.length > 0) {
-            let maxIndex = 0;
-            let maxTotal = 0;
-            route.stops.forEach((stop, index) => {
-                const boarding = 15 + index * 5;
-                const alighting = 10 + index * 5;
-                const total = boarding + alighting;
-                if (total > maxTotal) {
-                    maxTotal = total;
-                    maxIndex = index;
-                }
-            });
-            busiestStop = route.stops[maxIndex].name;
+        if (!directionAware && legacyStops.length > 0) {
+            busiestStop = legacyStops[legacyStops.length - 1].name;
         }
 
-        // Peak Hours: default rush hours, Route 1 gets all day
         let peakHours = 'Rush Hours (05:30-09:00 AM, 03:00-06:30 PM)';
-        if (route.id == 1) {
-            peakHours = 'All Day (Mon-Fri)';
-        }
+        if (route.id == 1) peakHours = 'All Day (Mon-Fri)';
 
-        // Generate matching styled bg, text colors based on color
         return {
             id: idStr,
             name: route.name,
             endpoints: route.description || route.name,
-            status: status,
-            stopsCount: route.stops ? route.stops.length : 0,
-            distance: distance,
+            status,
+            stopsCount: directionAware ? variants.reduce((max, v) => Math.max(max, (v.stops || []).length), 0) : legacyStops.length,
+            stopSummary,
+            distance,
             busesCount: assigned.length,
-            avgPax: avgPax,
-            peakHours: peakHours,
-            busiestStop: busiestStop,
-            color: color,
+            avgPax,
+            peakHours,
+            busiestStop,
+            color,
             bg: route.id == 1 ? '#E6F1FB' : (route.id == 2 ? '#EAF3DE' : (route.id == 3 ? '#FAEEDA' : '#FCEBEB')),
             textColor: route.id == 1 ? '#0C447C' : (route.id == 2 ? '#3B6D11' : (route.id == 3 ? '#854F0B' : '#A32D2D')),
             opacityBg: route.id == 1 ? 'rgba(0, 63, 135, 0.10)' : (route.id == 2 ? 'rgba(59, 109, 17, 0.10)' : (route.id == 3 ? 'rgba(133, 79, 11, 0.10)' : 'rgba(226, 75, 74, 0.10)')),
@@ -162,34 +178,22 @@ function syncRoutesWithDatabase() {
         };
     });
 
-    // Populate stopsData from the database stop arrays
     stopsData = {};
     routesDataDb.forEach(route => {
         const idStr = route.id.toString();
-        if (route.stops && route.stops.length > 0) {
-            stopsData[idStr] = route.stops.map((stop, index) => {
-                let landmark = 'stop';
-                if (index === 0) landmark = 'origin';
-                else if (index === route.stops.length - 1) landmark = 'terminus';
-
-                return {
-                    id: stop.id,
-                    name: stop.name,
-                    landmark: landmark,
-                    boarding: 15 + index * 5,
-                    alighting: 10 + index * 5,
-                    dwell: '45s',
-                    status: index === 0 ? 'served' : (index === route.stops.length - 1 ? 'terminus' : 'current'),
-                    lat: parseFloat(stop.lat),
-                    lng: parseFloat(stop.lng)
-                };
-            });
-        } else {
-            stopsData[idStr] = [];
-        }
+        stopsData[idStr] = (route.stops || []).map((stop, index) => ({
+            id: stop.id,
+            name: stop.name,
+            landmark: index === 0 ? 'origin' : (index === route.stops.length - 1 ? 'terminus' : 'stop'),
+            boarding: 15 + index * 5,
+            alighting: 10 + index * 5,
+            dwell: '-',
+            status: index === 0 ? 'served' : (index === route.stops.length - 1 ? 'terminus' : 'current'),
+            lat: Number(stop.lat),
+            lng: Number(stop.lng)
+        }));
     });
 }
-
 async function initRoutesDashboard() {
     // Set initial date label dynamically
     const dateLabel = document.getElementById('rm-schedule-date-label');
@@ -551,7 +555,7 @@ function renderRouteList() {
                 </div>
                 <div class="rm-rc-mid">${route.endpoints}</div>
                 <div class="rm-rc-stats">
-                    <span class="rm-rc-stat-item"><i class="ti ti-map-pin"></i> ${route.stopsCount} stops</span>
+                    <span class="rm-rc-stat-item"><i class="ti ti-map-pin"></i> ${route.stopSummary}</span>
                     <span class="rm-rc-stat-item"><i class="ti ti-road"></i> ${route.distance}</span>
                     <span class="rm-rc-stat-item"><i class="ti ti-bus"></i> ${route.busesCount} buses</span>
                 </div>
@@ -576,11 +580,31 @@ function toggleSuspendedRoutes() {
     renderRouteList();
 }
 
+function refreshVariantRouteView() {
+    if (typeof selectedRouteId === 'undefined') return;
+    const route = routesData.find(r => String(r.id) === String(selectedRouteId));
+    if (!route) return;
+    const variant = getActiveVariantForRoute(route.id);
+    const displayedStops = getRouteEditorStops(route.id);
+    const label = document.getElementById('rm-timeline-stops-count');
+    if (label) {
+        const direction = variant ? ' (' + variant.direction + ': ' + variant.origin_name + ' -> ' + variant.destination_name + ')' : '';
+        label.textContent = 'Stop sequence - ' + displayedStops.length + ' stops' + direction;
+    }
+    const addStopButton = document.getElementById('btn-add-legacy-stop');
+    if (addStopButton) addStopButton.classList.toggle('hidden', !!variant);
+    renderStopTimeline(route.id);
+    renderRouteMap(route.id);
+    const stats = document.getElementById('rm-route-stats-summary-container');
+    const distanceValue = stats?.querySelector('.rm-stat-sum-val');
+    if (distanceValue) distanceValue.textContent = variant ? variantDistanceLabel(variant) : route.distance;
+}
 function renderRouteDetailPanel() {
-    const route = routesData.find(r => r.id === selectedRouteId);
+    const route = routesData.find(r => String(r.id) === String(selectedRouteId));
     if (!route) return;
 
     const dbRoute = routesDataDb.find(r => r.id.toString() === selectedRouteId.toString());
+    if (typeof syncVariantGeometrySelection === 'function') syncVariantGeometrySelection();
 
     // Header updates
     document.getElementById('rm-detail-route-title').textContent = `${route.name} — ${route.endpoints}`;
@@ -593,13 +617,15 @@ function renderRouteDetailPanel() {
         statusLabel.textContent = 'Suspended';
     }
 
-    // Stops count label
-    document.getElementById('rm-timeline-stops-count').textContent = `Stop sequence — ${route.stopsCount} stops`;
+    const activeVariant = getActiveVariantForRoute(route.id);
+    const displayedStops = getRouteEditorStops(route.id);
+    const directionLabel = activeVariant ? ' (' + activeVariant.direction + ': ' + activeVariant.origin_name + ' -> ' + activeVariant.destination_name + ')' : '';
 
-    // Render Timeline
+    document.getElementById('rm-timeline-stops-count').textContent = 'Stop sequence - ' + displayedStops.length + ' stops' + directionLabel;
+    const addStopButton = document.getElementById('btn-add-legacy-stop');
+    if (addStopButton) addStopButton.classList.toggle('hidden', !!activeVariant);
+
     renderStopTimeline(route.id);
-
-    // Render Map
     renderRouteMap(route.id);
 
     // Render Route Stats
@@ -613,7 +639,7 @@ function renderRouteDetailPanel() {
         statsContainer.innerHTML = `
             <div class="rm-stat-summary-row">
                 <span class="rm-stat-sum-lbl">Total distance:</span>
-                <span class="rm-stat-sum-val">${route.distance}</span>
+                <span class="rm-stat-sum-val">${activeVariant ? variantDistanceLabel(activeVariant) : route.distance}</span>
             </div>
             <div class="rm-stat-summary-row">
                 <span class="rm-stat-sum-lbl">Avg trip duration:</span>
@@ -648,19 +674,37 @@ function renderRouteDetailPanel() {
     }
 }
 
+function getRouteEditorStops(routeId) {
+    const variant = getActiveVariantForRoute(routeId);
+    if (variant) {
+        return (variant.stops || []).slice().sort((a, b) => a.sequence - b.sequence).map((stop, index, stops) => ({
+            id: stop.id,
+            name: stop.name,
+            landmark: index === 0 ? 'origin' : (index === stops.length - 1 ? 'terminus' : 'stop'),
+            boarding: '-',
+            alighting: '-',
+            dwell: '-',
+            status: stop.coordinate_status || 'pending',
+            routeVariantStop: true
+        }));
+    }
+    return stopsData[routeId] || [];
+}
+
 function renderStopTimeline(routeId) {
     const timelineContainer = document.getElementById('rm-stop-timeline-container');
     if (!timelineContainer) return;
 
-    const stops = stopsData[routeId] || [];
+    const stops = getRouteEditorStops(routeId);
+    const variant = getActiveVariantForRoute(routeId);
+    const directional = !!variant;
 
     if (stops.length === 0) {
-        timelineContainer.innerHTML = `<div style="padding:16px;color:var(--color-text-secondary);font-size:13px;">No stops configured.</div>`;
+        timelineContainer.innerHTML = '<div style="padding:16px;color:var(--color-text-secondary);font-size:13px;">No stops configured.</div>';
         return;
     }
 
     timelineContainer.innerHTML = stops.map((stop, index) => {
-        // Circle class rules
         let circleClass = 'rm-node-circle';
         let lineClass = 'rm-node-line';
         let labelHtml = '';
@@ -679,52 +723,32 @@ function renderStopTimeline(routeId) {
             circleClass += ' future';
         }
 
-        // Connector line details
         const isLast = index === stops.length - 1;
-        
-        // If connecting served stops
         if (stop.status === 'served' && stops[index + 1] && stops[index + 1].status === 'served') {
             lineClass += ' served-conn';
         }
 
-        return `
-            <div class="rm-timeline-node">
-                <div class="rm-node-left">
-                    <div class="${circleClass}">
-                        ${labelHtml}
-                    </div>
-                    ${!isLast ? `<div class="${lineClass}"></div>` : ''}
-                </div>
-                <div class="rm-node-right">
-                    <div class="rm-stop-name-row">
-                        <span class="rm-stop-name">${stop.name}</span>
-                        ${stop.landmark && stop.landmark !== 'origin' && stop.landmark !== 'terminus' 
-                            ? `<span class="rm-stop-landmark">near ${stop.landmark}</span>` : ''}
-                        
-                        <i class="ti ti-grip-vertical rm-stop-drag" onclick="moveStop('${routeId}', ${index})" title="Move Stop Position"></i>
-                        <i class="ti ti-trash rm-stop-delete" onclick="deleteStop('${routeId}', ${index})" title="Delete Stop"></i>
-                    </div>
-                    <div class="rm-stop-stats-row">
-                        <span class="rm-stop-stat-val text-blue" style="color:#0C447C;">
-                            <i class="ti ti-arrow-bar-up" style="color:#003F87;"></i> ${stop.boarding} avg boarding
-                        </span>
-                        <span class="rm-stop-stat-val">
-                            <i class="ti ti-arrow-bar-down"></i> ${stop.alighting} avg alighting
-                        </span>
-                        ${stop.dwell !== '—' ? `
-                        <span class="rm-stop-stat-val">
-                            <i class="ti ti-clock"></i> ~${stop.dwell} dwell
-                        </span>` : ''}
-                    </div>
-                </div>
-            </div>
-        `;
+        const controls = directional ? '' :
+            '<i class="ti ti-grip-vertical rm-stop-drag" onclick="moveStop(\'' + routeId + '\', ' + index + ')" title="Move Stop Position"></i>' +
+            '<i class="ti ti-trash rm-stop-delete" onclick="deleteStop(\'' + routeId + '\', ' + index + ')" title="Delete Stop"></i>';
+
+        return '<div class="rm-timeline-node">' +
+            '<div class="rm-node-left"><div class="' + circleClass + '">' + labelHtml + '</div>' +
+            (!isLast ? '<div class="' + lineClass + '"></div>' : '') + '</div>' +
+            '<div class="rm-node-right"><div class="rm-stop-name-row">' +
+            '<span class="rm-stop-name">' + stop.name + '</span>' +
+            (stop.landmark && stop.landmark !== 'origin' && stop.landmark !== 'terminus' ? '<span class="rm-stop-landmark">near ' + stop.landmark + '</span>' : '') +
+            controls + '</div><div class="rm-stop-stats-row">' +
+            (directional ? '<span class="rm-stop-stat-val">Directional ' + (stop.status || 'pending') + '</span>' :
+                '<span class="rm-stop-stat-val text-blue" style="color:#0C447C;"><i class="ti ti-arrow-bar-up" style="color:#003F87;"></i> ' + stop.boarding + ' avg boarding</span>' +
+                '<span class="rm-stop-stat-val"><i class="ti ti-arrow-bar-down"></i> ' + stop.alighting + ' avg alighting</span>' +
+                '<span class="rm-stop-stat-val"><i class="ti ti-clock"></i> ~' + stop.dwell + ' dwell</span>') +
+            '</div></div></div>';
     }).join('');
 }
-
 // Simple handler to delete stop
 async function deleteStop(routeId, index) {
-    if (!confirm('Are you sure you want to delete this stop from the sequence?')) return;
+    if (!(await GoPasigUI.confirm('Are you sure you want to delete this stop from the sequence?'))) return;
     const stops = stopsData[routeId];
     if (stops && stops[index]) {
         const stopId = stops[index].id;
@@ -740,17 +764,17 @@ async function deleteStop(routeId, index) {
             });
             const data = await response.json();
             if (response.ok && data.success) {
-                alert(data.message);
+                GoPasigUI.alert(data.message);
                 if (typeof loadDatabaseFleetData === 'function') {
                     await loadDatabaseFleetData();
                 }
                 syncRoutesWithDatabase();
                 renderRoutesTab();
             } else {
-                alert(data.message || 'Failed to delete stop.');
+                GoPasigUI.alert(data.message || 'Failed to delete stop.');
             }
         } catch (error) {
-            alert('Server connection error. Failed to delete stop.');
+            GoPasigUI.alert('Server connection error. Failed to delete stop.');
             console.error('AJAX Stop delete error:', error);
         }
     }
@@ -793,24 +817,24 @@ async function moveStop(routeId, index) {
             syncRoutesWithDatabase();
             renderRoutesTab();
         } else {
-            alert(data.message || 'Failed to reorder stops.');
+            GoPasigUI.alert(data.message || 'Failed to reorder stops.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to reorder stops.');
+        GoPasigUI.alert('Server connection error. Failed to reorder stops.');
         console.error('AJAX reorder error:', error);
     }
 }
 
 // Simple handler to suspend/unsuspend route from left/right panels
 async function toggleSuspendRouteDetail() {
-    const route = routesData.find(r => r.id === selectedRouteId);
+    const route = routesData.find(r => String(r.id) === String(selectedRouteId));
     if (!route) return;
     
     const willSuspend = route.status === 'Active';
     const action = willSuspend ? 'suspend' : 'activate';
     const statusVal = willSuspend ? 'Suspended' : 'Active';
     
-    if (!confirm(`Are you sure you want to ${action} ${route.name}?`)) return;
+    if (!(await GoPasigUI.confirm(`Are you sure you want to ${action} ${route.name}?`))) return;
     
     const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.routesBaseUrl) ? window.GoPasigConfig.routesBaseUrl : '/admin/api/routes';
     
@@ -827,17 +851,17 @@ async function toggleSuspendRouteDetail() {
         
         const data = await response.json();
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             if (typeof loadDatabaseFleetData === 'function') {
                 await loadDatabaseFleetData();
             }
             syncRoutesWithDatabase();
             renderRoutesTab();
         } else {
-            alert(data.message || 'Failed to update route status.');
+            GoPasigUI.alert(data.message || 'Failed to update route status.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to update route status.');
+        GoPasigUI.alert('Server connection error. Failed to update route status.');
         console.error('AJAX route status update error:', error);
     }
 }
@@ -858,7 +882,7 @@ async function addNewRouteStub() {
         
         const data = await response.json();
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             selectedRouteId = data.route.id.toString();
             if (typeof loadDatabaseFleetData === 'function') {
                 await loadDatabaseFleetData();
@@ -866,39 +890,40 @@ async function addNewRouteStub() {
             syncRoutesWithDatabase();
             renderRoutesTab();
         } else {
-            alert(data.message || 'Failed to create route.');
+            GoPasigUI.alert(data.message || 'Failed to create route.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to create route.');
+        GoPasigUI.alert('Server connection error. Failed to create route.');
         console.error('AJAX route create error:', error);
     }
 }
 
 // Edit route details stub
 async function editRouteDetails() {
-    const route = routesData.find(r => r.id === selectedRouteId);
+    const route = routesData.find(r => String(r.id) === String(selectedRouteId));
     if (!route) return;
     
     const dbRoute = routesDataDb.find(r => r.id.toString() === selectedRouteId.toString());
+    if (typeof syncVariantGeometrySelection === 'function') syncVariantGeometrySelection();
     const currentOnTimeTarget = dbRoute ? (dbRoute.target_on_time_rate ?? 85) : 85;
     const currentHeadwayTarget = dbRoute ? (dbRoute.target_headway_minutes ?? 15) : 15;
 
-    const newEndpoints = prompt(`Enter new endpoints for ${route.name}:`, route.endpoints);
+    const newEndpoints = await GoPasigUI.prompt(`Enter new endpoints for ${route.name}:`, route.endpoints);
     if (newEndpoints === null) return;
     
-    const onTimeRateStr = prompt(`Enter Target On-time Rate (%) for ${route.name}:`, currentOnTimeTarget);
+    const onTimeRateStr = await GoPasigUI.prompt(`Enter Target On-time Rate (%) for ${route.name}:`, currentOnTimeTarget);
     if (onTimeRateStr === null) return;
     const onTimeRate = parseInt(onTimeRateStr);
     if (isNaN(onTimeRate) || onTimeRate < 0 || onTimeRate > 100) {
-        alert('Invalid On-time Rate. Must be between 0 and 100.');
+        GoPasigUI.alert('Invalid On-time Rate. Must be between 0 and 100.');
         return;
     }
 
-    const headwayStr = prompt(`Enter Target Headway (minutes) for ${route.name}:`, currentHeadwayTarget);
+    const headwayStr = await GoPasigUI.prompt(`Enter Target Headway (minutes) for ${route.name}:`, currentHeadwayTarget);
     if (headwayStr === null) return;
     const headway = parseInt(headwayStr);
     if (isNaN(headway) || headway <= 0) {
-        alert('Invalid Headway. Must be a positive integer.');
+        GoPasigUI.alert('Invalid Headway. Must be a positive integer.');
         return;
     }
     
@@ -921,17 +946,17 @@ async function editRouteDetails() {
         
         const data = await response.json();
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             if (typeof loadDatabaseFleetData === 'function') {
                 await loadDatabaseFleetData();
             }
             syncRoutesWithDatabase();
             renderRoutesTab();
         } else {
-            alert(data.message || 'Failed to update route.');
+            GoPasigUI.alert(data.message || 'Failed to update route.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to update route.');
+        GoPasigUI.alert('Server connection error. Failed to update route.');
         console.error('AJAX route edit error:', error);
     }
 }
@@ -1063,30 +1088,22 @@ function renderScheduleRouteMap() {
 function renderRouteMap(routeId) {
     const container = document.getElementById('rm-simulated-map-container');
     if (!container) return;
+    if (container.offsetWidth === 0 || container.offsetHeight === 0) return;
 
-    // Skip rendering if container is hidden to prevent Leaflet initialization crash
-    if (container.offsetWidth === 0 || container.offsetHeight === 0) {
-        return;
-    }
-
-    const stops = stopsData[routeId] || [];
     const route = routesDataDb.find(r => r.id.toString() === routeId.toString());
-    
-    if (stops.length === 0 || !route) {
-        container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary);">No map available.</div>`;
+    const activeVariant = getActiveVariantForRoute(routeId);
+    const legacyStops = stopsData[routeId] || [];
+    if (!route || (!activeVariant && legacyStops.length === 0)) {
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--color-text-secondary);">No map available.</div>';
         return;
     }
-
-    const strokeColor = routeColors[routeId.toString()] || '#003F87';
-
     if (typeof L === 'undefined') {
-        container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--color-text-secondary);">Map library is still loading. Please refresh if this stays blank.</div>`;
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--color-text-secondary);">Map library is still loading. Please refresh if this stays blank.</div>';
         return;
     }
 
-    // If map is not initialized yet, initialize it
     if (routePreviewMapInstance === null) {
-        container.innerHTML = ''; // clear svg content
+        container.innerHTML = '';
         routePreviewMapInstance = L.map('rm-simulated-map-container', {
             zoomControl: false,
             attributionControl: false,
@@ -1095,75 +1112,79 @@ function renderRouteMap(routeId) {
             boxZoom: false,
             dragPan: true
         });
-
         addRouteMapBaseLayer(routePreviewMapInstance);
     } else {
-        // Clear previous layers
-        try {
-            if (typeof historyPreviewLayer !== 'undefined' && historyPreviewLayer && routePreviewMapInstance.hasLayer(historyPreviewLayer)) {
-                routePreviewMapInstance.removeLayer(historyPreviewLayer);
-                historyPreviewLayer = null;
-            }
-            if (routePreviewPolyline && routePreviewMapInstance.hasLayer(routePreviewPolyline)) {
-                routePreviewMapInstance.removeLayer(routePreviewPolyline);
-            }
-        } catch (e) {
-            console.warn("Failed to remove routePreviewPolyline:", e);
+        if (typeof historyPreviewLayer !== 'undefined' && historyPreviewLayer && routePreviewMapInstance.hasLayer(historyPreviewLayer)) {
+            routePreviewMapInstance.removeLayer(historyPreviewLayer);
+            historyPreviewLayer = null;
+        }
+        if (routePreviewPolyline && routePreviewMapInstance.hasLayer(routePreviewPolyline)) {
+            routePreviewMapInstance.removeLayer(routePreviewPolyline);
         }
         routePreviewPolyline = null;
-
-        routePreviewMarkers.forEach(m => {
-            try {
-                if (routePreviewMapInstance.hasLayer(m)) {
-                    routePreviewMapInstance.removeLayer(m);
-                }
-            } catch (e) {
-                console.warn("Failed to remove marker:", e);
-            }
+        routePreviewMarkers.forEach(marker => {
+            if (routePreviewMapInstance.hasLayer(marker)) routePreviewMapInstance.removeLayer(marker);
         });
         routePreviewMarkers = [];
+        if (typeof variantStopMarker !== 'undefined' && variantStopMarker && routePreviewMapInstance.hasLayer(variantStopMarker)) {
+            routePreviewMapInstance.removeLayer(variantStopMarker);
+            variantStopMarker = null;
+        }
     }
 
-    // Draw route polyline
-    if (route.polyline_coordinates && route.polyline_coordinates.length > 0) {
-        routePreviewPolyline = L.polyline(route.polyline_coordinates, {
-            color: strokeColor,
+    const bounds = [];
+    const geometry = activeVariant
+        ? (isUsableVariantGeometry(activeVariant) ? activeVariant.polyline_coordinates : [])
+        : (Array.isArray(route.polyline_coordinates) ? route.polyline_coordinates : []);
+
+    if (geometry.length > 1) {
+        routePreviewPolyline = L.polyline(geometry, {
+            color: routeColors[routeId.toString()] || '#003F87',
             weight: 4,
             opacity: 0.85
         }).addTo(routePreviewMapInstance);
-
-        // Fit map bounds to show the entire route polyline!
-        routePreviewMapInstance.fitBounds(routePreviewPolyline.getBounds(), { padding: [20, 20] });
+        bounds.push(...geometry);
     }
 
-    // Draw stops
-    stops.forEach((stop, index) => {
-        const marker = L.circleMarker([stop.lat, stop.lng], {
-            radius: 4.5,
+    const stops = activeVariant
+        ? (activeVariant.stops || []).filter(stop =>
+            stop.coordinate_status === 'verified' &&
+            Number.isFinite(Number(stop.lat)) &&
+            Number.isFinite(Number(stop.lng))
+        )
+        : legacyStops.filter(stop => Number.isFinite(Number(stop.lat)) && Number.isFinite(Number(stop.lng)));
+
+    stops.forEach(stop => {
+        const point = [Number(stop.lat), Number(stop.lng)];
+        const marker = L.circleMarker(point, {
+            radius: activeVariant ? 5 : 4.5,
             fillColor: '#FFFFFF',
             fillOpacity: 1,
-            color: strokeColor,
+            color: routeColors[routeId.toString()] || '#003F87',
             weight: 2
         }).bindTooltip(stop.name, {
             direction: 'top',
             className: 'font-sans font-bold text-[9px] px-1.5 py-0.5 rounded shadow-sm border border-slate-100'
         }).addTo(routePreviewMapInstance);
-
         routePreviewMarkers.push(marker);
+        bounds.push(point);
     });
 
-    // Update geometry version badge
-    const geoBadge = document.getElementById('route-geometry-version-badge');
-    if (geoBadge) {
-        geoBadge.textContent = `Version: ${route.geometry_version ?? 0}`;
+    if (bounds.length > 0) {
+        routePreviewMapInstance.fitBounds(bounds, {padding: [20, 20]});
+    } else {
+        routePreviewMapInstance.setView([14.5593, 121.0805], 13);
     }
 
-    // Invalidate size in case container size changed
-    setTimeout(() => {
-        routePreviewMapInstance.invalidateSize();
-    }, 150);
-}
+    const geoBadge = document.getElementById('route-geometry-version-badge');
+    if (geoBadge) {
+        geoBadge.textContent = activeVariant
+            ? (isUsableVariantGeometry(activeVariant) ? 'Variant geometry v' + (activeVariant.geometry_version || 0) : 'Variant geometry pending / unavailable')
+            : 'Version: ' + (route.geometry_version ?? 0);
+    }
 
+    setTimeout(() => routePreviewMapInstance.invalidateSize(), 150);
+}
 // Redirect view to live fleet map screen
 function viewLiveMapScreen(e) {
     if (e) e.preventDefault();
@@ -1179,7 +1200,7 @@ function manageBusAssignments(e) {
     // Find current route details
     const route = routesData.find(r => r.id.toString() === selectedRouteId.toString());
     if (!route) {
-        alert("Pumili muna ng ruta.");
+        GoPasigUI.alert("Pumili muna ng ruta.");
         return;
     }
 
@@ -1298,8 +1319,10 @@ async function saveBusAssignments() {
 
         await Promise.all(promises);
 
-        // Reload the fleet data dynamically
-        if (typeof loadDatabaseFleetData === 'function') {
+        // Synchronize global fleet data and the authoritative Bus Management list.
+        if (typeof refreshBusManagementState === 'function') {
+            await refreshBusManagementState();
+        } else if (typeof loadDatabaseFleetData === 'function') {
             await loadDatabaseFleetData();
         }
 
@@ -1311,10 +1334,10 @@ async function saveBusAssignments() {
             renderRouteDetails(routeId);
         }
 
-        alert('Bus assignments updated successfully!');
+        GoPasigUI.alert('Bus assignments updated successfully!');
     } catch (error) {
         console.error('Error saving bus assignments:', error);
-        alert('Failed to save bus assignments. Please try again.');
+        GoPasigUI.alert('Failed to save bus assignments. Please try again.');
     } finally {
         const saveBtn = document.querySelector('#rm-bus-assignment-modal .rm-btn-primary');
         if (saveBtn) {
@@ -1559,7 +1582,7 @@ function focusScheduleCell(routeId, time) {
         switchRoutesTab('schedule');
     }
     // Simple alert representing the focus highlight
-    alert(`Timetable cell focused: Route ${routeId} at ${format12Hour(time)}`);
+    GoPasigUI.alert(`Timetable cell focused: Route ${routeId} at ${format12Hour(time)}`);
 }
 
 // Side conflict check toggle
@@ -1587,7 +1610,7 @@ function toggleConflictPanelInline() {
 }
 
 function resolveAllConflicts() {
-    alert('Bulk resolution: Reassigning backup drivers and shifting overlapping bus gaps requires manual selection of options below.');
+    GoPasigUI.alert('Bulk resolution: Reassigning backup drivers and shifting overlapping bus gaps requires manual selection of options below.');
 }
 
 // ── RESOLVE CONFLICT MODAL FLOW ─────────────────────────────
@@ -1679,7 +1702,7 @@ async function applyConflictResolution() {
             });
             const data = await response.json();
             if (!response.ok || !data.success) {
-                alert(data.message || 'Failed to remove schedule.');
+                GoPasigUI.alert(data.message || 'Failed to remove schedule.');
                 return;
             }
         } else {
@@ -1711,7 +1734,7 @@ async function applyConflictResolution() {
 
             const data = await response.json();
             if (!response.ok || !data.success) {
-                alert(data.message || 'Failed to update schedule.');
+                GoPasigUI.alert(data.message || 'Failed to update schedule.');
                 return;
             }
         }
@@ -1723,7 +1746,7 @@ async function applyConflictResolution() {
         renderUpcomingTrips();
         renderConflictLists();
     } catch (error) {
-        alert('Server connection error. Failed to resolve conflict.');
+        GoPasigUI.alert('Server connection error. Failed to resolve conflict.');
         console.error('AJAX Conflict resolution error:', error);
     }
 }
@@ -1754,7 +1777,7 @@ async function handleAddStopSubmit(e) {
     const name = document.getElementById('as-name').value.trim();
 
     if (!name) {
-        alert('Please enter a stop name.');
+        GoPasigUI.alert('Please enter a stop name.');
         return;
     }
 
@@ -1778,7 +1801,7 @@ async function handleAddStopSubmit(e) {
 
         const data = await response.json();
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             closeAddStopModal();
             if (typeof loadDatabaseFleetData === 'function') {
                 await loadDatabaseFleetData();
@@ -1786,10 +1809,10 @@ async function handleAddStopSubmit(e) {
             syncRoutesWithDatabase();
             renderRoutesTab();
         } else {
-            alert(data.message || 'Failed to add stop.');
+            GoPasigUI.alert(data.message || 'Failed to add stop.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to add stop.');
+        GoPasigUI.alert('Server connection error. Failed to add stop.');
         console.error('AJAX stop create error:', error);
     }
 }
@@ -1848,3 +1871,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadDatabaseSchedulesData();
     reScanRoutesConflicts();
 });
+
+
+

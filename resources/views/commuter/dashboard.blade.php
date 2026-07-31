@@ -63,7 +63,7 @@
                         <span>{{ $route->buses_on_route }} buses</span>
                         <span class="text-slate-300">•</span>
                         <i class="ti ti-clock text-[13px] text-slate-400"></i>
-                        <span>Next bus: <strong class="text-slate-600 font-bold">{{ $route->next_eta_minutes !== null ? $route->next_eta_minutes . 'm' : 'TBA' }}</strong></span>
+                        <span>Next bus: <strong class="text-slate-600 font-bold">{{ $route->next_eta_label }}</strong></span>
                     </div>
 
                     <!-- Row 3: Trip Progress Bar -->
@@ -231,3 +231,4 @@
 
 </div>
 @endsection
+

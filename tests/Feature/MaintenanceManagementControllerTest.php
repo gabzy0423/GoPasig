@@ -14,7 +14,7 @@ class MaintenanceManagementControllerTest extends TestCase
 
     public function test_maintenance_summary_metrics(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $route = Route::create([
             'id' => 1,

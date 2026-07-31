@@ -4,6 +4,9 @@ namespace Tests\Feature;
 
 use Tests\TestCase;
 use App\Models\Bus;
+use App\Models\Driver;
+use App\Models\Route;
+use App\Models\Trip;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -27,9 +30,27 @@ class AdminBusCapacityTest extends TestCase
         return $user;
     }
 
+    private function busUpdatePayload(Bus $bus, array $overrides = []): array
+    {
+        return array_merge([
+            'fleet_number'          => $bus->fleet_number,
+            'manufacturer'          => $bus->manufacturer,
+            'manufacturer_custom'   => null,
+            'model'                 => $bus->model,
+            'year_model'            => $bus->year_model,
+            'battery_capacity_kwh'  => $bus->battery_capacity_kwh,
+            'charging_port_type'    => $bus->charging_port_type,
+            'max_charging_power_kw' => $bus->max_charging_power_kw,
+            'driver_name'           => $bus->driver_name,
+            'capacity'              => $bus->capacity,
+            'status'                => $bus->status,
+            'route_id'              => $bus->route_id,
+        ], $overrides);
+    }
+
     /**
      * Test 1: Create bus with default capacity (45)
-     * ✅ Should succeed
+     * Should succeed
      */
     public function test_create_bus_with_default_capacity()
     {
@@ -58,7 +79,7 @@ class AdminBusCapacityTest extends TestCase
 
     /**
      * Test 2: Create bus with capacity 120 (THE CRITICAL BUG FIX)
-     * ✅ Should succeed (was failing before with max:100)
+     * Should succeed
      */
     public function test_create_bus_with_capacity_120()
     {
@@ -87,7 +108,7 @@ class AdminBusCapacityTest extends TestCase
 
     /**
      * Test 3: Create bus with capacity 150 (max allowed)
-     * ✅ Should succeed
+     * Should succeed
      */
     public function test_create_bus_with_max_capacity_150()
     {
@@ -116,7 +137,7 @@ class AdminBusCapacityTest extends TestCase
 
     /**
      * Test 4: Create bus with capacity 10 (min allowed)
-     * ✅ Should succeed
+     * Should succeed
      */
     public function test_create_bus_with_min_capacity_10()
     {
@@ -145,7 +166,7 @@ class AdminBusCapacityTest extends TestCase
 
     /**
      * Test 5: Create bus with capacity 5 (below min)
-     * ❌ Should fail
+     * Should fail
      */
     public function test_create_bus_with_capacity_below_min()
     {
@@ -170,7 +191,7 @@ class AdminBusCapacityTest extends TestCase
 
     /**
      * Test 6: Create bus with capacity 200 (above max)
-     * ❌ Should fail
+     * Should fail
      */
     public function test_create_bus_with_capacity_above_max()
     {
@@ -195,7 +216,7 @@ class AdminBusCapacityTest extends TestCase
 
     /**
      * Test 7: Update bus capacity to 120 (critical test)
-     * ✅ Should succeed
+     * Should succeed
      */
     public function test_update_bus_capacity_to_120()
     {
@@ -238,5 +259,146 @@ class AdminBusCapacityTest extends TestCase
         $this->assertEquals(10, $minCapacity);
         $this->assertEquals(150, $maxCapacity);
         $this->assertEquals(45, $defaultCapacity);
+    }
+
+    public function test_bus_seeder_uses_official_verified_capacities()
+    {
+        $this->artisan('db:seed', ['--class' => 'BusSeeder']);
+
+        foreach (['PAS-001', 'PAS-002', 'PAS-003', 'PAS-004', 'PAS-005'] as $plateNumber) {
+            $this->assertDatabaseHas('buses', [
+                'plate_number' => $plateNumber,
+                'capacity' => 26,
+                'is_simulated' => false,
+            ]);
+        }
+
+        $this->assertDatabaseHas('buses', [
+            'plate_number' => 'PAS-006',
+            'capacity' => 42,
+            'is_simulated' => false,
+        ]);
+    }
+
+    public function test_update_capacity_below_current_passengers_is_rejected()
+    {
+        $this->actingAsAdmin();
+
+        $bus = Bus::factory()->create([
+            'capacity' => 26,
+            'passengers' => 20,
+            'status' => 'inactive',
+        ]);
+
+        $response = $this->putJson(
+            route('admin.api.buses.update', $bus->id),
+            $this->busUpdatePayload($bus, ['capacity' => 15])
+        );
+
+        $response->assertStatus(422);
+        $this->assertDatabaseHas('buses', [
+            'id' => $bus->id,
+            'capacity' => 26,
+            'passengers' => 20,
+        ]);
+    }
+
+    public function test_update_capacity_for_ready_bus_is_rejected()
+    {
+        $this->actingAsAdmin();
+
+        $bus = Bus::factory()->create([
+            'capacity' => 26,
+            'passengers' => 0,
+            'status' => 'ready',
+        ]);
+
+        $response = $this->putJson(
+            route('admin.api.buses.update', $bus->id),
+            $this->busUpdatePayload($bus, ['capacity' => 42])
+        );
+
+        $response->assertStatus(422);
+        $this->assertDatabaseHas('buses', [
+            'id' => $bus->id,
+            'capacity' => 26,
+        ]);
+    }
+
+    public function test_update_capacity_for_operating_bus_is_rejected()
+    {
+        $this->actingAsAdmin();
+
+        $bus = Bus::factory()->create([
+            'capacity' => 26,
+            'passengers' => 0,
+            'status' => 'operating',
+        ]);
+
+        $response = $this->putJson(
+            route('admin.api.buses.update', $bus->id),
+            $this->busUpdatePayload($bus, ['capacity' => 42])
+        );
+
+        $response->assertStatus(422);
+        $this->assertDatabaseHas('buses', [
+            'id' => $bus->id,
+            'capacity' => 26,
+        ]);
+    }
+
+    public function test_update_capacity_for_bus_with_dispatched_trip_is_rejected()
+    {
+        $this->actingAsAdmin();
+
+        $bus = Bus::factory()->create([
+            'capacity' => 26,
+            'passengers' => 0,
+            'status' => 'inactive',
+        ]);
+        $driver = Driver::factory()->create();
+        $route = Route::factory()->create();
+
+        Trip::factory()->create([
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $route->id,
+            'status' => 'dispatched',
+            'started_at' => null,
+            'gps_session' => 'INACTIVE',
+        ]);
+
+        $response = $this->putJson(
+            route('admin.api.buses.update', $bus->id),
+            $this->busUpdatePayload($bus, ['capacity' => 42])
+        );
+
+        $response->assertStatus(422);
+        $this->assertDatabaseHas('buses', [
+            'id' => $bus->id,
+            'capacity' => 26,
+        ]);
+    }
+
+    public function test_update_capacity_for_inactive_bus_without_runtime_passengers_is_allowed()
+    {
+        $this->actingAsAdmin();
+
+        $bus = Bus::factory()->create([
+            'capacity' => 26,
+            'passengers' => 0,
+            'status' => 'inactive',
+        ]);
+
+        $response = $this->putJson(
+            route('admin.api.buses.update', $bus->id),
+            $this->busUpdatePayload($bus, ['capacity' => 42])
+        );
+
+        $response->assertStatus(200);
+        $this->assertDatabaseHas('buses', [
+            'id' => $bus->id,
+            'capacity' => 42,
+        ]);
     }
 }

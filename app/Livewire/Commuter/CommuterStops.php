@@ -6,6 +6,7 @@ use Livewire\Component;
 use App\Models\Stop;
 use App\Models\Bus;
 use App\Models\Route;
+use App\Services\CommuterEtaProvenanceService;
 
 class CommuterStops extends Component
 {
@@ -37,7 +38,8 @@ class CommuterStops extends Component
     public function render()
     {
         // Query stops with their route relationships
-        $stopsQuery = Stop::with('route');
+        $stopsQuery = Stop::with('route')
+            ->whereHas('route', fn ($query) => $query->publicCommuterVisible());
 
         // Apply search filter if specified
         if (!empty(trim($this->search))) {
@@ -99,7 +101,7 @@ class CommuterStops extends Component
 
                 // Servicing routes: in this capstone, find routes passing this stop landmark.
                 // We'll show the direct parent route and look for routes with the same stop name for a unified view.
-                $servicingRoutes = Route::whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])
+                $servicingRoutes = Route::publicCommuterVisible()
                     ->whereHas('stops', function ($q) use ($selectedStop) {
                         $q->where('name', $selectedStop->name);
                     })->get();
@@ -136,11 +138,19 @@ class CommuterStops extends Component
                         return $bus;
                     })->sortBy('distance_to_stop')->first();
                 }
+
+                if ($nextBus) {
+                    $etaProvenance = app(CommuterEtaProvenanceService::class)->forBus($nextBus, $selectedStop->id);
+                    $nextBus->eta_provenance_state = $etaProvenance->state;
+                    $nextBus->eta_label = $etaProvenance->label;
+                    $nextBus->eta_description = $etaProvenance->description;
+                    $nextBus->eta_is_authoritative = $etaProvenance->is_authoritative;
+                }
             }
         }
 
         // All routes for coordinate rendering
-        $routes = Route::getAllCached()->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive']);
+        $routes = Route::getCanonicalProductionCached();
 
         return view('livewire.commuter.commuter-stops', [
             'stops' => $stops,
@@ -151,3 +161,4 @@ class CommuterStops extends Component
         ]);
     }
 }
+

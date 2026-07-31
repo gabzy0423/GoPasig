@@ -22,7 +22,7 @@ class ExampleTest extends TestCase
     public function test_dispatcher_can_access_fleet_dashboard(): void
     {
         $this->seed();
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $response = $this->actingAs($dispatcher)->get('/fleet/dashboard');
         $response->assertStatus(200);

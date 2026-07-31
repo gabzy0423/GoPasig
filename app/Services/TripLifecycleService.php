@@ -41,13 +41,21 @@ class TripLifecycleService
                 $driver->increment('trips_today');
             }
 
+            $startedAt = now();
+
             // 3. Trip: dispatched -> ongoing, GPS: OFF -> ACTIVE
             $trip->update([
                 'status' => TripStatus::ONGOING,
                 'gps_session' => GpsSessionStatus::ACTIVE,
-                'started_at' => now(),
-                'gps_session_started_at' => now(),
+                'started_at' => $startedAt,
+                'gps_session_started_at' => $startedAt,
             ]);
+
+            if ($trip->schedule_id) {
+                $trip->schedule()->update([
+                    'actual_departure_time' => $startedAt->copy()->timezone('Asia/Manila')->format('H:i:s'),
+                ]);
+            }
         });
     }
 
@@ -65,12 +73,11 @@ class TripLifecycleService
             $bus = $trip->bus;
             $driver = $trip->driver;
 
-            // 1. Bus: operating -> available
+            // 1. Bus: operating -> ready. Completing a point-to-point leg
+            // closes only the current Trip; it must not release assignment.
             if ($bus) {
-                BusStateService::transition($bus, 'available', 'Driver completed trip');
+                BusStateService::transition($bus, 'ready', 'Driver completed point-to-point leg');
                 $bus->update([
-                    'driver_name' => Bus::DEFAULT_DRIVER_NAME,
-                    'route_id' => null,
                     'next_stop' => null,
                     'passengers' => 0,
                     'speed' => 0,
@@ -78,21 +85,28 @@ class TripLifecycleService
                 ]);
             }
 
-            // 2. Driver: driving -> available
+            // 2. Driver: driving -> assigned. Keep bus/route assignment ready
+            // for a future point-to-point leg without creating it here.
             if ($driver) {
                 $driver->update([
-                    'operational_status' => 'available',
-                    'assigned_bus' => null,
-                    'assigned_route' => null,
+                    'operational_status' => 'assigned',
                 ]);
             }
+
+            $endedAt = now();
 
             // 3. Trip: ongoing -> completed, GPS: ACTIVE -> CLOSED
             $trip->update([
                 'status' => TripStatus::COMPLETED,
                 'gps_session' => GpsSessionStatus::CLOSED,
-                'ended_at' => now(),
+                'ended_at' => $endedAt,
             ]);
+
+            if ($trip->schedule_id) {
+                $trip->schedule()->update([
+                    'actual_arrival_time' => $endedAt->copy()->timezone('Asia/Manila')->format('H:i:s'),
+                ]);
+            }
         });
     }
 

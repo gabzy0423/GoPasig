@@ -197,7 +197,7 @@
                     @if($driver && $driver->status === 'suspended')
                         Mangyaring makipag-ugnayan sa Operations head.
                     @else
-                        Mangyaring makipag-ugnayan kay Dispatcher {{ $dispatcherName }}.
+                        Mangyaring makipag-ugnayan kay {{ $dispatcherRole ?? 'Fleet Operations Manager' }} {{ $dispatcherName }}.
                     @endif
                 </span>
             </div>

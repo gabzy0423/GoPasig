@@ -13,6 +13,7 @@ use App\Models\TripProgress;
 use App\Services\ValueObjects\Coordinate;
 use App\Services\GeospatialService;
 use App\Services\Spatial\RouteCorridorEngine;
+use App\Services\Routing\AuthoritativeRouteResolver;
 use App\Events\RouteDeviationDetected;
 use App\Events\RouteRecovered;
 use Illuminate\Support\Facades\Event;
@@ -27,7 +28,7 @@ class RouteCorridorEngineTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->engine = new RouteCorridorEngine(new GeospatialService());
+        $this->engine = new RouteCorridorEngine(new GeospatialService(), app(AuthoritativeRouteResolver::class));
     }
 
     public function test_route_corridor_evaluation_triggers_correct_deviations_and_recovery()
@@ -127,3 +128,4 @@ class RouteCorridorEngineTest extends TestCase
         Event::assertDispatched(RouteRecovered::class);
     }
 }
+

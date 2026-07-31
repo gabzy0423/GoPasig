@@ -10,8 +10,8 @@
 @section('scripts')
 @php
     // Fetch stops data categorized by route
-    $routes = \App\Models\Route::getAllCached()->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive']);
-    $stops = \App\Models\Stop::getAllCached();
+    $routes = \App\Models\Route::getCanonicalProductionCached();
+    $stops = \App\Models\Stop::getAllCached()->whereIn('route_id', $routes->pluck('id'));
     $stopsByRoute = $stops->groupBy('route_id');
 
     $stopsData = $routes->flatMap(function($route) use ($stopsByRoute) {
@@ -31,12 +31,16 @@
     });
 
     // Fetch route polylines
-    $routesData = $routes->map(function($r) {
+    $activeTripsForMap = \App\Models\Trip::where('status', 'ongoing')->with('routeVariant')->get();
+    $routeMapGeometry = app(\App\Services\RouteMapGeometryService::class);
+    $routesData = $routes->map(function($r) use ($activeTripsForMap, $routeMapGeometry) {
         return [
             'id' => $r->id,
             'name' => $r->name,
             'color' => $r->color ?: '#003F87',
-            'coords' => $r->polyline_coordinates
+            'coords' => ($mapGeometry = $routeMapGeometry->forRoute($r, $activeTripsForMap))['polyline_coordinates'],
+            'geometry_source' => $mapGeometry['source'],
+            'geometry_status' => $mapGeometry['geometry_status']
         ];
     });
 @endphp

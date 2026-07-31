@@ -137,6 +137,10 @@ class RouteController extends Controller
             ], 403);
         }
 
+        if ($this->isOfficialReferenceRoute($route) && $request->hasAny(['name', 'description', 'polyline_coordinates'])) {
+            return response()->json(['success' => false, 'message' => 'Official Route 1/2/3 definitions and geometry are fixed reference data.'], 422);
+        }
+
         $allowedStatuses = explode(',', SystemSetting::get('allowed_route_statuses', 'Active,Suspended'));
 
         $validated = $request->validate([
@@ -172,8 +176,10 @@ class RouteController extends Controller
     /**
      * Remove the specified route from the database.
      */
-    public function destroy(Route $route)
-    {
+    public function destroy(Route $route) {
+        if ($blocked = $this->officialRouteMutationResponse($route)) {
+            return $blocked;
+        }
         // Admin only
         if (auth()->user()->role !== 'admin') {
             return response()->json([
@@ -192,8 +198,10 @@ class RouteController extends Controller
     /**
      * Update route geometry with optimistic locking.
      */
-    public function updateGeometry(Request $request, Route $route)
-    {
+    public function updateGeometry(Request $request, Route $route) {
+        if ($blocked = $this->officialRouteMutationResponse($route)) {
+            return $blocked;
+        }
         if (auth()->user()->role !== 'admin') {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
@@ -235,8 +243,10 @@ class RouteController extends Controller
     /**
      * Import route geometry (GeoJSON or Encoded Polyline).
      */
-    public function importGeometry(Request $request, Route $route)
-    {
+    public function importGeometry(Request $request, Route $route) {
+        if ($blocked = $this->officialRouteMutationResponse($route)) {
+            return $blocked;
+        }
         if (auth()->user()->role !== 'admin') {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
@@ -344,8 +354,10 @@ class RouteController extends Controller
     /**
      * Restore route geometry to a specific version.
      */
-    public function restoreGeometryVersion(Request $request, Route $route)
-    {
+    public function restoreGeometryVersion(Request $request, Route $route) {
+        if ($blocked = $this->officialRouteMutationResponse($route)) {
+            return $blocked;
+        }
         if (auth()->user()->role !== 'admin') {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
@@ -386,6 +398,9 @@ class RouteController extends Controller
      */
     public function generatePreview(Request $request, Route $route, \App\Services\Routing\IntelligentRoutingEngine $routingEngine)
     {
+        if ($blocked = $this->officialRouteMutationResponse($route)) {
+            return $blocked;
+        }
         if (auth()->user()->role !== 'admin') {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
@@ -423,6 +438,9 @@ class RouteController extends Controller
      */
     public function acceptPreview(Request $request, Route $route, \App\Services\Routing\IntelligentRoutingEngine $routingEngine)
     {
+        if ($blocked = $this->officialRouteMutationResponse($route)) {
+            return $blocked;
+        }
         if (auth()->user()->role !== 'admin') {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
@@ -466,6 +484,9 @@ class RouteController extends Controller
      */
     public function rejectPreview(Request $request, Route $route, \App\Services\Routing\IntelligentRoutingEngine $routingEngine)
     {
+        if ($blocked = $this->officialRouteMutationResponse($route)) {
+            return $blocked;
+        }
         if (auth()->user()->role !== 'admin') {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
@@ -490,6 +511,9 @@ class RouteController extends Controller
      */
     public function runAdvancedAnalysis(Request $request, Route $route, \App\Services\Routing\IntelligentRoutingEngine $routingEngine)
     {
+        if ($blocked = $this->officialRouteMutationResponse($route)) {
+            return $blocked;
+        }
         if (auth()->user()->role !== 'admin') {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
@@ -542,5 +566,16 @@ class RouteController extends Controller
             'success' => true,
             'telemetry' => $telemetry,
         ]);
+    }
+    private function isOfficialReferenceRoute(Route $route): bool
+    {
+        return in_array($route->name, ['Route 1', 'Route 2', 'Route 3'], true);
+    }
+
+    private function officialRouteMutationResponse(Route $route)
+    {
+        return $this->isOfficialReferenceRoute($route)
+            ? response()->json(['success' => false, 'message' => 'Official Route 1/2/3 definitions and geometry are fixed reference data.'], 422)
+            : null;
     }
 }

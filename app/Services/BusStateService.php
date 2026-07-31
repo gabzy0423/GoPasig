@@ -16,12 +16,12 @@ class BusStateService
      * Valid state transitions for bus status
      */
     private const VALID_TRANSITIONS = [
-        'active'      => ['inactive', 'maintenance', 'breakdown', 'ready', 'operating', 'available'],
-        'inactive'    => ['active', 'maintenance', 'breakdown', 'ready', 'operating', 'available'],
-        'maintenance' => ['active', 'inactive', 'breakdown', 'ready', 'operating', 'available'],
-        'breakdown'   => ['inactive', 'maintenance', 'available'],
-        'ready'       => ['inactive', 'maintenance', 'breakdown', 'operating', 'available'],
-        'operating'   => ['inactive', 'maintenance', 'breakdown', 'available'],
+        'active'      => ['inactive', 'maintenance', 'breakdown', 'ready', 'operating'],
+        'inactive'    => ['active', 'maintenance', 'breakdown', 'ready', 'operating'],
+        'maintenance' => ['active', 'inactive', 'breakdown', 'ready', 'operating'],
+        'breakdown'   => ['inactive', 'maintenance'],
+        'ready'       => ['inactive', 'maintenance', 'breakdown', 'operating'],
+        'operating'   => ['inactive', 'maintenance', 'breakdown', 'ready'],
         'available'   => ['active', 'inactive', 'maintenance', 'breakdown', 'ready', 'operating'],
     ];
 
@@ -29,12 +29,12 @@ class BusStateService
      * Allowed manual state transitions via Admin UI
      */
     public const MANUAL_TRANSITIONS = [
-        'active'      => ['inactive', 'breakdown', 'available'],
-        'inactive'    => ['active', 'breakdown', 'available'],
-        'maintenance' => ['inactive', 'breakdown', 'available'],
-        'breakdown'   => ['inactive', 'maintenance', 'available'],
-        'ready'       => ['inactive', 'breakdown', 'available'],
-        'operating'   => ['inactive', 'breakdown', 'available'],
+        'active'      => ['inactive', 'breakdown'],
+        'inactive'    => ['active', 'breakdown'],
+        'maintenance' => ['inactive', 'breakdown'],
+        'breakdown'   => ['inactive', 'maintenance'],
+        'ready'       => ['inactive', 'breakdown'],
+        'operating'   => ['inactive', 'breakdown'],
         'available'   => ['inactive', 'breakdown', 'maintenance'],
     ];
 
@@ -335,7 +335,7 @@ class BusStateService
             if ($driver->assigned_bus && $driver->assigned_bus !== $bus->plate_number) {
                 $prevBus = Bus::where('plate_number', $driver->assigned_bus)->lockForUpdate()->first();
                 if ($prevBus) {
-                    self::transition($prevBus, 'available', 'Driver reassigned to another bus');
+                    self::transition($prevBus, Bus::STATUS_INACTIVE, 'Driver reassigned to another bus');
                     $prevBus->update([
                         'driver_name' => Bus::DEFAULT_DRIVER_NAME,
                         'route_id'    => null,
@@ -346,7 +346,7 @@ class BusStateService
             // 2. Clean up: remove driver name from any other bus records
             $otherBus = Bus::where('driver_name', $fullName)->where('id', '!=', $bus->id)->lockForUpdate()->first();
             if ($otherBus) {
-                self::transition($otherBus, 'available', 'Driver reassigned to another bus');
+                self::transition($otherBus, Bus::STATUS_INACTIVE, 'Driver reassigned to another bus');
                 $otherBus->update([
                     'driver_name' => Bus::DEFAULT_DRIVER_NAME,
                     'route_id'    => null,
@@ -408,6 +408,6 @@ class BusStateService
      */
     public static function getValidInitialStatuses(): array
     {
-        return ['inactive', 'maintenance', 'breakdown', 'available'];
+        return ['inactive', 'maintenance', 'breakdown'];
     }
 }

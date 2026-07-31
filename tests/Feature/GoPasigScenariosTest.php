@@ -21,7 +21,7 @@ class GoPasigScenariosTest extends TestCase
 
     public function test_bus_offline_auto_incidents(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $route = Route::create([
             'name' => 'Route A',
@@ -140,7 +140,7 @@ class GoPasigScenariosTest extends TestCase
 
     public function test_dispatch_intelligence_nearest_inactive_bus(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $route = Route::create([
             'name' => 'Route A',
@@ -160,7 +160,7 @@ class GoPasigScenariosTest extends TestCase
         // Far inactive bus
         Bus::create([
             'plate_number' => 'PAS-FAR',
-            'status' => 'available',
+            'status' => 'inactive',
             'capacity' => 45,
             'lat' => 14.6000, // ~11 km away
             'lng' => 121.1000,
@@ -171,7 +171,7 @@ class GoPasigScenariosTest extends TestCase
         // Close inactive bus
         Bus::create([
             'plate_number' => 'PAS-NEAR',
-            'status' => 'available',
+            'status' => 'inactive',
             'capacity' => 45,
             'lat' => 14.5010, // ~150 meters away
             'lng' => 121.0010,
@@ -240,7 +240,7 @@ class GoPasigScenariosTest extends TestCase
         $this->assertEquals('maintenance', $bus->status);
 
         // Fetch bus profile via dispatcher API to verify completion time
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
         $profileResponse = $this->actingAs($dispatcher)->getJson("/fleet/api/maintenance-bus/{$bus->plate_number}");
         $profileResponse->assertStatus(200);
         $data = $profileResponse->json();

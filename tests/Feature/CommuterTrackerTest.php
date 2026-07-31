@@ -18,7 +18,7 @@ class CommuterTrackerTest extends TestCase
         // 1. Create a Route
         $route = Route::create([
             'id' => 1,
-            'name' => 'Route A',
+            'name' => 'Route 1',
             'status' => 'Active'
         ]);
 

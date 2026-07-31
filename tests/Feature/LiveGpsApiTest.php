@@ -44,7 +44,7 @@ class LiveGpsApiTest extends TestCase
 
     public function test_bus_gps_positions_api_returns_correct_presentation_payload()
     {
-        $user = \App\Models\User::factory()->create(['role' => 'dispatcher']);
+        $user = \App\Models\User::factory()->create(['role' => 'fleet_manager']);
         $route = \App\Models\Route::create([
             'name' => 'Route Gold',
             'status' => 'active'

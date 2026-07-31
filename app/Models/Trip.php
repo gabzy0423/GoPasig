@@ -17,6 +17,8 @@ class Trip extends Model
         'bus_id',
         'driver_id',
         'route_id',
+        'route_variant_id',
+        'schedule_id',
         'status',
         'gps_session',
         'peak_passengers',
@@ -55,6 +57,16 @@ class Trip extends Model
     public function route()
     {
         return $this->belongsTo(Route::class);
+    }
+
+    public function routeVariant()
+    {
+        return $this->belongsTo(RouteVariant::class);
+    }
+
+    public function schedule()
+    {
+        return $this->belongsTo(Schedule::class);
     }
 
     /**

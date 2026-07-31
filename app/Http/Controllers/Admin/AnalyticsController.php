@@ -487,7 +487,7 @@ class AnalyticsController extends Controller
             $historicalTrend = [];
         } else {
             $historiesInPeriod = DemandHistory::whereBetween('date', [$trendStart->toDateString(), $trendEnd->toDateString()])->get();
-            $historiesByDate = $historiesInPeriod->groupBy(function($item) {
+            $historiesByDate = $historiesInPeriod->groupBy(function ($item) {
                 return Carbon::parse($item->date)->toDateString();
             });
 

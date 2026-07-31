@@ -200,7 +200,7 @@ function drawStops() {
 function showStopTooltip(marker, stop) {
     if (stopInfoWindow) stopInfoWindow.close();
 
-    const approachingCount = activeBuses.filter(b => b.route_name === stop.route_name && b.eta_minutes <= 10).length;
+    const approachingCount = activeBuses.filter(b => b.route_name === stop.route_name && typeof b.eta_minutes === "number" && b.eta_minutes <= 10).length;
 
     stopInfoWindow = new google.maps.InfoWindow({
         content: `
@@ -254,18 +254,18 @@ function openBusPopover(bus, pos) {
     const isFull = fillRatio > 0.8;
     const progressPercent = Math.round(fillRatio * 100);
 
-    // Dynamic GPS staleness calculations
-    const updatedAt = new Date(bus.updated_at);
-    const now = new Date();
-    const diffSeconds = Math.max(0, Math.floor((now - updatedAt) / 1000));
+    const freshnessState = bus.gps_freshness_state || 'UNKNOWN';
+    const freshnessAge = bus.gps_freshness_age_seconds;
 
     let gpsBadge = '';
-    if (diffSeconds < 30) {
+    if (freshnessState === 'LIVE') {
         gpsBadge = `<span class="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-50 text-[#0F6E56] border border-emerald-100 rounded-full flex items-center gap-0.5"><span class="w-1 h-1 rounded-full bg-emerald-500"></span>LIVE</span>`;
-    } else if (diffSeconds <= 120) {
-        gpsBadge = `<span class="px-1.5 py-0.5 text-[9px] font-bold bg-amber-50 text-[#854F0B] border border-amber-100 rounded-full flex items-center gap-0.5"><span class="w-1 h-1 rounded-full bg-amber-500"></span>STALE (${diffSeconds}s)</span>`;
-    } else {
+    } else if (freshnessState === 'STALE') {
+        gpsBadge = `<span class="px-1.5 py-0.5 text-[9px] font-bold bg-amber-50 text-[#854F0B] border border-amber-100 rounded-full flex items-center gap-0.5"><span class="w-1 h-1 rounded-full bg-amber-500"></span>STALE (${freshnessAge}s)</span>`;
+    } else if (freshnessState === 'OFFLINE') {
         gpsBadge = `<span class="px-1.5 py-0.5 text-[9px] font-bold bg-rose-50 text-[#A32D2D] border border-rose-100 rounded-full flex items-center gap-0.5"><span class="w-1 h-1 rounded-full bg-rose-500"></span>OFFLINE</span>`;
+    } else {
+        gpsBadge = `<span class="px-1.5 py-0.5 text-[9px] font-bold bg-slate-50 text-slate-500 border border-slate-200 rounded-full flex items-center gap-0.5"><span class="w-1 h-1 rounded-full bg-slate-400"></span>UNKNOWN</span>`;
     }
 
     let simBadge = '';
@@ -303,7 +303,7 @@ function openBusPopover(bus, pos) {
             <div class="flex flex-col gap-0.5">
                 <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Next Stop</span>
                 <span class="text-[12.5px] font-extrabold text-slate-700 leading-tight">
-                    ${bus.next_stop_name} — <strong class="text-[#003F87] font-black">${bus.eta_minutes} min</strong>
+                    ${bus.next_stop_name} - <strong class="text-[#003F87] font-black">${bus.eta_label || "ETA unavailable"}</strong>
                 </span>
             </div>
 
@@ -324,7 +324,7 @@ function openBusPopover(bus, pos) {
                 <span>${bus.speed} km/h</span>
             </div>
 
-            <button onclick="requestAlertPermission('${bus.plate_number}', ${bus.eta_minutes})"
+            <button onclick="requestAlertPermission('${bus.plate_number}', ${bus.eta_minutes ?? null})"
                     class="w-full text-center text-[12.5px] font-bold text-[#003F87] active:opacity-70 mt-2 flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-[#003F87]/15 bg-[#003F87]/5 hover:bg-[#003F87]/10 transition-colors">
                 <i class="ti ti-bell-plus"></i> Set Arrival Alert
             </button>
@@ -360,7 +360,7 @@ function focusBusOnMap(busId, lat, lng, plateNumber) {
 // Web Notifications Alert System (localStorage registered)
 function requestAlertPermission(plateNumber, etaMinutes) {
     if (!("Notification" in window)) {
-        alert("This browser does not support desktop notifications.");
+        GoPasigUI.alert("This browser does not support desktop notifications.");
         return;
     }
     
@@ -382,7 +382,7 @@ function requestAlertPermission(plateNumber, etaMinutes) {
                 icon: "/images/pasig_logo.png"
             });
         } else {
-            alert("Notification permission denied. Please enable permission to receive arrival alerts.");
+            GoPasigUI.alert("Notification permission denied. Please enable permission to receive arrival alerts.");
         }
     });
 }
@@ -396,11 +396,11 @@ function checkRegisteredAlerts(buses) {
     alerts.forEach(alert => {
         const activeBus = buses.find(b => b.plate_number === alert.plate);
         if (activeBus) {
-            if (activeBus.eta_minutes <= 2) {
+            if (typeof activeBus.eta_minutes === "number" && activeBus.eta_minutes <= 2) {
                 // Fire System notification!
                 if (Notification.permission === "granted") {
                     new Notification("GoPasig Bus Approaching!", {
-                        body: `Libreng Sakay Bus ${activeBus.plate_number} is approaching your stop (ETA: ${activeBus.eta_minutes} min)!`,
+                        body: `Libreng Sakay Bus ${activeBus.plate_number} is approaching your stop (${activeBus.eta_label || `ETA: ${activeBus.eta_minutes} min`})!`,
                         icon: "/images/pasig_logo.png"
                     });
                 }
@@ -421,3 +421,8 @@ document.addEventListener("DOMContentLoaded", () => {
         drawStops();
     });
 });
+
+
+
+
+

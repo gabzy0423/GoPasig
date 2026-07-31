@@ -112,6 +112,22 @@ function updateAlertsFeedDOM(alerts) {
     });
 }
 
+function dispatchVariantSelectMarkup(route) {
+    const variants = Array.isArray(route.variants) ? route.variants : [];
+    if (variants.length === 0) return '';
+
+    const usableCount = variants.filter(v => v.usable_for_dispatch).length;
+    const options = [`<option value="">${usableCount > 1 ? 'Choose direction...' : 'Use default direction'}</option>`]
+        .concat(variants.map(v => `<option value="${v.id}" ${v.usable_for_dispatch ? '' : 'disabled'}>${v.label}${v.usable_for_dispatch ? '' : ' (' + v.geometry_status + ')'}</option>`));
+
+    return `<select id="dispatch-variant-${route.id}" class="w-full h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-[#003F87]">${options.join('')}</select>`;
+}
+
+function selectedDispatchVariantId(routeId, explicitVariantId = null) {
+    if (explicitVariantId) return explicitVariantId;
+    const select = document.getElementById(`dispatch-variant-${routeId}`);
+    return select && select.value ? select.value : null;
+}
 function updateDemandBoardDOM(routesData) {
     const container = document.getElementById('demand-board-grid');
     if (!container) return;
@@ -163,6 +179,7 @@ function updateDemandBoardDOM(routesData) {
         }
 
         let suggestedBusMarkup = '';
+        const variantSelectMarkup = dispatchVariantSelectMarkup(r);
         if (r.suggested_bus) {
             suggestedBusMarkup = `
                 <div class="p-2 bg-[#FAEEDA] border border-[#BA7517]/20 rounded-xl text-[11px] text-[#854F0B] font-semibold flex flex-col gap-1">
@@ -213,6 +230,7 @@ function updateDemandBoardDOM(routesData) {
 
             ${predictionMarkup}
             ${suggestedBusMarkup}
+            ${variantSelectMarkup}
 
             <button onclick="dispatchNowAction(${r.id})" class="w-full h-9 flex items-center justify-center gap-1 bg-[#003F87] hover:bg-[#002D62] text-white text-xs font-extrabold uppercase tracking-wider rounded-xl transition shadow-sm cursor-pointer">
                 <i class="ti ti-bus-stop text-base"></i>
@@ -250,7 +268,7 @@ function updateRecentDispatchesDOM(recentDispatches) {
                 <span class="text-[10px] text-slate-400 font-bold font-mono">${log.time_diff}</span>
             </div>
             <div class="text-[11px] text-slate-500 font-semibold space-y-0.5">
-                <div>Bus: <strong class="text-slate-700 font-mono">${log.bus_plate}</strong> · Driver: <strong class="text-slate-700">${log.driver_name}</strong></div>
+                <div>Bus: <strong class="text-slate-700 font-mono">${log.bus_plate}</strong> Ãƒâ€šÃ‚Â· Driver: <strong class="text-slate-700">${log.driver_name}</strong></div>
                 <div class="italic text-[10px] opacity-90 mt-0.5">${log.notes}</div>
             </div>
         `;
@@ -264,7 +282,7 @@ function updateMlAccuracyTrackerDOM(patterns) {
 
     if (selectedPhase == 3) {
         // ISSUE-034 FIX: The previous implementation used Math.random() to fabricate ML accuracy
-        // data and showed a hardcoded '96.4% Acc' badge — all fake. Until a real ML model is
+        // data and showed a hardcoded '96.4% Acc' badge ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â all fake. Until a real ML model is
         // integrated, show an honest empty state instead of misleading mock data.
         container.innerHTML = `
             <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-4">
@@ -420,18 +438,19 @@ async function saveThresholdAction(event) {
 }
 
 // DISPATCH NOW ACTION
-async function dispatchNowAction(routeId) {
+async function dispatchNowAction(routeId, routeVariantId = null) {
     try {
+        const selectedRouteVariantId = selectedDispatchVariantId(routeId, routeVariantId);
+        const payload = { route_id: routeId, phase: selectedPhase };
+        if (selectedRouteVariantId) payload.route_variant_id = selectedRouteVariantId;
+
         const response = await fetch(window.FleetDispatchConfig.dispatchUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': window.FleetDispatchConfig.csrfToken
             },
-            body: JSON.stringify({
-                route_id: routeId,
-                phase: selectedPhase
-            })
+            body: JSON.stringify(payload)
         });
 
         const data = await response.json();
@@ -467,8 +486,14 @@ function showDispatchNotification(message, isError = false) {
 }
 
 // Document ready and events
-document.addEventListener('DOMContentLoaded', () => {
-    if (document.getElementById('demand-board-grid')) {
+let fleetDispatchModuleInitialized = false;
+let fleetDispatchPollingId = null;
+
+function initFleetDispatchModule() {
+    if (fleetDispatchModuleInitialized || !document.getElementById('demand-board-grid')) return;
+    fleetDispatchModuleInitialized = true;
+
+
         // Phase selectors clicks
         document.querySelectorAll('.flex.items-center.bg-slate-100 button').forEach((btn, idx) => {
             btn.addEventListener('click', (e) => {
@@ -501,6 +526,15 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchDispatchData();
 
         // Polling loop
-        setInterval(fetchDispatchData, 10000);
-    }
-});
+        if (!fleetDispatchPollingId) {
+            fleetDispatchPollingId = setInterval(fetchDispatchData, 10000);
+        }
+}
+
+window.initFleetDispatchModule = initFleetDispatchModule;
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFleetDispatchModule, { once: true });
+} else {
+    initFleetDispatchModule();
+}

@@ -66,7 +66,7 @@
                 </div>
                 <div class="mt-1 flex items-baseline gap-1.5">
                     <span class="text-[20px] font-black text-slate-900 leading-none" id="bm-stat-inactive">0</span>
-                    <span class="text-[9px] text-slate-500 font-semibold truncate">Available for service</span>
+                    <span class="text-[9px] text-slate-500 font-semibold truncate">Free standby fleet</span>
                 </div>
             </div>
 
@@ -129,17 +129,17 @@
                 </div>
             </div>
 
-            <!-- Indicator 4: Available for Dispatch -->
+            <!-- Indicator 4: Standby / Dispatchable -->
             <div class="relative bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between h-[72px] shadow-sm border-l-[3px] border-l-[#003F87]">
                 <div class="flex justify-between items-center">
-                    <span class="text-[9px] text-slate-450 font-bold uppercase tracking-wider truncate">Available for Dispatch</span>
+                    <span class="text-[9px] text-slate-450 font-bold uppercase tracking-wider truncate">Standby / Dispatchable</span>
                     <div class="h-5 w-5 rounded bg-blue-50 flex items-center justify-center text-[#003F87]">
                         <i class="ti ti-send text-xs"></i>
                     </div>
                 </div>
                 <div class="flex items-baseline gap-1.5">
                     <span class="text-[16px] font-black text-slate-800 leading-none" id="bm-health-dispatch">0</span>
-                    <span class="text-[9px] text-slate-450 font-medium truncate">Standby ready assets</span>
+                    <span class="text-[9px] text-slate-450 font-medium truncate">Free when unassigned</span>
                 </div>
             </div>
         </div>
@@ -164,7 +164,7 @@
 
             <!-- Right Region: Action buttons -->
             <div class="flex items-center gap-2 shrink-0">
-                <button onclick="loadDatabaseFleetData().then(fetchBuses); return false;" class="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-bold transition cursor-pointer shadow-sm">
+                <button onclick="refreshBusManagementState(); return false;" class="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-bold transition cursor-pointer shadow-sm">
                     <i class="ti ti-refresh text-slate-550"></i> Refresh
                 </button>
                 <button onclick="exportBusesCSV(); return false;" class="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-bold transition cursor-pointer shadow-sm">
@@ -362,7 +362,7 @@
                                 <span class="absolute inset-y-0 left-3 flex items-center text-slate-400">
                                     <i class="ti ti-users text-base"></i>
                                 </span>
-                                <input id="new-bus-capacity" name="capacity" type="number" placeholder="e.g. 45" value="45"
+                                <input id="new-bus-capacity" name="capacity" type="number" placeholder="Enter seating capacity" value="{{ \App\Models\Bus::getDefaultCapacity() }}"
                                     min="{{ \App\Models\SystemSetting::get('bus_capacity_min', 10) }}" max="{{ \App\Models\SystemSetting::get('bus_capacity_max', 150) }}" required
                                     class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87]">
                             </div>
@@ -454,7 +454,7 @@
                             <i class="ti ti-info-circle text-base"></i>
                         </span>
                         <p class="text-xs text-slate-600 font-semibold m-0 leading-relaxed">
-                            Newly registered buses are automatically placed in Standby (Inactive) status. Driver assignment, route assignment, GPS configuration, and live operational telemetry are configured after registration through the Dispatch workflow.
+                            Newly registered buses are automatically placed in Standby (Inactive) status and are dispatchable once unassigned. Driver assignment, route assignment, GPS configuration, and live operational telemetry are configured after registration through the Dispatch workflow.
                         </p>
                     </div>
                 </div>
@@ -481,7 +481,7 @@
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
 
-    /* ── Page Header ── */
+    /* Page Header */
     .bm-page-header {
         display: flex;
         align-items: flex-start;
@@ -511,7 +511,7 @@
         gap: 8px;
     }
 
-    /* ── Buttons ── */
+    /* Buttons */
     .bm-btn-primary {
         display: inline-flex;
         align-items: center;
@@ -562,7 +562,7 @@
         border-color: #F09595;
     }
 
-    /* ── Stats Strip ── */
+    /* Stats Strip */
     .bm-stats-strip {
         display: grid;
         grid-template-columns: repeat(5, 1fr);
@@ -591,7 +591,7 @@
         line-height: 1.2;
     }
 
-    /* ── Filter Bar ── */
+    /* Filter Bar */
     .bm-filter-bar {
         display: flex;
         align-items: center;
@@ -659,7 +659,7 @@
         margin-left: auto;
     }
 
-    /* ── Table Card ── */
+    /* Table Card */
     .bm-table-card {
         background: var(--color-background-primary);
         border: 0.5px solid var(--color-border-tertiary);

@@ -34,16 +34,46 @@
             </button>
         </div>
 
-        <div class="flex items-center gap-2 border-l border-slate-200 pl-2 sm:gap-2.5 sm:pl-4">
-            <div
-                class="h-8 w-8 rounded-full bg-[#003F87]/10 flex items-center justify-center font-extrabold text-[#003F87] text-xs">
-                AD
+        @php
+            $adminUser = auth()->user();
+            $adminName = $adminUser?->name ?? 'Administrator';
+            $nameParts = array_values(array_filter(explode(' ', trim($adminName))));
+            if (count($nameParts) === 1) {
+                $adminInitials = mb_strtoupper(mb_substr($nameParts[0], 0, 1));
+            } elseif (count($nameParts) >= 2) {
+                $adminInitials = mb_strtoupper(mb_substr($nameParts[0], 0, 1) . mb_substr(end($nameParts), 0, 1));
+            } else {
+                $adminInitials = 'A';
+            }
+            $staffProfile = $adminUser?->staffProfile;
+            $rawPhotoUrl = ($staffProfile && $staffProfile->profile_photo_path) ? \Illuminate\Support\Facades\Storage::url($staffProfile->profile_photo_path) : null;
+            if ($rawPhotoUrl && (str_starts_with($rawPhotoUrl, 'http://') || str_starts_with($rawPhotoUrl, 'https://'))) {
+                $parsedPath = parse_url($rawPhotoUrl, PHP_URL_PATH);
+                $profilePhotoUrl = $parsedPath ? '/' . ltrim($parsedPath, '/') : '/storage/' . ltrim($staffProfile->profile_photo_path, '/');
+            } elseif ($rawPhotoUrl) {
+                $profilePhotoUrl = '/' . ltrim($rawPhotoUrl, '/');
+            } else {
+                $profilePhotoUrl = null;
+            }
+        @endphp
+        <button id="topbar-admin-profile-trigger"
+            onclick="switchScreen('profile')"
+            type="button"
+            aria-label="View Account Profile"
+            class="flex items-center gap-2 border-l border-slate-200 pl-2 sm:gap-2.5 sm:pl-4 hover:bg-slate-50 p-1.5 rounded-lg transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]">
+            <div id="topbar-admin-avatar"
+                class="h-8 w-8 rounded-full bg-[#003F87]/10 flex items-center justify-center font-extrabold text-[#003F87] text-xs shrink-0 overflow-hidden">
+                @if($profilePhotoUrl)
+                    <img src="{{ $profilePhotoUrl }}" alt="{{ $adminName }}" class="h-full w-full object-cover">
+                @else
+                    {{ $adminInitials }}
+                @endif
             </div>
             <div class="max-sm:hidden flex flex-col items-start leading-none">
-                <span class="text-xs font-bold text-slate-900">Administrator</span>
+                <span id="topbar-admin-name" class="text-xs font-bold text-slate-900">{{ $adminName }}</span>
                 <span class="text-[9px] font-extrabold uppercase tracking-widest text-[#003F87] mt-0.5">Admin
                     Panel</span>
             </div>
-        </div>
+        </button>
     </div>
 </header>

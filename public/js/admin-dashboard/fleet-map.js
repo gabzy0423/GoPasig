@@ -1,6 +1,38 @@
     // ==================== LIVE FLEET MAP MODULE ====================
 
-    // Initialize Leaflet Map (Centered on Pasig City Metro Manila, Zoom 13)
+    const LIVE_FLEET_DEFAULT_CENTER = [14.5764, 121.0851];
+    const LIVE_FLEET_DEFAULT_ZOOM = 13.2;
+    const LIVE_FLEET_INITIAL_ROUTE_IDS = new Set(['1', '2', '3']);
+
+    function applyInitialLiveFleetViewport() {
+        if (liveMap === null) return;
+
+        const canonicalBounds = L.latLngBounds([]);
+
+        Object.entries(mapPolylinesMap).forEach(([key, polyline]) => {
+            const routeId = key.split(':')[0];
+            if (!LIVE_FLEET_INITIAL_ROUTE_IDS.has(routeId)) return;
+            if (!liveMap.hasLayer(polyline)) return;
+
+            const bounds = typeof polyline.getBounds === 'function' ? polyline.getBounds() : null;
+            if (bounds && bounds.isValid()) {
+                canonicalBounds.extend(bounds);
+            }
+        });
+
+        if (canonicalBounds.isValid()) {
+            liveMap.fitBounds(canonicalBounds, {
+                paddingTopLeft: [24, 96],
+                paddingBottomRight: [384, 32],
+                maxZoom: 14
+            });
+            return;
+        }
+
+        liveMap.setView(LIVE_FLEET_DEFAULT_CENTER, LIVE_FLEET_DEFAULT_ZOOM);
+    }
+
+    // Initialize Leaflet Map with a one-time route-aware default viewport.
     function initLiveFleetMap() {
         if (liveMap !== null) {
             liveMap.invalidateSize();
@@ -11,7 +43,7 @@
         liveMap = L.map('live-map-canvas', { 
             zoomControl: false,
             attributionControl: false
-        }).setView([14.5764, 121.0851], 13.2);
+        }).setView(LIVE_FLEET_DEFAULT_CENTER, LIVE_FLEET_DEFAULT_ZOOM);
 
         try {
             // Load official Google Maps roadmap layer using Google Maps API
@@ -36,6 +68,7 @@
         updateFleetSummaryStats();
         updateRoutePillsCounts();
         updateRecentActivityUI();
+        applyInitialLiveFleetViewport();
 
         // Leaflet Invalidate Size trigger
         liveMap.invalidateSize();
@@ -51,9 +84,13 @@
 
         routesDataDb.forEach(route => {
             if (route.status === 'Suspended' || route.status === 'suspended' || route.status === 'inactive' || route.status === 'Inactive') return;
-            if (route.polyline_coordinates && route.polyline_coordinates.length > 0) {
+            const geometries = route.map_geometry_source === 'route_variant'
+                ? (route.map_variant_geometries || []).filter(item => item.polyline_coordinates?.length > 0)
+                : [{ polyline_coordinates: route.polyline_coordinates }];
+            geometries.forEach(geometry => {
+            if (geometry.polyline_coordinates && geometry.polyline_coordinates.length > 0) {
                 const color = routeColors[route.id.toString()] || '#003F87';
-                const polyline = L.polyline(route.polyline_coordinates, {
+                const polyline = L.polyline(geometry.polyline_coordinates, {
                     color: color,
                     weight: 3.5,
                     opacity: 0.85
@@ -63,8 +100,10 @@
                     polyline.addTo(liveMap);
                 }
 
-                mapPolylinesMap[route.id.toString()] = polyline;
+                const key = route.id + ':' + (geometry.route_variant_id || 'legacy');
+                mapPolylinesMap[key] = polyline;
             }
+            });
         });
     }
 
@@ -188,7 +227,7 @@
                             </div>
                         </div>
                         <div class="mt-3.5 border-t border-slate-100 pt-2 text-center shrink-0">
-                            <button onclick="alert('Secure message dispatched to driver ${bus.driver}.')" class="text-xs font-black text-[#003F87] hover:underline cursor-pointer flex items-center justify-center gap-1 w-full">
+                            <button onclick="GoPasigUI.alert('Secure message dispatched to driver ${bus.driver}.')" class="text-xs font-black text-[#003F87] hover:underline cursor-pointer flex items-center justify-center gap-1 w-full">
                                 <i class="ti ti-message-2 text-sm"></i>
                                 Message driver
                             </button>
@@ -588,7 +627,7 @@
 
         // Show/Hide Leaflet Polylines dynamically
         for (let route in mapPolylinesMap) {
-            if (routeLetter === 'all' || route === routeLetter) {
+            if (routeLetter === 'all' || route.split(':')[0] === routeLetter) {
                 mapPolylinesMap[route].addTo(liveMap);
             } else {
                 liveMap.removeLayer(mapPolylinesMap[route]);
@@ -619,28 +658,6 @@
 
         renderMapMarkers();
         updateFleetSidebarList();
-
-        // Focus first match if search criteria is present
-        if (query) {
-            const matchedBuses = fleetData.filter(bus => {
-                const isVisible = (bus.has_active_trip || bus.status === 'Breakdown') && bus.status !== 'Inactive' && bus.status !== 'Maintenance';
-                if (!isVisible) return false;
-                const matchesRoute = activeRouteFilter === 'all' || bus.route === activeRouteFilter;
-                const matchesStatus = activeStatusFilter === 'all' || bus.status === activeStatusFilter;
-                
-                const plateMatch = bus.plate.toLowerCase().includes(query);
-                const driverMatch = bus.driver.toLowerCase().includes(query);
-                const routeName = routeNames[bus.route] ? routeNames[bus.route].toLowerCase() : '';
-                const routeMatch = routeName.includes(query) || `route ${bus.route}`.includes(query);
-                
-                return matchesRoute && matchesStatus && (plateMatch || driverMatch || routeMatch);
-            });
-
-            if (matchedBuses.length > 0) {
-                const bus = matchedBuses[0];
-                liveMap.panTo([bus.lat, bus.lng]);
-            }
-        }
     }
 
     // Reset all filters in controls bar
@@ -754,6 +771,7 @@
     }, 1000);
 
     // ==================== END LIVE FLEET MAP MODULE ======================
+
 
 
 

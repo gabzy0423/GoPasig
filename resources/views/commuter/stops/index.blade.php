@@ -10,8 +10,8 @@
 @section('scripts')
 @php
     // Fetch stops data categorized by route
-    $routes = \App\Models\Route::getAllCached()->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive']);
-    $stops = \App\Models\Stop::getAllCached();
+    $routes = \App\Models\Route::getCanonicalProductionCached();
+    $stops = \App\Models\Stop::getAllCached()->whereIn('route_id', $routes->pluck('id'));
     $stopsByRoute = $stops->groupBy('route_id');
 
     $stopsData = $routes->flatMap(function($route) use ($stopsByRoute) {

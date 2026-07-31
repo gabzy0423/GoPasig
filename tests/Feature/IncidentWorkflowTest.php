@@ -6,6 +6,7 @@ use App\Models\Bus;
 use App\Models\Driver;
 use App\Models\Incident;
 use App\Models\Route;
+use App\Models\SystemSetting;
 use App\Models\Trip;
 use App\Models\User;
 use App\Services\DriverPerformanceService;
@@ -26,6 +27,18 @@ class IncidentWorkflowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        foreach ([
+            'driver_default_on_time_score' => 100,
+            'driver_default_passenger_score' => 100,
+            'driver_score_incident_penalty' => 10,
+            'driver_performance_rolling_days' => 30,
+        ] as $key => $value) {
+            SystemSetting::updateOrCreate(
+                ['key' => $key],
+                ['value' => (string) $value, 'description' => 'Incident workflow test fixture']
+            );
+        }
 
         // 1. Create a route
         $this->route = Route::create([
@@ -171,18 +184,18 @@ class IncidentWorkflowTest extends TestCase
 
         DriverPerformanceService::recalculate($this->driver->id);
         $this->driver->refresh();
-        // Accident SHOULD penalize the driver (-10 points)
-        $this->assertEquals(90, $this->driver->performance_score);
+        // Accident SHOULD penalize the weighted recalculated score.
+        $this->assertEquals(97, $this->driver->performance_score);
         $this->assertEquals(1, $this->driver->incidents_30);
 
         // 4. Register via registerIncident logic directly
         DriverPerformanceService::registerIncident($this->driver->id, Incident::getTrafficDelayType());
         $this->driver->refresh();
-        $this->assertEquals(90, $this->driver->performance_score); // No extra penalty
+        $this->assertEquals(97, $this->driver->performance_score); // No extra penalty
 
         DriverPerformanceService::registerIncident($this->driver->id, Incident::getBreakdownType());
         $this->driver->refresh();
-        $this->assertEquals(80, $this->driver->performance_score); // Breakdown penalizes (-10 points)
+        $this->assertEquals(87, $this->driver->performance_score); // Breakdown register path penalizes (-10 points)
     }
 
     /** @test */

@@ -9,7 +9,7 @@ class DriverPolicy
 {
     public function view(User $user, Driver $driver): bool
     {
-        return $user->role === 'admin' || $user->role === 'dispatcher';
+        return $user->role === 'admin' || $user->role === 'fleet_manager';
     }
 
     public function create(User $user): bool
@@ -29,7 +29,7 @@ class DriverPolicy
 
     public function suspend(User $user, Driver $driver): bool
     {
-        return $user->role === 'admin' || $user->role === 'dispatcher';
+        return $user->role === 'admin' || $user->role === 'fleet_manager';
     }
 
     public function restore(User $user, Driver $driver): bool

@@ -314,8 +314,8 @@ new class extends Component
                 
                 <!-- PDF/CSV Quick Downloads inside preview -->
                 <div class="absolute bottom-4 right-4 flex gap-2 shrink-0">
-                    <button type="button" onclick="alert('Downloading PDF...')" class="rounded bg-[#003F87] px-3 py-1 text-[10px] font-extrabold text-white hover:bg-[#002D62] transition cursor-pointer">Download PDF</button>
-                    <button type="button" onclick="alert('Downloading CSV...')" class="rounded border border-slate-200 bg-white px-3 py-1 text-[10px] font-extrabold text-slate-600 hover:bg-slate-50 transition cursor-pointer">Download CSV</button>
+                    <button type="button" onclick="GoPasigUI.alert('Downloading PDF...')" class="rounded bg-[#003F87] px-3 py-1 text-[10px] font-extrabold text-white hover:bg-[#002D62] transition cursor-pointer">Download PDF</button>
+                    <button type="button" onclick="GoPasigUI.alert('Downloading CSV...')" class="rounded border border-slate-200 bg-white px-3 py-1 text-[10px] font-extrabold text-slate-600 hover:bg-slate-50 transition cursor-pointer">Download CSV</button>
                 </div>
             </div>
         </div>
@@ -335,7 +335,7 @@ new class extends Component
                             </div>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
-                            <button type="button" onclick="alert('Downloading Report...')" class="p-1 text-slate-400 hover:text-[#003F87] cursor-pointer" title="Download"><i class="ti ti-download text-sm"></i></button>
+                            <button type="button" onclick="GoPasigUI.alert('Downloading Report...')" class="p-1 text-slate-400 hover:text-[#003F87] cursor-pointer" title="Download"><i class="ti ti-download text-sm"></i></button>
                             <button type="button" wire:click="deleteHistory({{ $index }})" class="p-1 text-slate-400 hover:text-[#E24B4A] cursor-pointer" title="Delete"><i class="ti ti-trash text-sm"></i></button>
                         </div>
                     </div>

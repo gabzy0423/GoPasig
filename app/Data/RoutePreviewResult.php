@@ -9,6 +9,7 @@ class RoutePreviewResult implements Arrayable, JsonSerializable
 {
     public string $sessionId;
     public int $routeId;
+    public ?int $routeVariantId;
     public string $provider;
     public array $generatedGeometry;
     public array $comparisonMetrics;
@@ -22,10 +23,12 @@ class RoutePreviewResult implements Arrayable, JsonSerializable
         array $generatedGeometry,
         array $comparisonMetrics,
         array $qualityResult,
-        string $expiresAt
+        string $expiresAt,
+        ?int $routeVariantId = null
     ) {
         $this->sessionId = $sessionId;
         $this->routeId = $routeId;
+        $this->routeVariantId = $routeVariantId;
         $this->provider = $provider;
         $this->generatedGeometry = $generatedGeometry;
         $this->comparisonMetrics = $comparisonMetrics;
@@ -38,6 +41,7 @@ class RoutePreviewResult implements Arrayable, JsonSerializable
         return [
             'session_id' => $this->sessionId,
             'route_id' => $this->routeId,
+            'route_variant_id' => $this->routeVariantId,
             'provider' => $this->provider,
             'generated_geometry' => $this->generatedGeometry,
             'comparison' => $this->comparisonMetrics,

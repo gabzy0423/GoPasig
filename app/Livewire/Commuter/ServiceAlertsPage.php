@@ -67,10 +67,10 @@ class ServiceAlertsPage extends Component
 
     public function render()
     {
-        $routeColors = \App\Models\Route::pluck('color', 'name')->toArray();
+        $routeColors = \App\Models\Route::publicCommuterVisible()->pluck('color', 'name')->toArray();
 
         // 1. Fetch active alerts from database
-        $activeQuery = ServiceAlert::activeAlerts();
+        $activeQuery = ServiceAlert::activeAlerts()->publicCommuterVisible();
 
         if ($this->filter !== 'all') {
             // Map filter types from pills to seeder values
@@ -128,12 +128,12 @@ class ServiceAlertsPage extends Component
         $this->alertCount = $activeAlertsMapped->count();
 
         // Unread badge count (global count of unread active alerts)
-        $unreadCount = ServiceAlert::activeAlerts()->get()->filter(function ($alert) {
+        $unreadCount = ServiceAlert::activeAlerts()->publicCommuterVisible()->get()->filter(function ($alert) {
             return !in_array($alert->id, $this->readAlerts);
         })->count();
 
         // 3. Fetch resolved alerts from database
-        $dbResolvedAlerts = ServiceAlert::where('status', 'resolved')->get();
+        $dbResolvedAlerts = ServiceAlert::where('status', 'resolved')->publicCommuterVisible()->get();
 
         $resolvedAlertsMapped = $dbResolvedAlerts->map(function ($alert) use ($routeColors) {
             $routesList = [];

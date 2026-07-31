@@ -7,6 +7,7 @@ use App\Models\RouteCorridor;
 use App\Models\Trip;
 use App\Models\TripProgress;
 use App\Models\RouteDeviation;
+use App\Services\Routing\AuthoritativeRouteResolver;
 use App\Services\ValueObjects\Coordinate;
 use App\Services\Contracts\GeospatialServiceInterface;
 use App\Enums\RouteDeviationSeverity;
@@ -15,15 +16,20 @@ use App\Events\RouteRecovered;
 
 class RouteCorridorEngine
 {
-    public function __construct(protected GeospatialServiceInterface $geospatial) {}
+    public function __construct(
+        protected GeospatialServiceInterface $geospatial,
+        protected AuthoritativeRouteResolver $routeResolver
+    ) {}
 
     /**
-     * Snap coordinate to route polyline and evaluate corridor deviation severity.
+     * Snap coordinate to authoritative trip geometry and evaluate corridor deviation severity.
      */
     public function check(VehiclePosition $position, Coordinate $coord, ?RouteCorridor $corridor, Trip $trip): void
     {
-        $polylineCoordinates = $trip->route->polyline_coordinates;
-        if (is_null($polylineCoordinates) || !is_array($polylineCoordinates)) {
+        $plan = $this->routeResolver->resolveForTrip($trip);
+        $polylineCoordinates = $plan->polylineCoordinates;
+
+        if (empty($polylineCoordinates) || !is_array($polylineCoordinates)) {
             return;
         }
         $n = count($polylineCoordinates);
@@ -33,7 +39,6 @@ class RouteCorridorEngine
 
         $minDistance = null;
 
-        // Iterate over each segment to find the minimum distance
         for ($i = 0; $i < $n - 1; $i++) {
             $a = new Coordinate((float)$polylineCoordinates[$i][0], (float)$polylineCoordinates[$i][1]);
             $b = new Coordinate((float)$polylineCoordinates[$i + 1][0], (float)$polylineCoordinates[$i + 1][1]);
@@ -44,17 +49,14 @@ class RouteCorridorEngine
             }
         }
 
-        // Get corridor buffer size (meters)
         $buffer = $corridor ? $corridor->buffer_width : (float) config('fleet.spatial.corridor_default');
 
-        // Update VehiclePosition latest corridor distance
         $position->update(['corridor_distance' => round($minDistance, 1)]);
 
         $progress = TripProgress::firstOrCreate(['trip_id' => $trip->id]);
         $isDeviated = $minDistance > $buffer;
 
         if ($isDeviated) {
-            // Determine severity
             $severity = RouteDeviationSeverity::MINOR;
             if ($minDistance > $buffer * 5.0) {
                 $severity = RouteDeviationSeverity::CRITICAL;
@@ -69,7 +71,6 @@ class RouteCorridorEngine
                 default => 'Minor',
             };
 
-            // Log RouteDeviation
             RouteDeviation::create([
                 'trip_id' => $trip->id,
                 'lat' => $position->lat,
@@ -79,12 +80,10 @@ class RouteCorridorEngine
                 'detected_at' => now(),
             ]);
 
-            // Update TripProgress status
             $progress->update([
                 'route_adherence' => $severityName . ' Deviation',
             ]);
 
-            // Dispatch event
             event(new RouteDeviationDetected(
                 $trip->id,
                 $position->lat,
@@ -93,17 +92,14 @@ class RouteCorridorEngine
                 $severityName
             ));
         } else {
-            // Resolve active deviation log
             $affectedRows = RouteDeviation::where('trip_id', $trip->id)
                 ->whereNull('resolved_at')
                 ->update(['resolved_at' => now()]);
 
-            // Reset progress status to on route
             $progress->update([
                 'route_adherence' => 'On Route',
             ]);
 
-            // Dispatch RouteRecovered if it was previously deviated
             if ($affectedRows > 0) {
                 event(new RouteRecovered($trip->id, $position->lat, $position->lng));
             }
@@ -126,7 +122,6 @@ class RouteCorridorEngine
             return $this->geospatial->calculateDistance($p, $a);
         }
 
-        // Project point P onto segment AB
         $t = (($latP - $latA) * $dx + ($lngP - $lngA) * $dy) / ($dx * $dx + $dy * $dy);
         $t = max(0.0, min(1.0, $t));
 

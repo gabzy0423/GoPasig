@@ -86,7 +86,16 @@ class CommuterController extends Controller
      */
     public function busesApi()
     {
-        $buses = Bus::where('status', 'active')->get(['plate_number', 'lat', 'lng', 'status', 'next_stop', 'eta']);
+        $canonicalActiveBusIds = \App\Models\Trip::where('status', 'ongoing')
+            ->whereHas('route', fn ($query) => $query->publicCommuterActiveService())
+            ->pluck('bus_id')
+            ->filter()
+            ->unique();
+
+        $buses = Bus::where('status', 'active')
+            ->whereIn('id', $canonicalActiveBusIds)
+            ->get(['plate_number', 'lat', 'lng', 'status', 'next_stop', 'eta']);
+
         return response()->json($buses);
     }
 }

@@ -213,40 +213,11 @@
                         <label class="am-label">Affected routes</label>
                         {{-- ISSUE-045 FIX: Route pills are now rendered dynamically from the DB by alerts.js --}}
                         <div class="am-route-pill-row" id="composer-route-pills-row">
-                            <button type="button" class="am-route-pill" data-route="All routes" onclick="toggleComposerRoute('All routes')">All routes</button>
+                            <button type="button" class="am-route-pill" data-route="All official routes" onclick="toggleComposerRoute('All official routes')">All official routes</button>
                             {{-- Dynamic per-route pills injected here by loadRoutesIntoComposer() --}}
                         </div>
                     </div>
-
-                    {{-- FIELD 6: TARGET AUDIENCE (CHECKBOXES) --}}
-                    <div class="am-field">
-                        <label class="am-label">Notify</label>
-                        <div class="am-checkbox-group">
-                            <label class="am-checkbox-row">
-                                <input type="checkbox" id="chk-commuters" class="am-checkbox-input" checked onclick="toggleNotificationTarget('commuters')">
-                                <div class="am-checkbox-label-block">
-                                    <span class="am-checkbox-title">Commuters (public interface)</span>
-                                    <span class="am-checkbox-subtitle">Visible on commuter map and alerts page</span>
-                                </div>
-                            </label>
-                            <label class="am-checkbox-row">
-                                <input type="checkbox" id="chk-drivers" class="am-checkbox-input" checked onclick="toggleNotificationTarget('drivers')">
-                                <div class="am-checkbox-label-block">
-                                    <span class="am-checkbox-title">Drivers (driver app)</span>
-                                    <span class="am-checkbox-subtitle">Push notification to driver app</span>
-                                </div>
-                            </label>
-                            <label class="am-checkbox-row">
-                                <input type="checkbox" id="chk-admin" class="am-checkbox-input" onclick="toggleNotificationTarget('admin')">
-                                <div class="am-checkbox-label-block">
-                                    <span class="am-checkbox-title">Admin team only</span>
-                                    <span class="am-checkbox-subtitle">Internal only — not visible to commuters</span>
-                                </div>
-                            </label>
-                        </div>
-                    </div>
-
-                    {{-- FIELD 7: SEND TIMING --}}
+                    {{-- FIELD 6: SEND TIMING --}}
                     <div class="am-field">
                         <label class="am-label">Send</label>
                         <div class="am-timing-radio-row">
@@ -269,11 +240,11 @@
 
                     <hr class="am-divider">
 
-                    {{-- FIELD 8: ROUTE SUSPENSION TOGGLE --}}
+                    {{-- FIELD 7: ROUTE SUSPENSION TOGGLE --}}
                     <div class="am-toggle-row" id="suspension-toggle-row">
                         <div class="am-toggle-label-block">
-                            <span class="am-toggle-title" id="suspension-label">Suspend affected route(s)</span>
-                            <span class="am-toggle-subtitle">Removes route from dispatch pool and stops new trip assignments</span>
+                            <span class="am-toggle-title" id="suspension-label">Activate Route Suspension</span>
+                            <span class="am-toggle-subtitle">Operational action that blocks new dispatches for the selected route(s)</span>
                         </div>
                         <div class="am-toggle-switch" onclick="toggleComposerSuspension()">
                             <div id="toggle-suspension-track" class="am-toggle-track">
@@ -282,10 +253,14 @@
                         </div>
                     </div>
 
+                    <div id="suspension-policy-helper" class="am-helper-text hidden">
+                        This alert is informational only. No operational changes will be made.
+                    </div>
+
                     {{-- Route suspension warning card --}}
                     <div id="suspension-warning-card" class="am-warning-card mt-3 hidden animate-fade-in-up">
                         <i class="ti ti-alert-triangle text-[#A32D2D] text-lg"></i>
-                        <span class="text-xs text-[#A32D2D]" id="suspension-warning-text">Route will be removed from pool...</span>
+                        <span class="text-xs text-[#A32D2D]" id="suspension-warning-text">New dispatches on the selected route(s) will be blocked immediately. Existing trips will continue until completed.</span>
                     </div>
 
                 </div>
@@ -295,7 +270,7 @@
                     <button class="am-btn-primary w-full text-center" id="btn-broadcast-alert" onclick="triggerComposerBroadcast()">
                         <i class="ti ti-send"></i> Broadcast alert
                     </button>
-                    <a href="#" class="am-link-draft" onclick="event.preventDefault(); alert('Alert saved as Draft.');">Save as draft</a>
+                    <a href="#" class="am-link-draft" onclick="event.preventDefault(); GoPasigUI.alert('Alert saved as Draft.');">Save as draft</a>
                 </div>
 
             </div>
@@ -371,10 +346,10 @@
             </div>
 
             <div class="am-confirm-btns mt-6">
-                <button class="am-btn-outline flex-1" onclick="closeBroadcastReceipt()">
+                <button id="receipt-primary-action" class="am-btn-outline flex-1" onclick="viewBroadcastAlertInFeed()">
                     <i class="ti ti-arrow-right"></i> View alert in feed
                 </button>
-                <button class="am-btn-primary flex-1 text-white" onclick="closeBroadcastReceipt()">
+                <button id="receipt-secondary-action" class="am-btn-primary flex-1 text-white" onclick="closeBroadcastReceipt()">
                     <i class="ti ti-bell-plus"></i> Create another alert
                 </button>
             </div>
@@ -485,6 +460,16 @@
 
     .am-btn-primary:hover {
         background: #002d62;
+    }
+
+    .am-btn-primary:disabled,
+    .am-btn-primary.is-loading {
+        cursor: wait;
+        opacity: 0.78;
+    }
+
+    .am-spin {
+        animation: am-spin 0.8s linear infinite;
     }
 
     .am-btn-outline {
@@ -772,6 +757,17 @@
         background: var(--color-background-secondary);
     }
 
+    .am-dropdown-item.is-disabled,
+    .am-dropdown-item:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+
+    .am-dropdown-item.is-disabled:hover,
+    .am-dropdown-item:disabled:hover {
+        background: transparent;
+    }
+
     .am-dropdown-item i {
         font-size: 14px;
     }
@@ -1046,6 +1042,27 @@
 
     .am-resolved-right i {
         color: #3B6D11;
+        font-size: 14px;
+    }
+
+    .am-resolved-delete {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        cursor: pointer;
+    }
+
+    .am-resolved-delete:hover {
+        background: #FEECEC;
+    }
+
+    .am-resolved-delete i {
+        color: #A32D2D;
         font-size: 14px;
     }
 
@@ -1925,6 +1942,20 @@
         animation: fade-in-up 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
 
+    @keyframes am-spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .am-alert-card-highlight {
+        animation: alert-card-highlight 1.8s ease-out forwards;
+    }
+
+    @keyframes alert-card-highlight {
+        0% { box-shadow: 0 0 0 0 rgba(0, 63, 135, 0.35); }
+        30% { box-shadow: 0 0 0 4px rgba(0, 63, 135, 0.24); }
+        100% { box-shadow: 0 0 0 0 rgba(0, 63, 135, 0); }
+    }
+
     .mt-1.5 { margin-top: 6px; }
     .mt-2 { margin-top: 8px; }
     .mt-3 { margin-top: 12px; }
@@ -1932,3 +1963,6 @@
     .mb-6 { margin-bottom: 24px; }
     .w-full { width: 100%; }
 </style>
+
+
+

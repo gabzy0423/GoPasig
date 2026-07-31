@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Bus;
 use App\Models\Driver;
 use App\Models\Route;
+use App\Models\RouteVariant;
+use App\Models\RouteVariantStop;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -66,6 +68,171 @@ class AdminDispatchTest extends TestCase
             ->assertSee('Juan Dela Cruz');
     }
  
+    public function test_dispatch_builder_native_controls_use_explicit_change_handlers(): void
+    {
+        $this->actingAsAdmin();
+
+        $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        RouteVariant::create([
+            'route_id' => $route->id,
+            'direction' => 'outbound',
+            'origin_name' => 'Terminal A',
+            'destination_name' => 'Terminal B',
+            'polyline_coordinates' => [[14.5690, 121.0680], [14.5760, 121.0850]],
+            'geometry_status' => 'valid',
+            'is_default' => true,
+        ]);
+
+        Livewire::test('admin.dispatch-builder')
+            ->set('selectedRoute', $route->id)
+            ->assertSeeHtml('wire:change="$set(\'selectedRoute\', $event.target.value)"')
+            ->assertSeeHtml('wire:change="$set(\'selectedRouteVariant\', $event.target.value)"')
+            ->assertSeeHtml('wire:change="$set(\'selectedBusId\', $event.target.value)"')
+            ->assertSeeHtml('wire:change="$set(\'selectedDriverId\', $event.target.value)"')
+            ->assertSeeHtml('wire:change="$set(\'confirmDispatch\', $event.target.checked)"');
+    }
+
+    public function test_dispatch_builder_selection_state_updates_preview_readiness_and_button(): void
+    {
+        $this->actingAsAdmin();
+
+        $route = Route::create([
+            'name' => 'Route A',
+            'description' => 'Test Route A Description',
+            'polyline_coordinates' => [[14.5690, 121.0680]],
+            'status' => 'Active',
+        ]);
+
+        $bus = Bus::create([
+            'plate_number' => 'PAS-123',
+            'status' => 'inactive',
+            'capacity' => 40,
+            'lat' => 14.5690,
+            'lng' => 121.0680,
+            'speed' => 0,
+            'passengers' => 0,
+        ]);
+
+        $driver = Driver::create([
+            'emp_id' => 'EMP-0021',
+            'first_name' => 'Juan',
+            'last_name' => 'Dela Cruz',
+            'license_number' => 'N01-23-456789',
+            'license_expiry' => '2027-12-12',
+            'status' => 'active',
+            'operational_status' => 'available',
+        ]);
+
+        $component = Livewire::test('admin.dispatch-builder')
+            ->set('selectedRoute', $route->id)
+            ->assertSet('selectedRoute', $route->id)
+            ->assertSee('Route A')
+            ->assertSee('Route selected')
+            ->set('selectedBusId', $bus->id)
+            ->assertSet('selectedBusId', $bus->id)
+            ->assertSee('PAS-123')
+            ->assertSee('Bus assigned')
+            ->set('selectedDriverId', $driver->id)
+            ->assertSet('selectedDriverId', $driver->id)
+            ->assertSee('Juan Dela Cruz')
+            ->assertSee('Driver assigned')
+            ->set('confirmDispatch', true)
+            ->assertSet('confirmDispatch', true)
+            ->assertSee('Confirmation checked')
+            ->assertSee('Ready for dispatch. All required information has been validated.');
+
+        $this->assertDoesNotMatchRegularExpression('/type="submit"\s+disabled/', $component->html());
+    }
+
+    public function test_dispatch_builder_incomplete_state_keeps_create_button_disabled(): void
+    {
+        $this->actingAsAdmin();
+
+        $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
+        $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
+
+        $component = Livewire::test('admin.dispatch-builder')
+            ->set('selectedRoute', $route->id)
+            ->set('selectedBusId', $bus->id)
+            ->set('selectedDriverId', $driver->id)
+            ->set('confirmDispatch', false)
+            ->assertSet('confirmDispatch', false)
+            ->assertSee('Dispatch is not yet ready. Complete the remaining checklist requirements.');
+
+        $this->assertMatchesRegularExpression('/type="submit"\s+disabled/', $component->html());
+    }
+
+    public function test_dispatch_builder_route_variant_state_synchronizes_for_usable_direction(): void
+    {
+        $this->actingAsAdmin();
+
+        $route = Route::create([
+            'name' => 'Route A',
+            'description' => 'Variant Test Route',
+            'polyline_coordinates' => [[14.5690, 121.0680], [14.5760, 121.0850]],
+            'status' => 'Active',
+        ]);
+
+        $variant = RouteVariant::create([
+            'route_id' => $route->id,
+            'direction' => 'outbound',
+            'origin_name' => 'Terminal A',
+            'destination_name' => 'Terminal B',
+            'polyline_coordinates' => [[14.5690, 121.0680], [14.5760, 121.0850]],
+            'geometry_status' => 'valid',
+            'is_default' => true,
+        ]);
+
+        RouteVariantStop::create(['route_variant_id' => $variant->id, 'name' => 'Terminal A', 'lat' => 14.5690, 'lng' => 121.0680, 'sequence' => 1]);
+        RouteVariantStop::create(['route_variant_id' => $variant->id, 'name' => 'Terminal B', 'lat' => 14.5760, 'lng' => 121.0850, 'sequence' => 2]);
+
+        Livewire::test('admin.dispatch-builder')
+            ->set('selectedRoute', $route->id)
+            ->assertSet('selectedRouteVariant', (string) $variant->id)
+            ->assertSeeHtml('Outbound - Terminal A -&gt; Terminal B')
+            ->set('selectedRouteVariant', $variant->id)
+            ->assertSet('selectedRouteVariant', $variant->id);
+    }
+
+    public function test_dispatch_builder_invalid_resource_keeps_readiness_blocked(): void
+    {
+        $this->actingAsAdmin();
+
+        $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'operating', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
+        $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
+
+        $component = Livewire::test('admin.dispatch-builder')
+            ->set('selectedRoute', $route->id)
+            ->set('selectedBusId', $bus->id)
+            ->set('selectedDriverId', $driver->id)
+            ->set('confirmDispatch', true)
+            ->assertSee('Dispatch is not yet ready. Complete the remaining checklist requirements.');
+
+        $this->assertMatchesRegularExpression('/type="submit"\s+disabled/', $component->html());
+    }
+
+    public function test_dispatch_builder_route_change_preserves_independent_assignments(): void
+    {
+        $this->actingAsAdmin();
+
+        $routeA = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $routeB = Route::create(['name' => 'Route B', 'polyline_coordinates' => [[14.5700, 121.0690]], 'status' => 'Active']);
+        $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
+        $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
+
+        Livewire::test('admin.dispatch-builder')
+            ->set('selectedRoute', $routeA->id)
+            ->set('selectedBusId', $bus->id)
+            ->set('selectedDriverId', $driver->id)
+            ->set('confirmDispatch', true)
+            ->set('selectedRoute', $routeB->id)
+            ->assertSet('selectedRoute', $routeB->id)
+            ->assertSet('selectedBusId', $bus->id)
+            ->assertSet('selectedDriverId', $driver->id)
+            ->assertSet('confirmDispatch', true);
+    }
     public function test_admin_can_dispatch_bus_via_livewire(): void
     {
         $this->actingAsAdmin();
@@ -79,7 +246,7 @@ class AdminDispatchTest extends TestCase
  
         $bus = Bus::create([
             'plate_number' => 'PAS-123',
-            'status' => 'available',
+            'status' => 'inactive',
             'capacity' => 40,
             'lat' => 14.5690,
             'lng' => 121.0680,
@@ -101,7 +268,6 @@ class AdminDispatchTest extends TestCase
             ->set('selectedRoute', $route->id)
             ->set('selectedBusId', $bus->id)
             ->set('selectedDriverId', $driver->id)
-            ->set('departureTime', '08:00')
             ->set('confirmDispatch', true)
             ->call('createDispatch')
             ->assertDispatched('dispatchSuccessful');
@@ -136,13 +302,13 @@ class AdminDispatchTest extends TestCase
         // Assert audit log entry was written by BusStateService
         $this->assertDatabaseHas('bus_status_audit_log', [
             'bus_id'     => $bus->id,
-            'old_status' => 'available',
+            'old_status' => 'inactive',
             'new_status' => 'ready',
             'reason'     => 'Central Dispatch',
         ]);
     }
  
-    public function test_bus_transitions_to_inactive_when_trip_is_completed_by_driver(): void
+    public function test_bus_remains_assigned_ready_when_trip_is_completed_by_driver(): void
     {
         $user = User::factory()->create(['role' => 'driver']);
         $this->actingAs($user);
@@ -169,6 +335,8 @@ class AdminDispatchTest extends TestCase
         $bus = Bus::create([
             'plate_number' => 'PAS-123',
             'status' => 'operating',
+            'route_id' => $route->id,
+            'driver_name' => 'Juan Dela Cruz',
             'capacity' => 40,
             'lat' => 14.5690,
             'lng' => 121.0680,
@@ -192,7 +360,9 @@ class AdminDispatchTest extends TestCase
         $response->assertStatus(200);
  
         $bus->refresh();
-        $this->assertSame('available', $bus->status);
+        $this->assertSame('ready', $bus->status);
+        $this->assertSame($route->id, $bus->route_id);
+        $this->assertSame('Juan Dela Cruz', $bus->driver_name);
  
         $trip->refresh();
         $this->assertSame('completed', $trip->status);
@@ -201,8 +371,8 @@ class AdminDispatchTest extends TestCase
         // Assert audit log entry was written by BusStateService
         $this->assertDatabaseHas('bus_status_audit_log', [
             'bus_id'     => $bus->id,
-            'new_status' => 'available',
-            'reason'     => 'Driver completed trip',
+            'new_status' => 'ready',
+            'reason'     => 'Driver completed point-to-point leg',
         ]);
     }
  
@@ -233,6 +403,8 @@ class AdminDispatchTest extends TestCase
         $bus = Bus::create([
             'plate_number' => 'PAS-123',
             'status' => 'operating',
+            'route_id' => $route->id,
+            'driver_name' => 'Juan Dela Cruz',
             'capacity' => 40,
             'lat' => 14.5690,
             'lng' => 121.0680,
@@ -297,21 +469,20 @@ class AdminDispatchTest extends TestCase
  
         Livewire::test('admin.dispatch-builder')
             ->assertSee('PAS-999')
-            ->assertSee('Needs Review');
+            ->assertSee('Legacy active assignment');
     }
  
     public function test_confirmation_checkbox_is_enforced(): void
     {
         $this->actingAsAdmin();
         $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
-        $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'available', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
+        $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
         $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
  
         Livewire::test('admin.dispatch-builder')
             ->set('selectedRoute', $route->id)
             ->set('selectedBusId', $bus->id)
             ->set('selectedDriverId', $driver->id)
-            ->set('departureTime', '08:00')
             ->set('confirmDispatch', false) // checkbox not checked
             ->call('createDispatch')
             ->assertHasErrors(['confirmDispatch'])
@@ -321,8 +492,8 @@ class AdminDispatchTest extends TestCase
     public function test_search_and_filters_filter_resources_correctly(): void
     {
         $this->actingAsAdmin();
-        Bus::create(['plate_number' => 'PAS-111', 'status' => 'available', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680]);
-        Bus::create(['plate_number' => 'PAS-222', 'status' => 'available', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680]);
+        Bus::create(['plate_number' => 'PAS-111', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680]);
+        Bus::create(['plate_number' => 'PAS-222', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680]);
  
         Driver::create(['emp_id' => 'EMP-001', 'first_name' => 'Juan', 'last_name' => 'Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
         Driver::create(['emp_id' => 'EMP-002', 'first_name' => 'Pedro', 'last_name' => 'Santos', 'license_number' => 'N01-23-456780', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
@@ -347,15 +518,15 @@ class AdminDispatchTest extends TestCase
         Driver::query()->delete();
  
         Livewire::test('admin.dispatch-builder')
-            ->assertSee('No standby buses available')
-            ->assertSee('No standby drivers available');
+            ->assertSee('No dispatchable buses available')
+            ->assertSee('No dispatchable drivers available');
     }
  
     public function test_auto_refresh_invalidates_stale_selections(): void
     {
         $this->actingAsAdmin();
         $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
-        $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'available', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680]);
+        $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680]);
         $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
  
         $component = Livewire::test('admin.dispatch-builder')
@@ -387,7 +558,6 @@ class AdminDispatchTest extends TestCase
             ->assertSeeHtml('tabindex="2"')
             ->assertSeeHtml('tabindex="3"')
             ->assertSeeHtml('tabindex="4"')
-            ->assertSeeHtml('tabindex="5"')
             ->assertSeeHtml('tabindex="6"')
             ->assertSeeHtml('aria-required="true"');
     }
@@ -404,39 +574,39 @@ class AdminDispatchTest extends TestCase
     {
         $this->actingAsAdmin();
         $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
-        $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'available', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
+        $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
         $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
  
         Livewire::test('admin.dispatch-builder')
             ->set('selectedRoute', $route->id)
             ->set('selectedBusId', $bus->id)
             ->set('selectedDriverId', $driver->id)
-            ->set('departureTime', '08:00')
             ->set('confirmDispatch', true)
             ->call('createDispatch')
             ->assertDispatched('dispatchSuccessful')
             ->assertSet('selectedRoute', '')
             ->assertSet('selectedBusId', '')
             ->assertSet('selectedDriverId', '')
-            ->assertSet('departureTime', '')
             ->assertSet('confirmDispatch', false);
     }
  
     public function test_user_friendly_exception_messages_caught(): void
     {
         $this->actingAsAdmin();
-        $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
-        $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'operating', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
+        $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Suspended']);
+        $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
         $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
  
-        // Bus is already active, so SimulationDispatchService will throw a DispatchException
+        // Route is suspended, so SimulationDispatchService will throw a DispatchException
         Livewire::test('admin.dispatch-builder')
             ->set('selectedRoute', $route->id)
             ->set('selectedBusId', $bus->id)
             ->set('selectedDriverId', $driver->id)
-            ->set('departureTime', '08:00')
             ->set('confirmDispatch', true)
             ->call('createDispatch')
             ->assertHasErrors(['dispatchError']);
     }
 }
+
+
+

@@ -168,7 +168,7 @@
                                         <span class="absolute inset-y-0 left-3 flex items-center text-slate-400">
                                             <i class="ti ti-users text-base"></i>
                                         </span>
-                                        <input id="edit-bus-capacity" name="capacity" type="number" placeholder="e.g. 45" value="{{ $bus->capacity }}"
+                                        <input id="edit-bus-capacity" name="capacity" type="number" placeholder="Enter seating capacity" value="{{ $bus->capacity }}"
                                             min="{{ \App\Models\SystemSetting::get('bus_capacity_min', 10) }}" max="{{ \App\Models\SystemSetting::get('bus_capacity_max', 150) }}" required
                                             class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87]">
                                     </div>
@@ -405,18 +405,18 @@
             const data = await response.json();
 
             if (response.ok && data.success) {
-                alert(data.message);
+                GoPasigUI.alert(data.message);
                 // Redirect back to admin dashboard's buses tab
                 window.location.href = "{{ route('admin.dashboard') }}#buses";
             } else {
-                alert(data.message || 'Validation error. Please verify input data.');
+                GoPasigUI.alert(data.message || 'Validation error. Please verify input data.');
                 if (submitBtn) {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Update Bus Details';
                 }
             }
         } catch (error) {
-            alert('Server connection error. Failed to update bus details.');
+            GoPasigUI.alert('Server connection error. Failed to update bus details.');
             console.error('AJAX Bus update error:', error);
             if (submitBtn) {
                 submitBtn.disabled = false;

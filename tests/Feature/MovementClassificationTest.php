@@ -47,6 +47,9 @@ class MovementClassificationTest extends TestCase
         $position->refresh();
         $this->assertSame('STATIONARY', $position->movement_state);
         $this->assertSame('speed_without_meaningful_displacement', $position->movement_reason);
+        $this->assertSame(1.2, GPSLog::latest('id')->firstOrFail()->speed);
+        $this->assertSame(0.0, $position->speed);
+        $this->assertSame(0.0, $trip->bus->fresh()->speed);
     }
 
     public function test_cached_heartbeat_with_non_zero_speed_does_not_mark_moving(): void
@@ -72,6 +75,9 @@ class MovementClassificationTest extends TestCase
         $this->assertSame('STATIONARY', $position->movement_state);
         $this->assertSame('cached_heartbeat_no_new_evidence', $position->movement_reason);
         $this->assertSame(0, $position->movement_positive_samples);
+        $this->assertSame(0.7, GPSLog::latest('id')->firstOrFail()->speed);
+        $this->assertSame(0.0, $position->speed);
+        $this->assertSame(0.0, $trip->bus->fresh()->speed);
     }
 
     public function test_repeated_fresh_movement_evidence_transitions_to_moving(): void
@@ -90,6 +96,9 @@ class MovementClassificationTest extends TestCase
         $position->refresh();
         $this->assertSame('MOVING', $position->movement_state);
         $this->assertSame('speed_and_displacement_confirmed', $position->movement_reason);
+        $this->assertSame(1.1, GPSLog::latest('id')->firstOrFail()->speed);
+        $this->assertSame(1.1, $position->speed);
+        $this->assertSame(1.1, $trip->bus->fresh()->speed);
     }
 
     public function test_repeated_fresh_low_movement_evidence_transitions_to_stationary(): void
@@ -274,10 +283,12 @@ class MovementClassificationTest extends TestCase
         $position->refresh();
         $this->assertSame('STATIONARY', $position->movement_state);
         $this->assertSame('repeated_low_displacement', $position->movement_reason);
+        $this->assertSame(0.0, $position->speed);
+        $this->assertSame(0.0, $trip->bus->fresh()->speed);
     }
     public function test_fleet_and_admin_api_movement_state_parity(): void
     {
-        $fleetUser = User::factory()->create(['role' => 'dispatcher']);
+        $fleetUser = User::factory()->create(['role' => 'fleet_manager']);
         $adminUser = User::factory()->create(['role' => 'admin']);
         $bus = Bus::factory()->create(['status' => 'active', 'speed' => 0.7]);
         $trip = Trip::factory()->create(['bus_id' => $bus->id, 'status' => 'ongoing']);

@@ -305,7 +305,7 @@ class MaintenanceManagementController extends Controller
         DB::transaction(function () use ($record) {
             $bus = Bus::find($record->getRawOriginal('bus_id'));
             if ($bus) {
-                $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_ACTIVE;
+                $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_INACTIVE;
                 if ($bus->status !== $restoreStatus) {
                     \App\Services\BusStateService::transition($bus, $restoreStatus, 'Maintenance record deleted');
                 }
@@ -808,7 +808,7 @@ class MaintenanceManagementController extends Controller
                     ->exists();
                 
                 if (!$hasActiveMaintenance) {
-                    $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_ACTIVE;
+                    $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_INACTIVE;
                     \App\Services\BusStateService::transition($bus, $restoreStatus, 'Auto-sync: No active maintenance records');
                 }
             }

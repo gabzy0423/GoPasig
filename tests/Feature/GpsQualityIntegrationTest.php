@@ -303,7 +303,7 @@ class GpsQualityIntegrationTest extends TestCase
 
     public function test_fleet_and_admin_api_gps_quality_payload_parity(): void
     {
-        $fleetUser = User::factory()->create(['role' => 'dispatcher']);
+        $fleetUser = User::factory()->create(['role' => 'fleet_manager']);
         $adminUser = User::factory()->create(['role' => 'admin']);
         $bus = Bus::factory()->create(['status' => 'active']);
         $trip = Trip::factory()->create(['bus_id' => $bus->id, 'status' => 'ongoing']);

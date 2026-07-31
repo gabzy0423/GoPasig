@@ -402,4 +402,58 @@ class AdminBusManagementAuditFixTest extends TestCase
 
         $this->assertSame('breakdown', $bus->fresh()->status);
     }
+    #[Test]
+    public function bus_management_writes_synchronize_fleet_data_and_paginated_listing(): void
+    {
+        $busScript = file_get_contents(public_path('js/admin-dashboard/buses.js'));
+        $dashboardScript = file_get_contents(public_path('js/admin-dashboard/dashboard-data.js'));
+        $busView = file_get_contents(resource_path('views/admin/bus/index.blade.php'));
+
+        $this->assertStringContainsString('async function loadDatabaseFleetData(options = {})', $dashboardScript);
+        $this->assertStringContainsString('if (options.renderBusTable !== false)', $dashboardScript);
+        $this->assertStringContainsString('async function refreshBusManagementState()', $busScript);
+        $this->assertStringContainsString('Promise.all([', $busScript);
+        $this->assertStringContainsString('loadDatabaseFleetData({ renderBusTable: false })', $busScript);
+        $this->assertStringContainsString('fetchBuses()', $busScript);
+        $this->assertStringContainsString('onclick="refreshBusManagementState(); return false;"', $busView);
+
+        $submitStart = strpos($busScript, 'async function handleBusSubmit(event)');
+        $submitEnd = strpos($busScript, '// AJAX Bus Delete', $submitStart);
+        $submitBody = substr($busScript, $submitStart, $submitEnd - $submitStart);
+
+        $this->assertStringContainsString('await refreshBusManagementState();', $submitBody);
+        $this->assertStringNotContainsString('await loadDatabaseFleetData();', $submitBody);
+
+        $deleteStart = strpos($busScript, 'async function deleteBus(busId)');
+        $deleteEnd = strpos($busScript, '// Automatically render on DOM load', $deleteStart);
+        $deleteBody = substr($busScript, $deleteStart, $deleteEnd - $deleteStart);
+
+        $this->assertStringContainsString('await refreshBusManagementState();', $deleteBody);
+        $this->assertStringNotContainsString('await loadDatabaseFleetData();', $deleteBody);
+    }
+
+    #[Test]
+    public function bus_management_edit_lookup_prefers_paginated_bus_records_and_guards_stale_responses(): void
+    {
+        $busScript = file_get_contents(public_path('js/admin-dashboard/buses.js'));
+
+        $this->assertStringContainsString('let latestBusListRequestSeq = 0;', $busScript);
+        $this->assertStringContainsString('const requestSeq = ++latestBusListRequestSeq;', $busScript);
+        $this->assertStringContainsString('if (requestSeq !== latestBusListRequestSeq) return;', $busScript);
+        $this->assertStringContainsString('function findCurrentBusRecord(busId)', $busScript);
+        $this->assertStringContainsString('const listRecord = globalBusesRecords.find', $busScript);
+        $this->assertStringContainsString('const fleetRecord = fleetData.find', $busScript);
+        $this->assertStringContainsString('normalizeBusRecordForForm(listRecord)', $busScript);
+        $this->assertStringContainsString('normalizeBusRecordForForm(fleetRecord)', $busScript);
+        $this->assertStringContainsString('const bus = findCurrentBusRecord(busId);', $busScript);
+
+        $lookupStart = strpos($busScript, 'function findCurrentBusRecord(busId)');
+        $lookupEnd = strpos($busScript, 'async function refreshBusManagementState()', $lookupStart);
+        $lookupBody = substr($busScript, $lookupStart, $lookupEnd - $lookupStart);
+
+        $this->assertLessThan(
+            strpos($lookupBody, 'const fleetRecord = fleetData.find'),
+            strpos($lookupBody, 'const listRecord = globalBusesRecords.find')
+        );
+    }
 }

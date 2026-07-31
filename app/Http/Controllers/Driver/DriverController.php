@@ -25,14 +25,35 @@ use Illuminate\Support\Facades\Log;
 class DriverController extends Controller
 {
     /**
-     * Get dynamic dispatcher first name from database.
+     * Get dynamic fleet supervisor contact details from database.
+     *
+     * Selection order:
+     * 1. First user with role fleet_manager
+     * 2. Otherwise, first user with role admin
+     * 3. Safe generic fallback without using arbitrary User::first()
      */
-    private function getDispatcherName()
+    private function getFleetSupervisorContact(): array
     {
-        $dispatcher = User::where('role', 'dispatcher')->first()
-            ?? User::where('role', 'admin')->first()
-            ?? User::first();
-        return $dispatcher ? explode(' ', $dispatcher->name)[0] : 'Dispatcher';
+        $fleetManager = User::where('role', 'fleet_manager')->first();
+        if ($fleetManager) {
+            return [
+                'name' => $fleetManager->name,
+                'role_label' => $fleetManager->displayRole(),
+            ];
+        }
+
+        $admin = User::where('role', 'admin')->first();
+        if ($admin) {
+            return [
+                'name' => $admin->name,
+                'role_label' => $admin->displayRole(),
+            ];
+        }
+
+        return [
+            'name' => 'Fleet Operations Office',
+            'role_label' => 'Supervisor',
+        ];
     }
     /**
      * Redirect driver index to dashboard.
@@ -59,9 +80,11 @@ class DriverController extends Controller
 
         $quickStats = $dashboardService->getDriverStats($driver);
 
-        $dispatcherName = $this->getDispatcherName();
+        $supervisorContact = $this->getFleetSupervisorContact();
+        $dispatcherName = $supervisorContact['name'];
+        $dispatcherRole = $supervisorContact['role_label'];
 
-        return view('driver.dashboard.index', compact('driver', 'bus', 'route', 'quickStats', 'dispatcherName'));
+        return view('driver.dashboard.index', compact('driver', 'bus', 'route', 'quickStats', 'supervisorContact', 'dispatcherName', 'dispatcherRole'));
     }
 
     /**
@@ -134,9 +157,68 @@ class DriverController extends Controller
             }
         }
 
-        $dispatcherName = $this->getDispatcherName();
+        $activeTrip = null;
+        $lastCompletedTrip = null;
+        $tripProgress = null;
+        $tripOrderedStops = collect();
+        $activeVehiclePosition = null;
 
-        return view('driver.trip.index', compact('driver', 'bus', 'route', 'dispatcherName', 'gpsCoords'));
+        if ($driver) {
+            $activeTrip = Trip::query()
+                ->where('driver_id', $driver->id)
+                ->whereIn('status', ['dispatched', 'ongoing'])
+                ->with(['routeVariant.stops', 'bus', 'route.stops'])
+                ->orderByRaw("CASE WHEN status = 'ongoing' THEN 0 ELSE 1 END")
+                ->latest('dispatched_at')
+                ->latest('id')
+                ->first();
+
+            $lastCompletedTrip = Trip::query()
+                ->where('driver_id', $driver->id)
+                ->where('status', 'completed')
+                ->with('routeVariant')
+                ->latest('ended_at')
+                ->latest('id')
+                ->first();
+
+            if ($activeTrip) {
+                $tripProgress = \App\Models\TripProgress::where('trip_id', $activeTrip->id)
+                    ->with(['currentStop', 'nextStop', 'currentRouteVariantStop', 'nextRouteVariantStop'])
+                    ->first();
+
+                if ($activeTrip->routeVariant && $activeTrip->routeVariant->stops->isNotEmpty()) {
+                    $tripOrderedStops = $activeTrip->routeVariant->stops->sortBy('sequence');
+                } elseif ($activeTrip->route && $activeTrip->route->stops->isNotEmpty()) {
+                    $tripOrderedStops = $activeTrip->route->stops->sortBy('sequence');
+                }
+            }
+        }
+
+        $nextTripPreview = [
+            'available' => false,
+            'label' => 'No upcoming trips scheduled',
+            'message' => 'No upcoming dispatches available.',
+        ];
+
+        $supervisorContact = $this->getFleetSupervisorContact();
+        $dispatcherName = $supervisorContact['name'];
+        $dispatcherRole = $supervisorContact['role_label'];
+
+        return view('driver.trip.index', compact(
+            'driver',
+            'bus',
+            'route',
+            'activeTrip',
+            'lastCompletedTrip',
+            'nextTripPreview',
+            'tripProgress',
+            'tripOrderedStops',
+            'activeVehiclePosition',
+            'supervisorContact',
+            'dispatcherName',
+            'dispatcherRole',
+            'gpsCoords'
+        ));
     }
 
     /**
@@ -154,9 +236,11 @@ class DriverController extends Controller
                 ->get();
         }
 
-        $dispatcherName = $this->getDispatcherName();
+        $supervisorContact = $this->getFleetSupervisorContact();
+        $dispatcherName = $supervisorContact['name'];
+        $dispatcherRole = $supervisorContact['role_label'];
 
-        return view('driver.schedule.index', compact('driver', 'schedules', 'dispatcherName'));
+        return view('driver.schedule.index', compact('driver', 'schedules', 'supervisorContact', 'dispatcherName', 'dispatcherRole'));
     }
 
     /**
@@ -356,6 +440,21 @@ class DriverController extends Controller
         if ($driver && $driver->assigned_bus) {
             $bus = Bus::where('plate_number', $driver->assigned_bus)->first();
             if ($bus) {
+                $ongoingTrip = Trip::query()
+                    ->where('driver_id', $driver->id)
+                    ->where('bus_id', $bus->id)
+                    ->where('status', 'ongoing')
+                    ->where('gps_session', 'ACTIVE')
+                    ->whereNotNull('started_at')
+                    ->first();
+
+                if (!$ongoingTrip || $bus->status !== 'operating') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Passenger management is unavailable because the assigned trip is not currently operating.',
+                    ], 409);
+                }
+
                 $change = (int)$request->input('change', 0);
                 $newPax = max(0, min($bus->capacity, $bus->passengers + $change));
                 $bus->update(['passengers' => $newPax]);
@@ -364,37 +463,9 @@ class DriverController extends Controller
                     $driver->increment('pax_today', $change);
                 }
 
-                // Track peak passengers in the active ongoing trip
-                $ongoingTrip = DB::table('trips')
-                    ->where('driver_id', $driver->id)
-                    ->where('status', 'ongoing')
-                    ->first();
-
-                if (!$ongoingTrip) {
-                    if (!$driver->assigned_route) {
-                        return response()->json(['success' => false, 'message' => 'No route assigned. Contact your dispatcher.'], 422);
-                    }
-                    $routeId = (int) $driver->assigned_route;
-                    $route = \App\Models\Route::findOrFail($routeId);
-
-                    try {
-                        \App\Services\BusStateService::transition($bus, \App\Models\Bus::STATUS_ACTIVE, 'Auto-started trip via passenger update');
-                    } catch (\App\Exceptions\InvalidStatusTransitionException $e) {
-                        \Illuminate\Support\Facades\Log::warning('Passenger update status transition to active failed', [
-                            'bus_id' => $bus->id,
-                            'error'  => $e->getMessage()
-                        ]);
-                    }
-
-                    // Delegate trip start entirely to TripService
-                    \App\Services\TripService::startTrip($bus, $driver, $route, $newPax);
-                } else {
-                    $currentPeak = (int) ($ongoingTrip->peak_passengers ?? 0);
-                    if ($newPax > $currentPeak) {
-                        // Delegate trip update entirely to TripService
-                        $tripModel = \App\Models\Trip::findOrFail($ongoingTrip->id);
-                        \App\Services\TripService::updatePeakPassengers($tripModel, $newPax);
-                    }
+                $currentPeak = (int) ($ongoingTrip->peak_passengers ?? 0);
+                if ($newPax > $currentPeak) {
+                    \App\Services\TripService::updatePeakPassengers($ongoingTrip, $newPax);
                 }
 
                 return response()->json(['success' => true, 'passengers' => $newPax, 'pax_today' => $driver->pax_today]);

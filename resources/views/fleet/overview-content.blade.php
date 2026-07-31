@@ -440,11 +440,6 @@
                 <span>Schedule maintenance</span>
             </a>
 
-            <!-- Button 4: Post announcement -->
-            <button onclick="openPostAnnouncementModal()" class="h-9 px-4 rounded-lg border border-[#003F87] text-[#003F87] hover:bg-[#E6F1FB] transition text-[13px] font-bold flex items-center justify-center gap-1.5 uppercase tracking-wider cursor-pointer">
-                <i class="ti ti-speakerphone text-base"></i>
-                <span>Post announcement</span>
-            </button>
 
             <!-- Button 5: Generate report -->
             <a href="{{ route('fleet.analytics') }}" class="h-9 px-4 rounded-lg border border-[#003F87] text-[#003F87] hover:bg-[#E6F1FB] transition text-[13px] font-bold flex items-center justify-center gap-1.5 uppercase tracking-wider shadow-sm">
@@ -472,7 +467,6 @@
                         elseif ($activity['type'] === 'Incident') $nodeColor = '#E24B4A';
                         elseif ($activity['type'] === 'Maintenance') $nodeColor = '#BA7517';
                         elseif ($activity['type'] === 'Trip end') $nodeColor = '#639922';
-                        elseif ($activity['type'] === 'Announcement') $nodeColor = '#378ADD';
                     @endphp
                     <div class="relative py-0.5 group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 transition-all rounded p-1 hover:bg-slate-50">
                         <!-- Timeline circle node absolute positioning relative to content -->
@@ -553,42 +547,6 @@
         </div>
     </div>
 
-    <!-- ==================== MODAL B: POST ANNOUNCEMENT MODAL ==================== -->
-    <div id="post-announcement-modal" class="fixed inset-0 z-50 items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm hidden animate-fade-in-up">
-        <div class="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden flex flex-col">
-            <!-- Header -->
-            <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <span class="text-sm font-extrabold uppercase tracking-widest text-[#003F87] flex items-center gap-1.5">
-                    <i class="ti ti-speakerphone text-[#003F87] text-lg"></i>
-                    <span>Post Operations Announcement</span>
-                </span>
-                <button onclick="closePostAnnouncementModal()" class="text-slate-400 hover:text-slate-600 cursor-pointer"><i class="ti ti-x text-lg"></i></button>
-            </div>
-            
-            <!-- Body -->
-            <form onsubmit="submitAnnouncementForm(event)" id="announcement-form" class="p-5 space-y-4">
-                <!-- Title -->
-                <div class="space-y-1">
-                    <label for="announcement-title-input" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Announcement Title</label>
-                    <input id="announcement-title-input" type="text" placeholder="e.g. Normal Operations, Inclement weather..." class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
-                </div>
-                
-                <!-- Message -->
-                <div class="space-y-1">
-                    <label for="announcement-message-input" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Message details</label>
-                    <textarea id="announcement-message-input" rows="3" placeholder="Type instructions or update details..." class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white resize-none"></textarea>
-                </div>
-
-                <!-- Footer / Submit -->
-                <div class="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 shrink-0">
-                    <button type="button" onclick="closePostAnnouncementModal()" class="rounded-lg bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 transition cursor-pointer">Cancel</button>
-                    <button type="submit" class="rounded-lg bg-[#003F87] px-5 py-2 text-xs font-extrabold text-white hover:bg-[#002D62] transition cursor-pointer flex items-center gap-1 uppercase tracking-wider">
-                        <span>Post Announcement</span>
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
 
     <!-- TOAST CONTAINER -->
     <div id="overview-toast" class="toast-notification flex items-center gap-2" style="position: fixed; bottom: 24px; right: 24px; color: white; padding: 12px 18px; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); z-index: 2000; font-size: 13px; transform: translateY(100px); opacity: 0; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); pointer-events: none;">

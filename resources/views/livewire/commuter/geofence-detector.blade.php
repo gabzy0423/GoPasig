@@ -95,11 +95,25 @@
         @endif
 
         @if($activeTrip)
+            @php
+                $tripStatus = $activeTrip['status'] ?? null;
+                $tripStatusLabel = match ($tripStatus) {
+                    'WAITING' => 'Waiting',
+                    'ON_BUS' => 'On Board',
+                    'ARRIVED' => 'Arrived',
+                    default => $tripStatus ?: 'Unknown',
+                };
+                $tripProgressWidth = match ($tripStatus) {
+                    'ON_BUS' => 50,
+                    'ARRIVED' => 100,
+                    default => 0,
+                };
+            @endphp
             <div class="flex flex-col gap-4.5 z-10 animate-fade-in p-2">
                 <!-- Trip Banner -->
                 <div class="bg-gradient-to-r from-indigo-600 to-blue-700 rounded-2xl p-4 text-white flex justify-between items-center shadow-lg shadow-indigo-600/10">
                     <div class="flex flex-col gap-0.5">
-                        <span class="text-[10px] font-extrabold text-indigo-100 uppercase tracking-widest leading-none">Aktibong Byahe 🗺️</span>
+                        <span class="text-[10px] font-extrabold text-indigo-100 uppercase tracking-widest leading-none">Aktibong Byahe</span>
                         <h2 class="text-[15px] font-extrabold tracking-tight mt-1 leading-snug">
                             {{ $activeTrip['origin_stop_name'] }} &rarr; {{ $activeTrip['destination_stop_name'] }}
                         </h2>
@@ -115,8 +129,8 @@
                     <div class="flex justify-between items-center">
                         <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Status ng Byahe</span>
                         <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide
-                                     {{ $activeTrip['status'] === 'WAITING' ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-emerald-50 text-emerald-700 border border-emerald-100' }}">
-                            {{ $activeTrip['status'] === 'WAITING' ? 'Waiting' : 'On Bus' }}
+                                     {{ $tripStatus === 'WAITING' ? 'bg-amber-50 text-amber-700 border border-amber-100' : ($tripStatus === 'ARRIVED' ? 'bg-blue-50 text-blue-700 border border-blue-100' : 'bg-emerald-50 text-emerald-700 border border-emerald-100') }}">
+                            {{ $tripStatusLabel }}
                         </span>
                     </div>
 
@@ -125,12 +139,12 @@
                         <!-- Connecting Progress Line -->
                         <div class="absolute top-[13px] left-8 right-8 h-0.5 bg-slate-200 -z-10"></div>
                         <div class="absolute top-[13px] left-8 h-0.5 bg-indigo-500 transition-all duration-500 -z-10"
-                             style="width: {{ $activeTrip['status'] === 'ON_BUS' ? '50' : '0' }}%"></div>
+                             style="width: {{ $tripProgressWidth }}%"></div>
 
                         <!-- Step 1: Waiting -->
                         <div class="flex flex-col items-center gap-1.5">
                             <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors duration-300
-                                        {{ $activeTrip['status'] === 'WAITING' ? 'bg-amber-500 border-amber-500 text-white shadow-md shadow-amber-500/20' : 'bg-indigo-600 border-indigo-600 text-white' }}">
+                                        {{ $tripStatus === 'WAITING' ? 'bg-amber-500 border-amber-500 text-white shadow-md shadow-amber-500/20' : 'bg-indigo-600 border-indigo-600 text-white' }}">
                                 <i class="ti ti-clock-play text-sm"></i>
                             </div>
                             <span class="text-[10px] font-bold text-slate-500">Hintuan</span>
@@ -139,7 +153,7 @@
                         <!-- Step 2: On Bus -->
                         <div class="flex flex-col items-center gap-1.5">
                             <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors duration-300
-                                        {{ $activeTrip['status'] === 'ON_BUS' ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/20' : 'bg-slate-100 border-slate-300 text-slate-400' }}">
+                                        {{ in_array($tripStatus, ['ON_BUS', 'ARRIVED'], true) ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/20' : 'bg-slate-100 border-slate-300 text-slate-400' }}">
                                 <i class="ti ti-bus text-sm"></i>
                             </div>
                             <span class="text-[10px] font-bold text-slate-500">Nakasakay</span>
@@ -147,7 +161,8 @@
 
                         <!-- Step 3: Destination -->
                         <div class="flex flex-col items-center gap-1.5">
-                            <div class="w-7 h-7 rounded-full bg-slate-100 border-2 border-slate-300 text-slate-400 flex items-center justify-center text-xs font-bold transition-colors">
+                            <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors
+                                        {{ $tripStatus === 'ARRIVED' ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-100 border-slate-300 text-slate-400' }}">
                                 <i class="ti ti-flag text-sm"></i>
                             </div>
                             <span class="text-[10px] font-bold text-slate-500">Destinasyon</span>
@@ -156,26 +171,37 @@
 
                     <!-- Informational Description -->
                     <div class="text-[12px] font-semibold text-slate-600 leading-normal text-center mt-1 border-t border-slate-100 pt-3">
-                        @if($activeTrip['status'] === 'WAITING')
+                        @if($tripStatus === 'WAITING')
                             <p class="animate-pulse text-amber-600 flex items-center justify-center gap-1">
                                 <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                                 Naghihintay sa bus... Awtomatikong makikita kapag nakasakay na (15m threshold).
                             </p>
-                        @else
+                        @elseif($tripStatus === 'ON_BUS')
                             <p class="text-indigo-600 flex items-center justify-center gap-1">
                                 <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                                Nasa bus ka na! Awtomatikong makakarating kapag nasa destinasyon.
+                                On Board ka na{{ !empty($activeTrip['bus_plate_number']) ? ' sa bus ' . $activeTrip['bus_plate_number'] : '' }}. Patuloy ang live tracking.
+                            </p>
+                        @else
+                            <p class="text-blue-600 flex items-center justify-center gap-1">
+                                <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                Nakarating ka na sa {{ $activeTrip['destination_stop_name'] }}{{ !empty($activeTrip['bus_plate_number']) ? ' sakay ng bus ' . $activeTrip['bus_plate_number'] : '' }}.
                             </p>
                         @endif
                     </div>
                 </div>
 
-                <!-- Cancel Button -->
-                <button wire:click="cancelCommuterTrip"
-                        class="w-full h-11 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[13px] font-extrabold rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-150">
-                    <i class="ti ti-x text-[15px]"></i>
-                    Kanselahin ang Byahe
-                </button>
+                @if(in_array($tripStatus, ['WAITING', 'ON_BUS'], true))
+                    <!-- Cancel Button -->
+                    <button wire:click="cancelCommuterTrip"
+                            wire:loading.attr="disabled"
+                            wire:target="cancelCommuterTrip"
+                            class="w-full h-11 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[13px] font-extrabold rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-150 disabled:opacity-60 disabled:pointer-events-none">
+                        <i wire:loading.remove wire:target="cancelCommuterTrip" class="ti ti-x text-[15px]"></i>
+                        <i wire:loading wire:target="cancelCommuterTrip" class="ti ti-loader-2 text-[15px] animate-spin"></i>
+                        <span wire:loading.remove wire:target="cancelCommuterTrip">Kanselahin ang Byahe</span>
+                        <span wire:loading wire:target="cancelCommuterTrip">Kinakansela</span>
+                    </button>
+                @endif
             </div>
         @else
         <!-- STATE 1: WAITING FOR ACTIVATION (No location fetched yet) -->
@@ -320,21 +346,37 @@
 
                 <!-- DESTINATION INPUT & CHECK-IN FORM -->
                 @if($activeStop)
-                    @if($destinationStops->isNotEmpty())
+                    @if(collect($destinationStops)->isNotEmpty())
                         <div class="flex flex-col gap-2.5 mt-4 pt-4 border-t border-slate-100">
                             <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider pl-0.5">Saan ang iyong destinasyon?</span>
                             <select wire:model.live="selectedDestinationId" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-[#003F87] cursor-pointer">
                                 <option value="">Pumili ng destinasyon...</option>
-                                @foreach($destinationStops as $ds)
+                                @foreach(collect($destinationStops) as $ds)
                                     <option value="{{ $ds->id }}">{{ $ds->name }}</option>
                                 @endforeach
                             </select>
+                            @error('destination')
+                                <span class="text-[11px] font-bold text-rose-600">{{ $message }}</span>
+                            @enderror
+                            @error('origin')
+                                <span class="text-[11px] font-bold text-rose-600">{{ $message }}</span>
+                            @enderror
+                            @error('route')
+                                <span class="text-[11px] font-bold text-rose-600">{{ $message }}</span>
+                            @enderror
+                            @error('journey')
+                                <span class="text-[11px] font-bold text-rose-600">{{ $message }}</span>
+                            @enderror
 
                             <button wire:click="startCommuterTrip"
+                                    wire:loading.attr="disabled"
+                                    wire:target="startCommuterTrip"
                                     @if(!$selectedDestinationId) disabled @endif
                                     class="w-full h-11 mt-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[13px] font-extrabold rounded-2xl flex items-center justify-center gap-2 shadow-md shadow-emerald-600/10 active:scale-[0.98] transition-all duration-150">
-                                <i class="ti ti-navigation text-[15px]"></i>
-                                I-track ang Byahe (Check-in)
+                                <i wire:loading.remove wire:target="startCommuterTrip" class="ti ti-navigation text-[15px]"></i>
+                                <i wire:loading wire:target="startCommuterTrip" class="ti ti-loader-2 text-[15px] animate-spin"></i>
+                                <span wire:loading.remove wire:target="startCommuterTrip">I-track ang Byahe (Check-in)</span>
+                                <span wire:loading wire:target="startCommuterTrip">Sine-save ang byahe</span>
                             </button>
                         </div>
                     @endif
@@ -342,65 +384,67 @@
             </div>
         </template>
         @endif
+        @if(app()->environment('local'))
+            <div class="border-t border-slate-50 pt-3 mt-1.5">
+                <button @click="showDevPanel = !showDevPanel"
+                        class="w-full flex justify-between items-center text-[10.5px] font-bold text-slate-400 hover:text-slate-600 transition-colors py-1.5 px-0.5 active:scale-98">
+                    <span class="flex items-center gap-1.5">
+                        <i class="ti ti-device-laptop text-[12px]"></i>
+                        Developer GPS
+                    </span>
+                    <i class="ti text-[11px] transition-transform duration-300"
+                       :class="showDevPanel ? 'ti-chevron-up rotate-180' : 'ti-chevron-down'"></i>
+                </button>
 
-        <!-- DEVELOPER SIMULATION EXPANDABLE TRAY (Always compiled, premium tool) -->
-        <div class="border-t border-slate-50 pt-3 mt-1.5">
-            <button @click="showSim = !showSim" 
-                    class="w-full flex justify-between items-center text-[10.5px] font-bold text-slate-400 hover:text-slate-600 transition-colors py-1.5 px-0.5 active:scale-98">
-                <span class="flex items-center gap-1.5">
-                    <i class="ti ti-device-laptop text-[12px]"></i>
-                    Developer Simulation Tools (Gamitin sa Desktop)
-                </span>
-                <i class="ti text-[11px] transition-transform duration-300" 
-                   :class="showSim ? 'ti-chevron-up rotate-180' : 'ti-chevron-down'"></i>
-            </button>
+                <div x-show="showDevPanel" x-collapse x-cloak class="pt-3 pb-1 flex flex-col gap-3.5">
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="flex flex-col gap-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                            Latitude
+                            <input x-model="developerLat" type="number" step="0.0000001"
+                                   class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-bold text-slate-800 outline-none focus:border-[#003F87] focus:bg-white">
+                        </label>
+                        <label class="flex flex-col gap-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                            Longitude
+                            <input x-model="developerLng" type="number" step="0.0000001"
+                                   class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-bold text-slate-800 outline-none focus:border-[#003F87] focus:bg-white">
+                        </label>
+                    </div>
 
-            <!-- Expanded simulation tool tray -->
-            <div x-show="showSim" x-collapse x-cloak class="pt-3 pb-1 flex flex-col gap-3.5">
-                
-                <!-- Simulated Location Selector -->
-                <div class="flex flex-col gap-2">
-                    <span class="text-[9.5px] font-extrabold text-slate-400 uppercase tracking-wider pl-0.5">Pumili ng Lokasyon na I-geogenerate:</span>
-                    
-                    <div class="grid grid-cols-2 gap-1.5">
-                        @foreach($stops->unique('name')->take(4) as $simStop)
-                            <button @click="simulateStop({{ $simStop->id }}, {{ $simStop->lat }}, {{ $simStop->lng }}, '{{ addslashes($simStop->name) }}')"
-                                    :class="simulatedStopId === {{ $simStop->id }} ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-600/10' : 'bg-slate-50 border-slate-100 text-slate-700 hover:bg-slate-100'"
-                                    class="border rounded-xl py-2 px-3 text-[11px] font-bold text-left truncate transition-all duration-150 active:scale-97"
-                                    title="{{ $simStop->name }}">
-                                📍 {{ Str::limit($simStop->name, 20) }}
+                    <div class="flex flex-col gap-2">
+                        <span class="text-[9.5px] font-extrabold text-slate-400 uppercase tracking-wider pl-0.5">Quick Presets</span>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            <template x-for="preset in developerPresets" :key="preset.label">
+                                <button type="button"
+                                        @click="selectDeveloperPreset(preset)"
+                                        :disabled="!preset.available"
+                                        :class="selectedPreset === preset.label ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-600/10' : 'bg-slate-50 border-slate-100 text-slate-700 hover:bg-slate-100 disabled:opacity-45 disabled:cursor-not-allowed'"
+                                        class="border rounded-xl py-2 px-3 text-[11px] font-bold text-left truncate transition-all duration-150 active:scale-97">
+                                    <span x-text="preset.label"></span>
+                                </button>
+                            </template>
+                            <button type="button"
+                                    @click="selectedPreset = 'Custom'"
+                                    :class="selectedPreset === 'Custom' ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-600/10' : 'bg-slate-50 border-slate-100 text-slate-700 hover:bg-slate-100'"
+                                    class="border rounded-xl py-2 px-3 text-[11px] font-bold text-left truncate transition-all duration-150 active:scale-97">
+                                Custom
                             </button>
-                        @endforeach
-                        <!-- Near Kapitolyo but outside geofence (280m distance) -->
-                        <button @click="simulateOutside({{ $simNearLat }}, {{ $simNearLng }}, '{{ addslashes($simNearLabel) }}')"
-                                :class="simulatedStopId === 'outside-near' ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-600/10' : 'bg-slate-50 border-slate-100 text-slate-700 hover:bg-slate-100'"
-                                class="border rounded-xl py-2 px-3 text-[11px] font-bold text-left truncate transition-all duration-150 active:scale-97">
-                            🚶 {{ $simNearLabel }}
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" @click="applyDeveloperLocation()"
+                                class="h-10 rounded-xl bg-indigo-600 text-white text-xs font-extrabold active:scale-[0.98] transition-all disabled:opacity-50"
+                                :disabled="!developerLat || !developerLng">
+                            Apply
                         </button>
-                        <!-- Out of Range entirely (Masyadong malayo) -->
-                        <button @click="simulateOutside({{ $simFarLat }}, {{ $simFarLng }}, '{{ addslashes($simFarLabel) }}')"
-                                :class="simulatedStopId === 'outside-far' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 border-slate-100 text-slate-700 hover:bg-slate-100'"
-                                class="border rounded-xl py-2 px-3 text-[11px] font-bold text-left truncate transition-all duration-150 active:scale-97">
-                            ❌ {{ $simFarLabel }}
-                        </button>
-                        <!-- Real Device GPS Mode -->
-                        <button @click="switchToRealGPS()"
-                                :class="simulatedStopId === 'real' ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm shadow-emerald-600/10' : 'bg-slate-50 border-slate-100 text-slate-700 hover:bg-slate-100'"
-                                class="border rounded-xl py-2 px-3 text-[11px] font-bold text-left truncate transition-all duration-150 active:scale-97">
-                            📡 Gamitin ang Real GPS
+                        <button type="button" @click="useBrowserLocationProvider()"
+                                class="h-10 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-extrabold active:scale-[0.98] transition-all">
+                            Use Browser GPS
                         </button>
                     </div>
                 </div>
-
-                <!-- Simulation Active Alert notification -->
-                <div class="bg-amber-50/60 border border-amber-100 rounded-2xl p-3 flex gap-2.5 items-start">
-                    <i class="ti ti-alert-triangle-filled text-[14px] text-amber-500 mt-0.5 flex-shrink-0"></i>
-                    <p class="text-[10px] text-amber-950 font-bold leading-normal">
-                        Naka-on ang simulator. Pinapadala nito ang mga huwad na latitude at longitude sa Livewire component upang makalkula ang Geofence sa localhost nang walang tunay na GPS.
-                    </p>
-                </div>
             </div>
-        </div>
+        @endif
 
     </div>
 </div>
@@ -409,11 +453,17 @@
 <script>
     function geofenceDetector() {
         return {
-            showSim: false,
-            simulatedStopId: null,
+            showDevPanel: false,
             isTracking: false,
             watchId: null,
-            gpsMode: 'idle', // idle, simulated, watching, error
+            gpsMode: 'idle', // idle, developer, watching, error
+            locationProvider: 'browser',
+            developerLat: '',
+            developerLng: '',
+            selectedPreset: 'Custom',
+            developerPresets: @json($developerLocationPresets),
+            developerSimulatorEnabled: @json(app()->environment('local')),
+            recoveryListenersRegistered: false,
             
             get hasLocation() {
                 // Check if $wire coordinates are set
@@ -433,8 +483,8 @@
             },
 
             get gpsModeText() {
-                if (this.simulatedStopId && this.simulatedStopId !== 'real') {
-                    return 'Simulated GPS';
+                if (this.locationProvider === 'developer') {
+                    return 'Developer GPS';
                 }
                 if (this.isTracking) {
                     return 'Live Device GPS';
@@ -443,7 +493,40 @@
             },
 
             initComponent() {
+                if (this.developerSimulatorEnabled) {
+                    this.locationProvider = sessionStorage.getItem('gopasig_location_provider') || 'browser';
+                    this.developerLat = sessionStorage.getItem('gopasig_developer_lat') || '';
+                    this.developerLng = sessionStorage.getItem('gopasig_developer_lng') || '';
+                    this.selectedPreset = sessionStorage.getItem('gopasig_developer_preset') || 'Custom';
+
+                    if (this.locationProvider === 'developer' && this.developerLat && this.developerLng) {
+                        this.applyDeveloperLocation(false);
+                    }
+                }
+
+                this.registerRecoveryListeners();
                 console.log('Geofence Detector Frontend loaded.');
+            },
+
+            emitLocation(location) {
+                this.$wire.call('updateLocation', location.lat, location.lng, location.accuracy ?? null);
+            },
+
+            recoverJourneyRuntime() {
+                this.$wire.call('recoverJourney', true);
+            },
+
+            registerRecoveryListeners() {
+                if (this.recoveryListenersRegistered) return;
+
+                this.recoveryListenersRegistered = true;
+                const recover = () => this.recoverJourneyRuntime();
+
+                window.addEventListener('online', recover);
+                window.addEventListener('focus', recover);
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) recover();
+                });
             },
 
             // Web Audio API Synthesized double chime notification
@@ -587,8 +670,8 @@
                 }
             },
 
-            handlePromptCancelTrip() {
-                if (confirm("Kansela ba ang iyong biyahe?")) {
+            async handlePromptCancelTrip() {
+                if (await GoPasigUI.confirm("Kansela ba ang iyong biyahe?")) {
                     this.$wire.call('cancelCommuterTrip');
                 }
             },
@@ -634,35 +717,43 @@
 
             // Starts browser tracking via watchPosition
             startTracking() {
-                if (this.isTracking) return;
+                this.useBrowserLocationProvider();
+            },
+
+            useBrowserLocationProvider() {
+                this.locationProvider = 'browser';
+                this.gpsMode = 'watching';
+                this.isTracking = true;
+
+                if (this.developerSimulatorEnabled) {
+                    sessionStorage.setItem('gopasig_location_provider', 'browser');
+                }
 
                 if (!navigator.geolocation) {
-                    alert('Hindi sinusuportahan ng iyong browser ang Geolocation.');
+                    this.gpsMode = 'error';
+                    this.isTracking = false;
+                    GoPasigUI.alert('Hindi sinusuportahan ng iyong browser ang Geolocation.');
                     return;
                 }
 
-                this.isTracking = true;
-                this.simulatedStopId = 'real';
+                if (this.watchId !== null) {
+                    navigator.geolocation.clearWatch(this.watchId);
+                    this.watchId = null;
+                }
 
                 this.watchId = navigator.geolocation.watchPosition(
                     (position) => {
-                        // Skip if simulated is active
-                        if (this.simulatedStopId && this.simulatedStopId !== 'real') return;
-                        
-                        const lat = position.coords.latitude;
-                        const lng = position.coords.longitude;
-                        const accuracy = position.coords.accuracy;
-                        
-                        console.log(`Live GPS coords: Lat ${lat}, Lng ${lng}, Accuracy ${accuracy}`);
-                        
-                        // Send location to Livewire component
-                        this.$wire.call('updateLocation', lat, lng, accuracy);
+                        if (this.locationProvider !== 'browser') return;
+
+                        const location = this.browserLocationProvider(position);
+                        console.log(`Live GPS coords: Lat ${location.lat}, Lng ${location.lng}, Accuracy ${location.accuracy}`);
+                        this.emitLocation(location);
                     },
                     (error) => {
                         console.error('Error fetching GPS coordinate: ', error);
                         this.gpsMode = 'error';
                         this.isTracking = false;
-                        alert('Hindi nakuha ang iyong lokasyon. Mangyaring payagan ang location permissions o gamitin ang Simulator.');
+                        GoPasigUI.alert('Hindi nakuha ang iyong lokasyon. Mangyaring payagan ang location permissions.');
                     },
                     {
                         enableHighAccuracy: true,
@@ -672,28 +763,75 @@
                 );
             },
 
-            // Switch back to device real GPS
-            switchToRealGPS() {
-                this.simulatedStopId = 'real';
-                this.startTracking();
+            browserLocationProvider(position) {
+                return {
+                    source: 'browser',
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude,
+                    accuracy: position.coords.accuracy,
+                    speed: position.coords.speed,
+                    heading: position.coords.heading,
+                };
             },
 
-            // Simulates coordinate submission for a designated stop
-            simulateStop(id, lat, lng, name) {
-                this.simulatedStopId = id;
-                console.log(`Simulating Kapitolyo/City Hall Stop at: Lat ${lat}, Lng ${lng}`);
-                
-                // Direct call to Livewire component method
-                this.$wire.call('updateLocation', lat, lng);
+            developerLocationProvider() {
+                if (!this.developerSimulatorEnabled) return null;
+
+                const lat = Number.parseFloat(this.developerLat);
+                const lng = Number.parseFloat(this.developerLng);
+
+                if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                    GoPasigUI.alert('Maglagay ng valid latitude at longitude.');
+                    return null;
+                }
+
+                return {
+                    source: 'developer',
+                    lat,
+                    lng,
+                    accuracy: 5,
+                };
             },
 
-            // Simulates coordinate submission for a point outside stops
-            simulateOutside(lat, lng, label) {
-                this.simulatedStopId = lat === {{ $simFarLat }} ? 'outside-far' : 'outside-near';
-                console.log(`Simulating outside at: Lat ${lat}, Lng ${lng} (${label})`);
-                
-                this.$wire.call('updateLocation', lat, lng);
+            selectDeveloperPreset(preset) {
+                if (!this.developerSimulatorEnabled || !preset.available) return;
+
+                this.selectedPreset = preset.label;
+                this.developerLat = preset.lat;
+                this.developerLng = preset.lng;
+                sessionStorage.setItem('gopasig_developer_preset', this.selectedPreset);
+                sessionStorage.setItem('gopasig_developer_lat', this.developerLat);
+                sessionStorage.setItem('gopasig_developer_lng', this.developerLng);
+            },
+
+            applyDeveloperLocation(persist = true) {
+                const location = this.developerLocationProvider();
+                if (!location) return;
+
+                this.locationProvider = 'developer';
+                this.gpsMode = 'developer';
+                this.isTracking = true;
+
+                if (this.watchId !== null && navigator.geolocation) {
+                    navigator.geolocation.clearWatch(this.watchId);
+                    this.watchId = null;
+                }
+
+                if (persist && this.developerSimulatorEnabled) {
+                    sessionStorage.setItem('gopasig_location_provider', 'developer');
+                    sessionStorage.setItem('gopasig_developer_lat', this.developerLat);
+                    sessionStorage.setItem('gopasig_developer_lng', this.developerLng);
+                    sessionStorage.setItem('gopasig_developer_preset', this.selectedPreset || 'Custom');
+                }
+
+                console.log(`Developer GPS coords: Lat ${location.lat}, Lng ${location.lng}`);
+                this.emitLocation(location);
             }
         };
     }
 </script>
+
+
+
+
+

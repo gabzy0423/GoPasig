@@ -140,7 +140,7 @@ function renderTripsPaginationDOM(meta) {
 }
 
 function formatTimestamp(t) {
-    if (!t) return '—';
+    if (!t) return 'ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â';
     try {
         const d = new Date(t);
         const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -185,7 +185,14 @@ function resetTripsFiltersAction() {
 }
 
 // Setup polling and input events
-document.addEventListener('DOMContentLoaded', () => {
+let fleetCommuterTripsModuleInitialized = false;
+let fleetCommuterTripsPollingId = null;
+
+function initFleetCommuterTripsModule() {
+    if (fleetCommuterTripsModuleInitialized || !document.getElementById('trips-search-input')) return;
+    fleetCommuterTripsModuleInitialized = true;
+
+
     const search = document.getElementById('trips-search-input');
     const route = document.getElementById('trips-filter-route');
     const status = document.getElementById('trips-filter-status');
@@ -200,10 +207,20 @@ document.addEventListener('DOMContentLoaded', () => {
     status?.addEventListener('change', () => fetchCommuterTrips(1));
 
     // Register active polling loop check
-    setInterval(() => {
-        const tripsScreen = document.getElementById('screen-commuter-trips');
-        if (tripsScreen && !tripsScreen.classList.contains('hidden')) {
-            fetchCommuterTrips(tripsCurrentPage);
-        }
-    }, 10000); // Poll every 10s when tab active
-});
+    if (!fleetCommuterTripsPollingId) {
+        fleetCommuterTripsPollingId = setInterval(() => {
+            const tripsScreen = document.getElementById('screen-commuter-trips');
+            if (tripsScreen && !tripsScreen.classList.contains('hidden')) {
+                fetchCommuterTrips(tripsCurrentPage);
+            }
+        }, 10000); // Poll every 10s when tab active
+    }
+}
+
+window.initFleetCommuterTripsModule = initFleetCommuterTripsModule;
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFleetCommuterTripsModule, { once: true });
+} else {
+    initFleetCommuterTripsModule();
+}

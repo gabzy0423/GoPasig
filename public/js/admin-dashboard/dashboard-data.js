@@ -50,7 +50,7 @@ let mapUpdateSeconds = 5;
 let isDatabaseDataLoaded = false;
 
 // Dynamic loader from MySQL Database API
-async function loadDatabaseFleetData() {
+async function loadDatabaseFleetData(options = {}) {
     try {
         const url = (window.GoPasigConfig && window.GoPasigConfig.fleetDataUrl) ? window.GoPasigConfig.fleetDataUrl : '/admin/api/fleet-data';
         const response = await fetch(url);
@@ -130,6 +130,11 @@ async function loadDatabaseFleetData() {
             routeColors[route.id.toString()] = route.color || '#003F87';
         });
 
+        // Restore only the active unsaved RouteVariantStop edit after polling replaces route data.
+        if (typeof restoreDirtyVariantStopCoordinateEdit === 'function') {
+            restoreDirtyVariantStopCoordinateEdit();
+        }
+
         // 3. Populate Trips logs dynamically
         tripsData.length = 0;
         if (data.trips) {
@@ -181,7 +186,9 @@ async function loadDatabaseFleetData() {
             updateOverviewDashboard();
         }
         if (typeof renderBusesTable === 'function') {
-            renderBusesTable();
+            if (options.renderBusTable !== false) {
+                renderBusesTable();
+            }
             updateBusSummaryStats();
         }
         if (liveMap !== null && typeof renderMapMarkers === 'function') {
@@ -237,6 +244,8 @@ async function loadTodayDispatchQueue() {
 
 // Fetch database records immediately on load
 loadDatabaseFleetData();
+
+
 
 
 

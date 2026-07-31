@@ -409,12 +409,19 @@ class SecurityAuthTest extends TestCase
     /** @test */
     public function test_admin_can_create_alert()
     {
+        $officialRoute = Route::create([
+            'name' => 'Route 1',
+            'description' => 'Official public route',
+            'color' => '#003F87',
+            'status' => 'Active',
+        ]);
+
         $response = $this->actingAs($this->adminUser)->postJson('/admin/api/alerts', [
             'title' => 'Security Test Alert',
             'message' => 'This is a security test',
             'severity' => 'Low',
             'type' => 'delay',
-            'affects' => [$this->testRoute->name],
+            'affects' => [$officialRoute->name],
             'timing' => 'now',
         ]);
 

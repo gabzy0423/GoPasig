@@ -58,7 +58,7 @@
             Driver Management
         </button>
 
-        <!-- Schedule & Routes Dropdown -->
+        <!-- Route Service Schedules Dropdown -->
         <div class="space-y-1" id="dropdown-routes-container">
             <button onclick="toggleSidebarDropdown('routes')"
                 class="flex w-full items-center justify-between px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-all duration-200 rounded-md cursor-pointer text-left text-white/70 hover:text-white hover:bg-white/[0.04]">
@@ -79,7 +79,7 @@
                 <button onclick="navigateToRoutesTab('schedule')" data-nav="routes-schedule"
                     class="flex w-full items-center gap-2.5 px-3 py-2 text-xs font-medium transition-all duration-200 rounded-md cursor-pointer text-left text-white/70 hover:text-white hover:bg-white/[0.04]">
                     <i class="ti ti-point text-[16px] opacity-60"></i>
-                    Schedules
+                    Route Service Schedules
                 </button>
             </div>
         </div>
@@ -140,8 +140,10 @@
         <form id="admin-logout-form" action="{{ route('logout') }}" method="POST" class="hidden">
             @csrf
         </form>
-        <button onclick="event.preventDefault(); document.getElementById('admin-logout-form').submit();" class="ml-auto text-white/60 hover:text-white transition-colors flex items-center justify-center p-1 cursor-pointer" title="Sign Out">
+        <button onclick="event.preventDefault(); if (this.disabled) return; this.disabled = true; window.GoPasigUI?.showLoadingOverlay('Signing you out...', 'Please wait.'); window.GoPasigAdminRequestLifecycle?.beginLogout(); document.getElementById('admin-logout-form').submit();" class="ml-auto text-white/60 hover:text-white transition-colors flex items-center justify-center p-1 cursor-pointer" title="Sign Out">
             <i class="ti ti-logout text-[18px]"></i>
         </button>
     </div>
 </aside>
+
+

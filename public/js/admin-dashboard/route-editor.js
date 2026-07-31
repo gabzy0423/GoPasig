@@ -11,6 +11,286 @@ let editFeatureGroup = null;
 let editDrawControl = null;
 let currentGeometryVersion = 0;
 
+let selectedRouteVariantId = null;
+let selectedVariantStopId = null;
+let variantStopMarker = null;
+let variantStopMapClickBound = false;
+let dirtyVariantStopCoordinateEdit = null;
+
+function syncVariantGeometrySelection() {
+    const route = routesDataDb.find(r => r.id.toString() === selectedRouteId.toString());
+    const select = document.getElementById('route-variant-select');
+    const meta = document.getElementById('route-variant-geometry-meta');
+    const editor = document.getElementById('route-variant-stop-coordinate-editor');
+    const providerSelect = document.getElementById('route-provider-select');
+    if (!route || !select) return;
+    const variants = route.variants || [];
+    const directionAware = variants.some(v => v.direction === 'inbound');
+    const fixedOfficialRoute = ['Route 1', 'Route 2', 'Route 3'].includes(route.name);
+    const routeLevelControls = ['btn-edit-geometry', 'btn-route-geometry-history', 'btn-route-geometry-import', 'btn-route-edit-details'];
+    routeLevelControls.forEach(id => document.getElementById(id)?.classList.toggle('hidden', fixedOfficialRoute));
+    const generateButton = document.getElementById('btn-generate-route');
+    if (generateButton) generateButton.setAttribute('onclick', fixedOfficialRoute ? 'generateVariantRoutePreview()' : 'generateRoutePreview()');
+    if (!directionAware) {
+        selectedRouteVariantId = null;
+        if (providerSelect) providerSelect.disabled = false;
+        select.innerHTML = '<option value="">Legacy Route Geometry</option>';
+        meta?.classList.add('hidden');
+        editor?.classList.add('hidden');
+        return;
+    }
+    if (providerSelect) { providerSelect.value = 'google'; providerSelect.disabled = true; }
+    select.innerHTML = '<option value="">Legacy Route Geometry</option>' + variants.map(v =>
+        '<option value="' + v.id + '">' + escapeVariantText(v.label || (v.direction + ': ' + v.origin_name + ' -> ' + v.destination_name)) + '</option>'
+    ).join('');
+    if (selectedRouteVariantId && variants.some(v => String(v.id) === String(selectedRouteVariantId))) {
+        select.value = String(selectedRouteVariantId);
+    } else {
+        selectedRouteVariantId = variants.find(v => v.is_default)?.id || null;
+        select.value = selectedRouteVariantId ? String(selectedRouteVariantId) : '';
+    }
+    const variant = variants.find(v => String(v.id) === String(select.value));
+    selectedRouteVariantId = variant?.id || null;
+    if (!meta) return;
+    if (!variant) {
+        meta.classList.add('hidden');
+        if (editor) editor.classList.add('hidden');
+        return;
+    }
+    const stops = (variant.stops || []).slice().sort((a, b) => a.sequence - b.sequence);
+    const incomplete = stops.filter(s => !Number.isFinite(Number(s.lat)) || !Number.isFinite(Number(s.lng)) || s.coordinate_status !== 'verified');
+    meta.classList.remove('hidden');
+    meta.innerHTML = '<strong>' + escapeVariantText(variant.direction + ': ' + variant.origin_name + ' -> ' + variant.destination_name) + '</strong>' +
+        '<div>Status: ' + escapeVariantText(variant.geometry_status || 'pending') + ' | Version: ' + (variant.geometry_version || 0) + ' | Provider: Google Directions</div>' +
+        '<div>Stops: ' + stops.length + ' | Verified coordinates: ' + (stops.length - incomplete.length) + '/' + stops.length + '</div>' +
+        '<div>' + stops.map(s => s.sequence + '. ' + escapeVariantText(s.name) + ' [' + escapeVariantText(s.stop_type || 'designated_stop') + '] ' + escapeVariantText(s.coordinate_status || 'pending')).join('<br>') + '</div>';
+    if (editor) {
+        editor.classList.remove('hidden');
+        editor.innerHTML = '<div class="flex flex-wrap items-end gap-2">' +
+            '<label class="flex-1 min-w-[220px]"><span class="block text-[10px] font-bold uppercase text-slate-400">Directional stop</span>' +
+            '<select id="route-variant-stop-select" onchange="selectVariantStopForCoordinate(this.value)" class="w-full rounded border border-slate-200 px-2 py-1 text-xs">' +
+            stops.map(s => '<option value="' + s.id + '">' + s.sequence + '. ' + escapeVariantText(s.name) + ' [' + escapeVariantText(s.stop_type || 'designated_stop') + '] - ' + escapeVariantText(s.coordinate_status || 'pending') + '</option>').join('') +
+            '</select></label>' +
+            '<div class="flex flex-wrap items-end gap-2 mt-2">' +
+            '<label class="w-32"><span class="block text-[10px] font-bold uppercase text-slate-400">Latitude</span><input id="route-variant-stop-lat" type="number" step="0.0000001" min="-90" max="90" oninput="handleVariantCoordinateInput()" class="w-full rounded border border-slate-200 px-2 py-1 text-xs" placeholder="14.0000000"></label>' +
+            '<label class="w-32"><span class="block text-[10px] font-bold uppercase text-slate-400">Longitude</span><input id="route-variant-stop-lng" type="number" step="0.0000001" min="-180" max="180" oninput="handleVariantCoordinateInput()" class="w-full rounded border border-slate-200 px-2 py-1 text-xs" placeholder="121.0000000"></label>' +
+            '<a id="route-variant-stop-google-search" class="rm-btn-outline rm-btn-xs" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>' +
+            '</div>' +
+            '<div class="flex flex-wrap items-end gap-2 mt-2">' +
+            '<input id="route-variant-stop-source" class="rounded border border-slate-200 px-2 py-1 text-xs" placeholder="Source, e.g. official map">' +
+            '<button type="button" onclick="saveVariantStopCandidate()" class="rm-btn-outline rm-btn-xs">Save candidate</button>' +
+            '<button type="button" onclick="verifyVariantStopCoordinate()" class="rm-btn-primary rm-btn-xs">Verify</button>' +
+            '<button type="button" onclick="rejectVariantStopCoordinate()" class="rm-btn-outline rm-btn-xs rm-btn-danger-text">Reject/reset</button></div>' +
+            '<textarea id="route-variant-stop-notes" class="mt-2 w-full rounded border border-slate-200 px-2 py-1 text-xs" rows="2" placeholder="Optional verification notes"></textarea>' +
+            '<div id="route-variant-stop-coordinate-status" class="mt-1 text-[10px] text-slate-500">Select a stop, then click the map to place or drag its marker.</div>';
+        const stopSelect = document.getElementById('route-variant-stop-select');
+        if (selectedVariantStopId && stops.some(s => String(s.id) === String(selectedVariantStopId))) {
+            stopSelect.value = String(selectedVariantStopId);
+        } else {
+            selectedVariantStopId = stops[0]?.id || null;
+            stopSelect.value = selectedVariantStopId ? String(selectedVariantStopId) : '';
+        }
+        syncVariantStopEditorFields();
+    }
+    if (typeof refreshVariantRouteView === 'function') refreshVariantRouteView();
+    setTimeout(renderSelectedVariantStopMap, 0);
+}
+
+function escapeVariantText(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+}
+
+function selectedVariantForGeometry() {
+    const route = routesDataDb.find(r => r.id.toString() === selectedRouteId.toString());
+    return (route?.variants || []).find(v => String(v.id) === String(selectedRouteVariantId)) || null;
+}
+
+function selectedVariantStopForCoordinate() {
+    return selectedVariantForGeometry()?.stops?.find(s => String(s.id) === String(selectedVariantStopId)) || null;
+}
+
+function clearDirtyVariantStopCoordinateEdit() {
+    dirtyVariantStopCoordinateEdit = null;
+}
+
+function markDirtyVariantStopCoordinateEdit(stop, latText, lngText) {
+    const variant = selectedVariantForGeometry();
+    if (!stop || !variant) return;
+    dirtyVariantStopCoordinateEdit = {
+        routeVariantId: String(variant.id),
+        stopId: String(stop.id),
+        lat: isCompleteVariantCoordinatePair(stop.lat, stop.lng) ? Number(stop.lat) : null,
+        lng: isCompleteVariantCoordinatePair(stop.lat, stop.lng) ? Number(stop.lng) : null,
+        latText: String(latText ?? ''),
+        lngText: String(lngText ?? '')
+    };
+}
+
+function restoreDirtyVariantStopCoordinateEdit() {
+    const dirty = dirtyVariantStopCoordinateEdit;
+    if (!dirty || String(selectedRouteVariantId) !== dirty.routeVariantId || String(selectedVariantStopId) !== dirty.stopId) return;
+    const stop = selectedVariantStopForCoordinate();
+    if (!stop) {
+        clearDirtyVariantStopCoordinateEdit();
+        return;
+    }
+    stop.lat = dirty.lat;
+    stop.lng = dirty.lng;
+}
+
+function selectVariantStopForCoordinate(id) {
+    if (String(selectedVariantStopId) !== String(id)) clearDirtyVariantStopCoordinateEdit();
+    selectedVariantStopId = id ? Number(id) : null;
+    syncVariantStopEditorFields();
+    renderSelectedVariantStopMap();
+}
+
+function syncVariantStopEditorFields() {
+    const stop = selectedVariantStopForCoordinate();
+    const source = document.getElementById('route-variant-stop-source');
+    const notes = document.getElementById('route-variant-stop-notes');
+    const status = document.getElementById('route-variant-stop-coordinate-status');
+    const lat = document.getElementById('route-variant-stop-lat');
+    const lng = document.getElementById('route-variant-stop-lng');
+    const search = document.getElementById('route-variant-stop-google-search');
+    if (!stop) return;
+    const dirty = dirtyVariantStopCoordinateEdit &&
+        String(dirtyVariantStopCoordinateEdit.routeVariantId) === String(selectedRouteVariantId) &&
+        String(dirtyVariantStopCoordinateEdit.stopId) === String(selectedVariantStopId)
+        ? dirtyVariantStopCoordinateEdit : null;
+    const hasPair = isCompleteVariantCoordinatePair(stop.lat, stop.lng);
+    if (lat) lat.value = dirty ? dirty.latText : (hasPair ? Number(stop.lat) : '');
+    if (lng) lng.value = dirty ? dirty.lngText : (hasPair ? Number(stop.lng) : '');
+    if (source) source.value = stop.coordinate_source || '';
+    if (notes) notes.value = stop.coordinate_notes || '';
+    if (search) {
+        const route = selectedVariantForGeometry();
+        const query = [stop.name, route?.direction, route?.origin_name + ' to ' + route?.destination_name, 'Pasig City', 'Philippines']
+            .filter(Boolean).join(', ');
+        search.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(query);
+        search.title = 'Search manually: ' + query;
+    }
+    if (status) status.textContent = 'Status: ' + (stop.coordinate_status || 'pending') + ' | Coordinates: ' +
+        (isCompleteVariantCoordinatePair(stop.lat, stop.lng) ? Number(stop.lat).toFixed(7) + ', ' + Number(stop.lng).toFixed(7) : 'not placed') +
+        '. Enter coordinates, click the map to place, or drag the selected marker.';
+}
+
+function isCompleteVariantCoordinatePair(lat, lng) {
+    const latitude = Number(lat);
+    const longitude = Number(lng);
+    return Number.isFinite(latitude) && Number.isFinite(longitude) &&
+        latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180 &&
+        (latitude !== 0 || longitude !== 0);
+}
+
+function renderSelectedVariantStopMap(syncFields = true) {
+    const stop = selectedVariantStopForCoordinate();
+    if (!routePreviewMapInstance || !stop || typeof L === 'undefined') return;
+    if (!variantStopMapClickBound) {
+        routePreviewMapInstance.on('click', handleVariantStopMapClick);
+        variantStopMapClickBound = true;
+    }
+    if (variantStopMarker && routePreviewMapInstance.hasLayer(variantStopMarker)) {
+        routePreviewMapInstance.removeLayer(variantStopMarker);
+    }
+    variantStopMarker = null;
+    if (isCompleteVariantCoordinatePair(stop.lat, stop.lng)) {
+        variantStopMarker = L.marker([Number(stop.lat), Number(stop.lng)], {draggable: true})
+            .bindTooltip(stop.sequence + '. ' + stop.name, {permanent: true, direction: 'top'})
+            .addTo(routePreviewMapInstance);
+        variantStopMarker.on('dragend', event => {
+            const point = event.target.getLatLng();
+            stop.lat = point.lat;
+            stop.lng = point.lng;
+            markDirtyVariantStopCoordinateEdit(stop, point.lat, point.lng);
+            syncVariantStopEditorFields();
+        });
+        routePreviewMapInstance.panTo([Number(stop.lat), Number(stop.lng)]);
+    }
+    if (syncFields) syncVariantStopEditorFields();
+}
+
+function handleVariantStopMapClick(event) {
+    const stop = selectedVariantStopForCoordinate();
+    if (!stop) return;
+    stop.lat = event.latlng.lat;
+    stop.lng = event.latlng.lng;
+    markDirtyVariantStopCoordinateEdit(stop, event.latlng.lat, event.latlng.lng);
+    renderSelectedVariantStopMap();
+}
+
+async function saveVariantStopCandidate() {
+    await persistVariantStopCoordinates('candidate');
+}
+
+async function verifyVariantStopCoordinate() {
+    const stop = selectedVariantStopForCoordinate();
+    if (!stop || !isCompleteVariantCoordinatePair(stop.lat, stop.lng)) {
+        GoPasigUI.alert('Place a valid map pin before verification.');
+        return;
+    }
+    await persistVariantStopCoordinates('verify');
+}
+
+function handleVariantCoordinateInput() {
+    const stop = selectedVariantStopForCoordinate();
+    const latText = document.getElementById('route-variant-stop-lat')?.value ?? '';
+    const lngText = document.getElementById('route-variant-stop-lng')?.value ?? '';
+    const lat = latText.trim() === '' ? null : Number(latText);
+    const lng = lngText.trim() === '' ? null : Number(lngText);
+    if (!stop) return;
+    stop.lat = Number.isFinite(lat) && lat >= -90 && lat <= 90 ? lat : null;
+    stop.lng = Number.isFinite(lng) && lng >= -180 && lng <= 180 ? lng : null;
+    markDirtyVariantStopCoordinateEdit(stop, latText, lngText);
+    // Do not sync the inputs while typing. Only a complete non-zero pair moves the marker.
+    renderSelectedVariantStopMap(false);
+}
+async function persistVariantStopCoordinates(action) {
+    const stop = selectedVariantStopForCoordinate();
+    const variant = selectedVariantForGeometry();
+    if (!stop || !variant || !isCompleteVariantCoordinatePair(stop.lat, stop.lng)) {
+        GoPasigUI.alert('Select a stop and place a valid map pin first.');
+        return;
+    }
+    const source = document.getElementById('route-variant-stop-source')?.value || '';
+    const notes = document.getElementById('route-variant-stop-notes')?.value || '';
+    const url = action === 'verify'
+        ? '/admin/api/route-variants/' + variant.id + '/stops/' + stop.id + '/verify'
+        : '/admin/api/route-variants/' + variant.id + '/stops/' + stop.id + '/coordinates';
+    const response = await fetch(url, {
+        method: action === 'verify' ? 'POST' : 'PATCH',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken()},
+        body: JSON.stringify({lat: Number(stop.lat), lng: Number(stop.lng), coordinate_source: source, coordinate_notes: notes})
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        GoPasigUI.alert(data.message || 'Unable to save stop coordinates.');
+        return;
+    }
+    Object.assign(stop, data.stop);
+    clearDirtyVariantStopCoordinateEdit();
+    syncVariantGeometrySelection();
+}
+
+async function rejectVariantStopCoordinate() {
+    const stop = selectedVariantStopForCoordinate();
+    const variant = selectedVariantForGeometry();
+    if (!stop || !variant) return;
+    const notes = document.getElementById('route-variant-stop-notes')?.value || '';
+    const response = await fetch('/admin/api/route-variants/' + variant.id + '/stops/' + stop.id + '/reject', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken()},
+        body: JSON.stringify({coordinate_notes: notes})
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        GoPasigUI.alert(data.message || 'Unable to reject stop coordinates.');
+        return;
+    }
+    Object.assign(stop, data.stop);
+    clearDirtyVariantStopCoordinateEdit();
+    syncVariantGeometrySelection();
+}
 // Initialize on page load/ready
 document.addEventListener('DOMContentLoaded', () => {
     // Listen for Leaflet Draw edit events on the main map instance
@@ -284,11 +564,11 @@ function updateGisStats(coords) {
 async function saveEditedGeometry() {
     const coords = getCurrentEditCoords();
     if (coords.length < 2) {
-        alert("The route geometry must have at least 2 points.");
+        GoPasigUI.alert("The route geometry must have at least 2 points.");
         return;
     }
 
-    if (!confirm("Are you sure you want to save the new route geometry?")) return;
+    if (!(await GoPasigUI.confirm("Are you sure you want to save the new route geometry?"))) return;
 
     const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.routesBaseUrl) ? window.GoPasigConfig.routesBaseUrl : '/admin/api/routes';
     
@@ -309,7 +589,7 @@ async function saveEditedGeometry() {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert("Route geometry successfully saved!");
+            GoPasigUI.alert("Route geometry successfully saved!");
             isGeometryEditingMode = false;
             document.getElementById('gis-editing-toolbar').classList.add('hidden');
             document.getElementById('btn-edit-geometry').innerHTML = '<i class="ti ti-map-pin"></i> Edit Geometry';
@@ -330,7 +610,7 @@ async function saveEditedGeometry() {
             renderRoutesTab();
         } else if (response.status === 409 && data.conflict) {
             // Concurrent Edit conflict prompt
-            if (confirm("Conflict: " + data.message + "\n\nDo you want to reload the latest version? Your local changes will be lost.")) {
+            if (await GoPasigUI.confirm("Conflict: " + data.message + "\n\nDo you want to reload the latest version? Your local changes will be lost.")) {
                 isGeometryEditingMode = false;
                 document.getElementById('gis-editing-toolbar').classList.add('hidden');
                 document.getElementById('btn-edit-geometry').innerHTML = '<i class="ti ti-map-pin"></i> Edit Geometry';
@@ -347,10 +627,10 @@ async function saveEditedGeometry() {
                 renderRoutesTab();
             }
         } else {
-            alert("Error: " + (data.message || "Failed to save route geometry."));
+            GoPasigUI.alert("Error: " + (data.message || "Failed to save route geometry."));
         }
     } catch (error) {
-        alert("Network connection error. Failed to save route geometry.");
+        GoPasigUI.alert("Network connection error. Failed to save route geometry.");
         console.error("Geometry save error:", error);
     }
 }
@@ -462,19 +742,19 @@ async function previewHistoryVersion(versionId) {
             }).addTo(routePreviewMapInstance);
 
             routePreviewMapInstance.fitBounds(historyPreviewLayer.getBounds(), { padding: [20, 20] });
-            alert(`Previewing v${versionId} on the map. Close the history modal to revert.`);
+            GoPasigUI.alert(`Previewing v${versionId} on the map. Close the history modal to revert.`);
         } else {
-            alert("Failed to load preview details.");
+            GoPasigUI.alert("Failed to load preview details.");
         }
     } catch (error) {
-        alert("Error loading version preview.");
+        GoPasigUI.alert("Error loading version preview.");
         console.error("Preview load error:", error);
     }
 }
 
 // Restore a historical version
 async function restoreHistoryVersion(versionId) {
-    if (!confirm(`Are you sure you want to restore the route geometry to version v${versionId}?`)) return;
+    if (!(await GoPasigUI.confirm(`Are you sure you want to restore the route geometry to version v${versionId}?`))) return;
 
     const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.routesBaseUrl) ? window.GoPasigConfig.routesBaseUrl : '/admin/api/routes';
 
@@ -492,7 +772,7 @@ async function restoreHistoryVersion(versionId) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert("Route geometry successfully restored!");
+            GoPasigUI.alert("Route geometry successfully restored!");
             closeGeometryHistoryModal();
             
             // Remove preview layer if any
@@ -507,10 +787,10 @@ async function restoreHistoryVersion(versionId) {
             syncRoutesWithDatabase();
             renderRoutesTab();
         } else {
-            alert("Error: " + (data.message || "Failed to restore version."));
+            GoPasigUI.alert("Error: " + (data.message || "Failed to restore version."));
         }
     } catch (error) {
-        alert("Failed to connect to the restore endpoint.");
+        GoPasigUI.alert("Failed to connect to the restore endpoint.");
         console.error("Restore error:", error);
     }
 }
@@ -542,7 +822,7 @@ async function handleGeometryImportSubmit(e) {
     } else if (textInput && textInput.value.trim() !== '') {
         formData.append('polyline_string', textInput.value.trim());
     } else {
-        alert("Please select a file or paste an encoded polyline string to import.");
+        GoPasigUI.alert("Please select a file or paste an encoded polyline string to import.");
         return;
     }
 
@@ -561,7 +841,7 @@ async function handleGeometryImportSubmit(e) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert("Route geometry successfully imported and saved!");
+            GoPasigUI.alert("Route geometry successfully imported and saved!");
             closeGeometryImportModal();
 
             if (typeof loadDatabaseFleetData === 'function') {
@@ -570,10 +850,10 @@ async function handleGeometryImportSubmit(e) {
             syncRoutesWithDatabase();
             renderRoutesTab();
         } else {
-            alert("Failed to import geometry: " + (data.message || "Unknown validation error."));
+            GoPasigUI.alert("Failed to import geometry: " + (data.message || "Unknown validation error."));
         }
     } catch (error) {
-        alert("Server error during import.");
+        GoPasigUI.alert("Server error during import.");
         console.error("Import error:", error);
     }
 }
@@ -615,11 +895,39 @@ function renderTelemetryBadges(telemetry) {
 
         return `
             <span class="inline-flex items-center px-1.5 py-0.5 rounded border ${stateBadgeColor} font-mono font-bold select-none cursor-help text-[8px]" 
-                  title="${data.provider.toUpperCase()} state is ${data.state}. Today requests: ${data.total_requests}. Quota left: ${data.quota_remaining}. Daily cost: $${data.daily_cost}">
+                  title="Provider health only; not selected route geometry. ${data.provider.toUpperCase()} state is ${data.state}. Today requests: ${data.total_requests}. Quota left: ${data.quota_remaining}. Daily cost: $${data.daily_cost}">
                 ${data.provider.toUpperCase()}: ${data.average_latency}ms
             </span>
         `;
     }).join('');
+}
+
+async function generateVariantRoutePreview() {
+    const variant = selectedVariantForGeometry();
+    if (!variant) return;
+    const missing = (variant.stops || []).filter(s => s.lat === null || s.lng === null);
+    if (missing.length) {
+        GoPasigUI.alert('Geometry generation blocked. Missing coordinates: ' + missing.map(s => s.name).join(', '));
+        return;
+    }
+    const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.routesBaseUrl) ? window.GoPasigConfig.routesBaseUrl.replace('/routes', '/route-variants') : '/admin/api/route-variants';
+    const response = await fetch(baseUrl + '/' + variant.id + '/generate-preview', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken(), 'Accept': 'application/json'},
+        body: JSON.stringify({provider: 'google'})
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        GoPasigUI.alert('Failed to generate variant preview: ' + (data.message || 'Unknown error'));
+        return;
+    }
+    activeProposalSessionId = data.session_id;
+    activeProposalExpiresAt = new Date(data.expires_at);
+    activeProposalPolyline = L.polyline(data.generated_geometry, {color: '#4F46E5', weight: 4, dashArray: '6, 8', opacity: 0.9}).addTo(routePreviewMapInstance);
+    routePreviewMapInstance.fitBounds(activeProposalPolyline.getBounds(), {padding: [30, 30]});
+    document.getElementById('route-preview-proposal-card')?.classList.remove('hidden');
+    document.getElementById('metric-quality-score').textContent = (data.quality?.score ?? 'Pending') + ' (' + (data.quality?.grade ?? 'Review') + ')';
+    startProposalExpiryTimer();
 }
 
 async function generateRoutePreview() {
@@ -724,10 +1032,10 @@ async function generateRoutePreview() {
             // Fetch updated provider telemetry status
             fetchProvidersTelemetry();
         } else {
-            alert("Failed to generate route preview: " + (data.message || "Unknown error"));
+            GoPasigUI.alert("Failed to generate route preview: " + (data.message || "Unknown error"));
         }
     } catch (error) {
-        alert("Server error while generating route preview.");
+        GoPasigUI.alert("Server error while generating route preview.");
         console.error("Generate preview error:", error);
     } finally {
         generateBtn.disabled = false;
@@ -771,12 +1079,12 @@ async function runFrechetAnalysis() {
                 (data.quality.score >= 90 ? "text-emerald-600" : 
                 (data.quality.score >= 50 ? "text-amber-600" : "text-rose-600"));
         } else {
-            alert("Advanced shape comparison failed: " + (data.message || "Unknown error"));
+            GoPasigUI.alert("Advanced shape comparison failed: " + (data.message || "Unknown error"));
             frechetBtn.disabled = false;
             frechetBtn.textContent = 'Analyze Shape';
         }
     } catch (error) {
-        alert("Server error during shape analysis.");
+        GoPasigUI.alert("Server error during shape analysis.");
         console.error("Advanced analysis error:", error);
         frechetBtn.disabled = false;
         frechetBtn.textContent = 'Analyze Shape';
@@ -794,7 +1102,7 @@ function startProposalExpiryTimer() {
         if (diffMs <= 0) {
             clearInterval(proposalExpiryInterval);
             label.textContent = 'Expired';
-            alert("Route generation preview session has expired.");
+            GoPasigUI.alert("Route generation preview session has expired.");
             rejectRouteProposal(true); // silent / force clean up local state
             return;
         }
@@ -804,13 +1112,31 @@ function startProposalExpiryTimer() {
     }, 1000);
 }
 
+async function acceptVariantRouteProposal() {
+    const variant = selectedVariantForGeometry();
+    if (!variant || !activeProposalSessionId) return;
+    const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.routesBaseUrl) ? window.GoPasigConfig.routesBaseUrl.replace('/routes', '/route-variants') : '/admin/api/route-variants';
+    const response = await fetch(baseUrl + '/' + variant.id + '/accept-preview', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken(), 'Accept': 'application/json'},
+        body: JSON.stringify({session_id: activeProposalSessionId, last_geometry_version: variant.geometry_version || 0})
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) { GoPasigUI.alert('Failed to accept variant preview: ' + (data.message || 'Unknown error')); return; }
+    GoPasigUI.alert('Directional variant geometry approved.');
+    cleanupProposalUI();
+    if (typeof loadDatabaseFleetData === 'function') await loadDatabaseFleetData();
+    syncRoutesWithDatabase();
+    renderRoutesTab();
+}
+
 async function acceptRouteProposal() {
     if (!activeProposalSessionId) return;
 
     const route = routesDataDb.find(r => r.id.toString() === selectedRouteId.toString());
     const clientVersion = route ? (route.geometry_version ?? 0) : 0;
 
-    if (!confirm("Are you sure you want to ACCEPT this generated geometry? This will update the official route layout.")) return;
+    if (!(await GoPasigUI.confirm("Are you sure you want to ACCEPT this generated geometry? This will update the official route layout."))) return;
 
     const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.routesBaseUrl) ? window.GoPasigConfig.routesBaseUrl : '/admin/api/routes';
 
@@ -831,7 +1157,7 @@ async function acceptRouteProposal() {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert("Proposed route geometry successfully saved and applied!");
+            GoPasigUI.alert("Proposed route geometry successfully saved and applied!");
             cleanupProposalUI();
 
             // Refresh route data
@@ -841,7 +1167,7 @@ async function acceptRouteProposal() {
             syncRoutesWithDatabase();
             renderRoutesTab();
         } else if (response.status === 409 && data.conflict) {
-            alert("Optimistic Concurrency Conflict: " + data.message);
+            GoPasigUI.alert("Optimistic Concurrency Conflict: " + data.message);
             cleanupProposalUI();
             if (typeof loadDatabaseFleetData === 'function') {
                 await loadDatabaseFleetData();
@@ -849,12 +1175,27 @@ async function acceptRouteProposal() {
             syncRoutesWithDatabase();
             renderRoutesTab();
         } else {
-            alert("Failed to accept proposal: " + (data.message || "Unknown error"));
+            GoPasigUI.alert("Failed to accept proposal: " + (data.message || "Unknown error"));
         }
     } catch (error) {
-        alert("Server error while accepting proposal.");
+        GoPasigUI.alert("Server error while accepting proposal.");
         console.error("Accept proposal error:", error);
     }
+}
+
+async function rejectVariantRouteProposal(silent = false) {
+    if (!activeProposalSessionId) { cleanupProposalUI(); return; }
+    const variant = selectedVariantForGeometry();
+    if (!silent && !(await GoPasigUI.confirm('Reject this directional geometry preview?'))) return;
+    if (variant && !silent) {
+        const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.routesBaseUrl) ? window.GoPasigConfig.routesBaseUrl.replace('/routes', '/route-variants') : '/admin/api/route-variants';
+        await fetch(baseUrl + '/' + variant.id + '/reject-preview', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken(), 'Accept': 'application/json'},
+            body: JSON.stringify({session_id: activeProposalSessionId})
+        });
+    }
+    cleanupProposalUI();
 }
 
 async function rejectRouteProposal(silent = false) {
@@ -863,7 +1204,7 @@ async function rejectRouteProposal(silent = false) {
         return;
     }
 
-    if (!silent && !confirm("Are you sure you want to REJECT and discard this proposal?")) return;
+    if (!silent && !(await GoPasigUI.confirm("Are you sure you want to REJECT and discard this proposal?"))) return;
 
     const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.routesBaseUrl) ? window.GoPasigConfig.routesBaseUrl : '/admin/api/routes';
 
@@ -911,3 +1252,6 @@ function cleanupProposalUI() {
 // Initial fetch on script load
 setTimeout(fetchProvidersTelemetry, 1000);
 setInterval(fetchProvidersTelemetry, 45000);
+
+
+

@@ -29,7 +29,7 @@ class FleetDispatchIntelligenceTest extends TestCase
     {
         parent::setUp();
 
-        $this->dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $this->dispatcher = User::factory()->create(['role' => 'fleet_manager']);
         
         $this->route = Route::create([
             'id' => 1,
@@ -133,7 +133,7 @@ class FleetDispatchIntelligenceTest extends TestCase
         // Seed an available bus and active/available driver
         $bus = Bus::create([
             'plate_number' => 'PAS-555',
-            'status' => 'available',
+            'status' => 'inactive',
             'capacity' => 45,
             'lat' => 14.5593,
             'lng' => 121.0805,
@@ -206,7 +206,7 @@ class FleetDispatchIntelligenceTest extends TestCase
     {
         $bus = Bus::create([
             'plate_number' => 'PAS-X1',
-            'status' => 'available',
+            'status' => 'inactive',
             'capacity' => 45,
             'lat' => 14.5593,
             'lng' => 121.0805,
@@ -237,7 +237,7 @@ class FleetDispatchIntelligenceTest extends TestCase
     {
         $bus = Bus::create([
             'plate_number' => 'PAS-X2',
-            'status' => 'available',
+            'status' => 'inactive',
             'capacity' => 45,
             'lat' => 14.5593,
             'lng' => 121.0805,
@@ -267,8 +267,8 @@ class FleetDispatchIntelligenceTest extends TestCase
             $this->fail("Duplicate dispatch should throw DispatchException.");
         } catch (\App\Exceptions\DispatchException $e) {
             $this->assertTrue(
-                str_contains($e->getMessage(), 'already has an ongoing trip') ||
-                str_contains($e->getMessage(), 'is already active')
+                str_contains($e->getMessage(), 'Active dispatched/ongoing trip exists') ||
+                str_contains($e->getMessage(), 'not available for Central Dispatch')
             );
         }
     }
@@ -296,7 +296,7 @@ class FleetDispatchIntelligenceTest extends TestCase
         ]);
 
         $this->expectException(\App\Exceptions\BusUnavailableException::class);
-        $this->expectExceptionMessage('is currently in maintenance');
+        $this->expectExceptionMessage('Maintenance.');
 
         \App\Services\SimulationDispatchService::dispatch($bus, $driver, $this->route);
     }
@@ -324,7 +324,7 @@ class FleetDispatchIntelligenceTest extends TestCase
         ]);
 
         $this->expectException(\App\Exceptions\BusUnavailableException::class);
-        $this->expectExceptionMessage('has an unresolved breakdown');
+        $this->expectExceptionMessage('Breakdown.');
 
         \App\Services\SimulationDispatchService::dispatch($bus, $driver, $this->route);
     }
@@ -333,7 +333,7 @@ class FleetDispatchIntelligenceTest extends TestCase
     {
         $bus = Bus::create([
             'plate_number' => 'PAS-OK',
-            'status' => 'available',
+            'status' => 'inactive',
             'capacity' => 45,
             'lat' => 14.5593,
             'lng' => 121.0805,
@@ -351,7 +351,7 @@ class FleetDispatchIntelligenceTest extends TestCase
         ]);
 
         $this->expectException(\App\Exceptions\DriverUnavailableException::class);
-        $this->expectExceptionMessage('is suspended');
+        $this->expectExceptionMessage('Suspended.');
 
         \App\Services\SimulationDispatchService::dispatch($bus, $driver, $this->route);
     }
@@ -360,7 +360,7 @@ class FleetDispatchIntelligenceTest extends TestCase
     {
         $bus = Bus::create([
             'plate_number' => 'PAS-OK2',
-            'status' => 'available',
+            'status' => 'inactive',
             'capacity' => 45,
             'lat' => 14.5593,
             'lng' => 121.0805,
@@ -379,7 +379,7 @@ class FleetDispatchIntelligenceTest extends TestCase
         ]);
 
         $this->expectException(\App\Exceptions\DriverUnavailableException::class);
-        $this->expectExceptionMessage('license expired');
+        $this->expectExceptionMessage('License expired.');
 
         \App\Services\SimulationDispatchService::dispatch($bus, $driver, $this->route);
     }
@@ -388,7 +388,7 @@ class FleetDispatchIntelligenceTest extends TestCase
     {
         $bus = Bus::create([
             'plate_number' => 'PAS-CON',
-            'status' => 'available',
+            'status' => 'inactive',
             'capacity' => 45,
             'lat' => 14.5593,
             'lng' => 121.0805,
@@ -427,7 +427,7 @@ class FleetDispatchIntelligenceTest extends TestCase
     {
         $bus = Bus::create([
             'plate_number' => 'PAS-ROLL',
-            'status' => 'available',
+            'status' => 'inactive',
             'capacity' => 45,
             'lat' => 14.5593,
             'lng' => 121.0805,
@@ -456,10 +456,11 @@ class FleetDispatchIntelligenceTest extends TestCase
             $this->assertSame('Forced rollback', $e->getMessage());
         }
 
-        // Verify: no partial updates remain (bus is still available, no trips created, no dispatch logs)
+        // Verify: no partial updates remain (bus is still standby, no trips created, no dispatch logs)
         $bus->refresh();
-        $this->assertSame('available', $bus->status);
+        $this->assertSame('inactive', $bus->status);
         $this->assertDatabaseCount('trips', 0);
         $this->assertDatabaseCount('dispatch_logs', 0);
     }
 }
+

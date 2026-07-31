@@ -55,7 +55,7 @@ class MaintenanceService
         if (in_array($newStatus, ['scheduled', 'in_progress'])) {
             \App\Services\BusStateService::transition($bus, \App\Models\Bus::STATUS_MAINTENANCE, 'Maintenance scheduled');
         } elseif ($newStatus === 'completed') {
-            $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_ACTIVE;
+            $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_INACTIVE;
             \App\Services\BusStateService::transition($bus, $restoreStatus, 'Maintenance completed');
         } elseif ($newStatus === 'cancelled') {
             $query = MaintenanceRecord::where('bus_id', $busId)
@@ -164,7 +164,7 @@ class MaintenanceService
                 ->exists();
 
             if (!$hasOther) {
-                $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_ACTIVE;
+                $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_INACTIVE;
                 \App\Services\BusStateService::transition($bus, $restoreStatus, 'Sync: Maintenance cancelled');
             }
         }

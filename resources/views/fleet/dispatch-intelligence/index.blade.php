@@ -212,6 +212,16 @@
                         </div>
                     @endif
 
+                    @if(!empty($r->variants) && count($r->variants) > 0)
+                        <select id="dispatch-variant-{{ $r->id }}" class="w-full h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-[#003F87]">
+                            <option value="">{{ collect($r->variants)->where('usable_for_dispatch', true)->count() > 1 ? 'Choose direction...' : 'Use default direction' }}</option>
+                            @foreach($r->variants as $variant)
+                                <option value="{{ $variant['id'] }}" @disabled(! $variant['usable_for_dispatch'])>
+                                    {{ $variant['label'] }}{{ $variant['usable_for_dispatch'] ? '' : ' (' . $variant['geometry_status'] . ')' }}
+                                </option>
+                            @endforeach
+                        </select>
+                    @endif
                     <button onclick="dispatchNowAction({{ $r->id }})" class="w-full h-9 flex items-center justify-center gap-1 bg-[#003F87] hover:bg-[#002D62] text-white text-xs font-extrabold uppercase tracking-wider rounded-xl transition shadow-sm cursor-pointer">
                         <i class="ti ti-bus-stop text-base"></i>
                         <span>Dispatch Bus</span>
@@ -333,4 +343,5 @@
 
 
 </section>
+
 

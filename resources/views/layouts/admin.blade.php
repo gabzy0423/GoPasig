@@ -31,6 +31,8 @@
     @yield('content')
 
     <!-- Admin Dashboard Scripts -->
+    <script src="{{ asset('js/shared/ui-feedback.js') }}?v={{ time() }}" defer></script>
+    <script src="{{ asset('js/admin-dashboard/request-lifecycle.js') }}?v={{ time() }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/dashboard-data.js') }}?v={{ time() }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/navigation.js') }}?v={{ time() }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/buses.js') }}?v={{ time() }}" defer></script>
@@ -47,6 +49,9 @@
     <script src="{{ asset('js/admin-dashboard/route-editor.js') }}?v={{ time() }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/alerts.js') }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/settings.js') }}?v={{ time() }}" defer></script>
-    @livewireScripts
+    <script src="{{ asset('js/shared/staff-profile.js') }}?v={{ time() }}" defer></script>
+    @livewireScriptConfig
 </body>
 </html>
+
+

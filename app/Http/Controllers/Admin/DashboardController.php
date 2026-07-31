@@ -12,6 +12,9 @@ use App\Models\Stop;
 use App\Models\DispatchSimulationDefault;
 use App\Models\TripProgress;
 use App\Models\VehiclePosition;
+use App\Services\CentralDispatchEligibilityService;
+use App\Services\RouteVariantSelectionService;
+use App\Services\RouteMapGeometryService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -24,7 +27,7 @@ class DashboardController extends Controller
         if (Schema::hasTable('dispatch_simulation_defaults')) {
             $missingThresholdKey = !DispatchSimulationDefault::where('key', 'default_demand_threshold')->exists();
         }
-        $routes = Route::getAllCached();
+        $routes = Route::with(['variants.stops' => fn ($query) => $query->orderBy('sequence')])->get();
         $primaryRouteName = $routes->first()?->name
             ?? SystemSetting::get('overview_default_route_name')
             ?? SystemSetting::get('default_route_name', 'Route 1');
@@ -70,8 +73,37 @@ class DashboardController extends Controller
         $requiringRepairCount = $maintenanceStats['requiringRepairCount'];
         $averageDuration = $maintenanceStats['averageDuration'];
 
+        $routeVariantSelection = app(RouteVariantSelectionService::class);
+        $routeVariantsByRoute = $routes->mapWithKeys(function ($route) use ($routeVariantSelection) {
+            return [$route->id => $route->variants->map(fn ($variant) => [
+                'id' => $variant->id,
+                'route_id' => $variant->route_id,
+                'direction' => $variant->direction,
+                'origin_name' => $variant->origin_name,
+                'destination_name' => $variant->destination_name,
+                'geometry_status' => $variant->geometry_status,
+                'geometry_version' => $variant->geometry_version,
+                'polyline_coordinates' => $variant->polyline_coordinates ?: [],
+                'is_default' => (bool) $variant->is_default,
+                'label' => $routeVariantSelection->label($variant),
+                'usable_for_dispatch' => $routeVariantSelection->isUsableForLiveDispatch($variant),
+                'stops' => $variant->stops->map(fn ($stop) => [
+                    'id' => $stop->id,
+                    'name' => $stop->name,
+                    'lat' => $stop->lat,
+                    'lng' => $stop->lng,
+                    'sequence' => $stop->sequence,
+                    'stop_type' => $stop->stop_type,
+                    'coordinate_status' => $stop->coordinate_status ?: 'pending',
+                    'coordinate_source' => $stop->coordinate_source,
+                    'coordinates_verified_at' => $stop->coordinates_verified_at?->toIso8601String(),
+                    'coordinate_notes' => $stop->coordinate_notes,
+                ])->values(),
+            ])->values()];
+        });
+
         return view('admin.dashboard', compact(
-            'missingThresholdKey', 'routes', 'primaryRouteName', 'busCapacityLimit',
+            'missingThresholdKey', 'routes', 'routeVariantsByRoute', 'primaryRouteName', 'busCapacityLimit',
             'licenseWarningDays', 'mapCenterLat', 'mapCenterLng', 'mapZoom',
             'pollingInterval', 'systemStatus', 'scheduleBuffer', 'busScheduleBuffer',
             'defaultTravelTime', 'defaultDepartureTime', 'defaultActiveDays',
@@ -90,9 +122,13 @@ class DashboardController extends Controller
             ->groupBy('route_id')
             ->pluck('avg_peak', 'route_id');
 
+        $routeVariantSelection = app(RouteVariantSelectionService::class);
+        $routeMapGeometry = app(RouteMapGeometryService::class);
+        $variantsByRoute = \App\Models\RouteVariant::with(['stops' => fn ($query) => $query->orderBy('sequence')])->withCount('stops')->get()->groupBy('route_id');
+
         $routes = Route::getAllCached()
             ->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])
-            ->map(function ($route) use ($stopsByRoute, $avgPaxByRoute) {
+            ->map(function ($route) use ($stopsByRoute, $avgPaxByRoute, $variantsByRoute, $routeVariantSelection) {
                 $route->setRelation('stops', $stopsByRoute->get($route->id, collect()));
 
                 $avgPax = $avgPaxByRoute->get($route->id);
@@ -102,19 +138,47 @@ class DashboardController extends Controller
                 }
 
                 $route->avg_passengers = (int) round($avgPax);
+                $route->variants = ($variantsByRoute->get($route->id, collect()))->map(fn ($variant) => [
+                    'id' => $variant->id,
+                    'route_id' => $variant->route_id,
+                    'direction' => $variant->direction,
+                    'origin_name' => $variant->origin_name,
+                    'destination_name' => $variant->destination_name,
+                    'geometry_status' => $variant->geometry_status,
+                'geometry_version' => $variant->geometry_version,
+                'polyline_coordinates' => $variant->polyline_coordinates ?: [],
+                    'is_default' => (bool) $variant->is_default,
+                    'label' => $routeVariantSelection->label($variant),
+                    'usable_for_dispatch' => $routeVariantSelection->isUsableForLiveDispatch($variant),
+                'stops' => $variant->stops->map(fn ($stop) => [
+                    'id' => $stop->id,
+                    'name' => $stop->name,
+                    'lat' => $stop->lat,
+                    'lng' => $stop->lng,
+                    'sequence' => $stop->sequence,
+                    'stop_type' => $stop->stop_type,
+                    'coordinate_status' => $stop->coordinate_status ?: 'pending',
+                    'coordinate_source' => $stop->coordinate_source,
+                    'coordinates_verified_at' => $stop->coordinates_verified_at?->toIso8601String(),
+                    'coordinate_notes' => $stop->coordinate_notes,
+                ])->values(),
+                ])->values();
                 return $route;
             });
 
         $activeTrips = Trip::where('status', 'ongoing')
-            ->with('driver')
+            ->with(['driver', 'routeVariant'])
             ->get()
             ->keyBy('bus_id');
         $activeBusIds = $activeTrips->keys()->all();
         $positions = VehiclePosition::all()->keyBy('bus_id');
-        $progresses = TripProgress::with(['currentStop', 'nextStop', 'trip'])->get()->keyBy(fn($p) => $p->trip->bus_id ?? 0);
+        $progresses = TripProgress::with(['currentStop', 'nextStop', 'currentRouteVariantStop', 'nextRouteVariantStop', 'trip'])->get()->keyBy(fn($p) => $p->trip->bus_id ?? 0);
 
         $buses = Bus::all()->map(function ($bus) use ($activeBusIds, $activeTrips, $positions, $progresses) {
             $bus->has_active_trip = in_array($bus->id, $activeBusIds);
+            $dispatchEligibility = CentralDispatchEligibilityService::bus($bus);
+            $bus->dispatch_eligible = $dispatchEligibility['eligible'];
+            $bus->dispatch_reason = $dispatchEligibility['reason'];
             $activeTrip = $activeTrips->get($bus->id);
 
             $originalBusStatus = $bus->status;
@@ -163,6 +227,10 @@ class DashboardController extends Controller
                 ? "{$activeTrip->driver->first_name} {$activeTrip->driver->last_name}"
                 : 'Unassigned';
             $bus->trip_id = $activeTrip?->id;
+            $bus->route_variant_id = $activeTrip?->route_variant_id;
+            $bus->direction = $activeTrip?->routeVariant?->direction;
+            $bus->origin_name = $activeTrip?->routeVariant?->origin_name;
+            $bus->destination_name = $activeTrip?->routeVariant?->destination_name;
             $bus->bus_status = $originalBusStatus;
             $bus->operational_status = $operationalStatus;
             $bus->movement_state = $movementState;
@@ -194,14 +262,19 @@ class DashboardController extends Controller
 
             $prog = $progresses->get($bus->id);
             if ($prog) {
-                $bus->current_stop = $prog->currentStop ? $prog->currentStop->name : null;
-                $bus->upcoming_stop = $prog->nextStop ? $prog->nextStop->name : null;
+                $currentStopModel = $prog->currentRouteVariantStop ?: $prog->currentStop;
+                $nextStopModel = $prog->nextRouteVariantStop ?: $prog->nextStop;
+                $bus->current_stop = $currentStopModel ? $currentStopModel->name : null;
+                $bus->upcoming_stop = $nextStopModel ? $nextStopModel->name : null;
                 $bus->next_stop = $bus->upcoming_stop;
                 $bus->route_adherence = $prog->route_adherence;
                 $bus->trip_progress = [
                     'current_stop_id' => $prog->current_stop_id,
+                    'current_route_variant_stop_id' => $prog->current_route_variant_stop_id,
                     'next_stop_id' => $prog->next_stop_id,
+                    'next_route_variant_stop_id' => $prog->next_route_variant_stop_id,
                     'last_completed_stop_id' => $prog->last_completed_stop_id,
+                    'last_completed_route_variant_stop_id' => $prog->last_completed_route_variant_stop_id,
                     'completed_stops' => $prog->completed_stops_count,
                     'remaining_stops' => $prog->remaining_stops_count,
                     'completion_percentage' => $prog->trip_percentage,
@@ -222,7 +295,17 @@ class DashboardController extends Controller
             return $bus;
         });
 
-        $trips = Trip::with(['bus', 'driver', 'route'])->latest()->take(5)->get();
+        $routes = $routes->map(function ($route) use ($activeTrips, $routeMapGeometry) {
+            $mapGeometry = $routeMapGeometry->forRoute($route, $activeTrips->values());
+            $route->map_geometry_source = $mapGeometry['source'];
+            $route->map_geometry_status = $mapGeometry['geometry_status'];
+            $route->map_route_variant_ids = $mapGeometry['route_variant_ids'];
+            $route->map_variant_geometries = $mapGeometry['variant_geometries'];
+            $route->polyline_coordinates = $mapGeometry['polyline_coordinates'];
+            return $route;
+        });
+
+        $trips = Trip::with(['bus', 'driver', 'route', 'routeVariant'])->latest()->take(5)->get();
 
         return response()->json(compact('routes', 'buses', 'trips'));
     }
@@ -366,6 +449,10 @@ class DashboardController extends Controller
         ]);
     }
 }
+
+
+
+
 
 
 

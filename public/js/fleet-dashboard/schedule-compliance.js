@@ -291,7 +291,7 @@ function updateTripsTableDOM() {
                 varText = `+${minutes} min`;
                 varColor = 'text-[#A32D2D] font-bold';
             } else {
-                varText = `−${Math.abs(minutes)} min`;
+                varText = `âˆ’${Math.abs(minutes)} min`;
                 varColor = 'text-[#0F6E56] font-semibold';
             }
         }
@@ -556,8 +556,13 @@ function exportComplianceReport() {
 }
 
 // Document load hook
-document.addEventListener('DOMContentLoaded', () => {
-    if (document.getElementById('onTimeRatePerRouteChart')) {
+let fleetScheduleModuleInitialized = false;
+
+function initFleetScheduleModule() {
+    if (fleetScheduleModuleInitialized || !document.getElementById('onTimeRatePerRouteChart')) return;
+    fleetScheduleModuleInitialized = true;
+
+
         // Load initial data state
         if (window.GoPasigScheduleComplianceInitialData) {
             allTripsData = window.GoPasigScheduleComplianceInitialData.tripLogs;
@@ -570,8 +575,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Apply filters button trigger
         document.getElementById('btn-apply-compliance-filters')?.addEventListener('click', fetchComplianceData);
-    }
-});
+}
+
+window.initFleetScheduleModule = initFleetScheduleModule;
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFleetScheduleModule, { once: true });
+} else {
+    initFleetScheduleModule();
+}
 
 // Single-page dashboard tab navigation visibility listener
 window.addEventListener('screen-shown', event => {

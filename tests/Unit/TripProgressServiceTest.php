@@ -27,7 +27,7 @@ class TripProgressServiceTest extends TestCase
 
         $trip = Trip::factory()->create(['route_id' => $route->id, 'status' => 'ongoing']);
 
-        $service = new TripProgressService();
+        $service = app(TripProgressService::class);
 
         // 1. Position is 10 meters away from Stop 1 (within 30m entry radius)
         $posNear = new Coordinate(14.50005, 121.00005);
@@ -53,3 +53,4 @@ class TripProgressServiceTest extends TestCase
         $this->assertEquals($stop1->id, $result->lastCompletedStopId);
     }
 }
+

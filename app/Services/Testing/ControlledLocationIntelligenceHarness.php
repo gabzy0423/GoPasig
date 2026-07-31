@@ -39,7 +39,7 @@ class ControlledLocationIntelligenceHarness
     {
         $this->assertSafeEnvironment();
 
-        $context = $this->prepareContext((int) ($options['route_id'] ?? 3));
+        $context = $this->prepareContext((int) ($options['route_id'] ?? 3), isset($options['route_variant_id']) ? (int) $options['route_variant_id'] : null);
         if (($options['reset'] ?? true) === true) {
             $this->resetRunState($context);
         }
@@ -80,6 +80,7 @@ class ControlledLocationIntelligenceHarness
                 'id' => $context['trip']->id,
                 'bus_id' => $context['bus']->id,
                 'driver_id' => $context['driver']->id,
+                'route_variant_id' => $context['trip']->route_variant_id,
             ],
             'sequence' => array_map(fn (array $step) => [
                 'key' => $step['key'],
@@ -103,7 +104,7 @@ class ControlledLocationIntelligenceHarness
     /**
      * @return array<string, mixed>
      */
-    public function prepareContext(int $routeId = 3): array
+    public function prepareContext(int $routeId = 3, ?int $routeVariantId = null): array
     {
         $route = Route::with(['stops' => fn ($query) => $query->orderBy('sequence')])->findOrFail($routeId);
 
@@ -121,7 +122,7 @@ class ControlledLocationIntelligenceHarness
         );
         $dispatcherUser = User::updateOrCreate(
             ['email' => self::DISPATCHER_EMAIL],
-            ['name' => 'Location UAT Dispatcher', 'password' => Hash::make('password'), 'role' => 'dispatcher']
+            ['name' => 'Location UAT Dispatcher', 'password' => Hash::make('password'), 'role' => 'fleet_manager']
         );
         $adminUser = User::updateOrCreate(
             ['email' => self::ADMIN_EMAIL],
@@ -178,6 +179,7 @@ class ControlledLocationIntelligenceHarness
             'bus_id' => $bus->id,
             'driver_id' => $driver->id,
             'route_id' => $route->id,
+            'route_variant_id' => $routeVariantId,
             'status' => 'ongoing',
             'gps_session' => 'ACTIVE',
             'peak_passengers' => 0,
@@ -528,7 +530,9 @@ class ControlledLocationIntelligenceHarness
             ] : null,
             'trip_progress' => $progress ? [
                 'current_stop_id' => $progress->current_stop_id,
+                'current_route_variant_stop_id' => $progress->current_route_variant_stop_id,
                 'next_stop_id' => $progress->next_stop_id,
+                'next_route_variant_stop_id' => $progress->next_route_variant_stop_id,
                 'completed_stops_count' => $progress->completed_stops_count,
                 'trip_percentage' => $progress->trip_percentage,
                 'route_adherence' => $progress->route_adherence,
@@ -542,6 +546,7 @@ class ControlledLocationIntelligenceHarness
             'stop_arrival' => $arrival ? [
                 'id' => $arrival->id,
                 'stop_id' => $arrival->stop_id,
+                'route_variant_stop_id' => $arrival->route_variant_stop_id,
                 'arrival_time' => $arrival->arrival_time?->toIso8601String(),
                 'departure_time' => $arrival->departure_time?->toIso8601String(),
             ] : null,
@@ -620,6 +625,9 @@ class ControlledLocationIntelligenceHarness
         }
     }
 }
+
+
+
 
 
 

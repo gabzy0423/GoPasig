@@ -10,11 +10,12 @@ class RouteGenerationSessionService
     /**
      * Find an active (non-expired, pending) session for the given route and provider.
      */
-    public function findActiveSession(int $routeId, string $provider): ?RouteGenerationSession
+    public function findActiveSession(int $routeId, string $provider, ?int $routeVariantId = null): ?RouteGenerationSession
     {
         return RouteGenerationSession::where('route_id', $routeId)
             ->where('provider', $provider)
             ->where('status', 'pending')
+            ->when($routeVariantId !== null, fn ($query) => $query->where('route_variant_id', $routeVariantId), fn ($query) => $query->whereNull('route_variant_id'))
             ->where('expires_at', '>', now())
             ->first();
     }
@@ -28,16 +29,19 @@ class RouteGenerationSessionService
         Polyline $polyline,
         array $metrics,
         ?int $userId = null,
-        int $ttlMinutes = 30
+        int $ttlMinutes = 30,
+        ?int $routeVariantId = null
     ): RouteGenerationSession {
         // Expire any existing pending sessions for this route and provider first to avoid leftovers
         RouteGenerationSession::where('route_id', $routeId)
             ->where('provider', $provider)
             ->where('status', 'pending')
+            ->when($routeVariantId !== null, fn ($query) => $query->where('route_variant_id', $routeVariantId), fn ($query) => $query->whereNull('route_variant_id'))
             ->update(['status' => 'rejected']);
 
         return RouteGenerationSession::create([
             'route_id' => $routeId,
+            'route_variant_id' => $routeVariantId,
             'provider' => $provider,
             'generated_geometry' => $polyline->toArray(),
             'comparison_metrics' => $metrics,

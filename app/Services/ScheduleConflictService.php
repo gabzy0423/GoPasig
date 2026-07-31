@@ -102,14 +102,9 @@ class ScheduleConflictService
             return ['available' => false, 'message' => 'Bus not found'];
         }
 
-        // Bus under maintenance cannot be scheduled
-        if ($bus->status === 'maintenance') {
-            return ['available' => false, 'message' => "Bus {$bus->plate_number} is under maintenance"];
-        }
-
-        // Bus inactive cannot be scheduled
-        if ($bus->status === 'inactive') {
-            return ['available' => false, 'message' => "Bus {$bus->plate_number} is inactive"];
+        $eligibility = CentralDispatchEligibilityService::bus($bus);
+        if (!$eligibility['eligible']) {
+            return ['available' => false, 'message' => "Bus {$bus->plate_number} is not available for dispatch: {$eligibility['reason']}"];
         }
 
         // Check time slot conflict with other schedules

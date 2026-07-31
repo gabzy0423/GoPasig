@@ -300,7 +300,7 @@
                                         <i class="ti ti-player-play text-sm"></i>
                                         <span>Start Service</span>
                                     </a>
-                                    <form method="POST" action="{{ route('fleet.maintenance.cancelService', $record->id) }}" onsubmit="return confirm('Are you sure you want to cancel this maintenance schedule?')" class="block">
+                                    <form method="POST" action="{{ route('fleet.maintenance.cancelService', $record->id) }}" onsubmit="event.preventDefault(); GoPasigUI.confirm('Are you sure you want to cancel this maintenance schedule?').then(ok => { if (ok) this.submit(); }); return false;" class="block">
                                         @csrf
                                         <button type="submit" class="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-250 hover:bg-slate-50 text-slate-700 py-2 text-xs font-bold transition cursor-pointer select-none">
                                             <i class="ti ti-ban text-sm"></i>
@@ -394,3 +394,5 @@
     </div>
 </div>
 @endsection
+
+

@@ -114,6 +114,7 @@
         hideElement('screen-schedules-create');
         hideElement('screen-schedules-edit');
         hideElement('screen-settings');
+        hideElement('screen-profile');
         hideElement('screen-placeholder');
 
         // Reset all navigation buttons
@@ -147,6 +148,7 @@
             'analytics-driver-performance': 'Driver Performance',
             'analytics':   'Reports & Analytics',
             'settings':    'Settings',
+            'profile':     'Account Profile',
         };
 
         const screenIcons = {
@@ -172,6 +174,7 @@
             'analytics-driver-performance': 'ti-chart-bar',
             'analytics':   'ti-chart-bar',
             'settings':    'ti-settings',
+            'profile':     'ti-id',
         };
 
         const activeNavBtn = document.querySelector(`[data-nav="${navHighlightName}"]`);
@@ -199,6 +202,12 @@
         const targetScreen = document.getElementById(`screen-${parentScreenName}`);
         if (targetScreen) {
             targetScreen.classList.remove('hidden');
+
+            if (parentScreenName === 'dispatch') {
+                setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('request-dispatch-runtime-refresh'));
+                }, 0);
+            }
 
             // If target is buses, reset the view to list mode
             if (parentScreenName === 'buses') {
@@ -256,10 +265,19 @@
                 }, 50);
             }
 
+            // If target is profile, load profile data
+            if (parentScreenName === 'profile') {
+                setTimeout(() => {
+                    if (typeof loadAdminProfileData === 'function') {
+                        loadAdminProfileData();
+                    }
+                }, 50);
+            }
+
             // If target is alerts history, render history table
             if (parentScreenName === 'alerts-history') {
                 setTimeout(() => {
-                    loadDatabaseAlertsData().then(() => {
+                    loadHistoryAlertsData().then(() => {
                         renderHistoryTable();
                     });
                 }, 50);
@@ -379,3 +397,6 @@
         window.addEventListener('load', checkHashRoute);
         window.addEventListener('hashchange', checkHashRoute);
     }
+
+
+

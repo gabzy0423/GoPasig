@@ -5,6 +5,9 @@ use Livewire\Attributes\On;
 use App\Models\Bus;
 use App\Models\Driver;
 use App\Models\Route;
+use App\Models\RouteVariant;
+use App\Services\RouteVariantSelectionService;
+use App\Services\CentralDispatchEligibilityService;
 use App\Models\Trip;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -28,12 +31,13 @@ new class extends Component
  
     // --- Routes ---
     public $routes = [];
+    public $routeVariants = [];
  
     // --- Form fields (ID-based, not plate/name strings) ---
     public $selectedRoute    = '';
+    public $selectedRouteVariant = '';
     public $selectedBusId    = '';
     public $selectedDriverId = '';
-    public $departureTime    = '';
  
     // --- Search & Confirmation Checkbox ---
     public $busSearch        = '';
@@ -46,16 +50,44 @@ new class extends Component
         $this->refreshInterval = (int) \App\Models\SystemSetting::get('dispatch_builder_refresh_interval_seconds', 30);
         $this->loadData();
     }
+
+    public function placeholder()
+    {
+        return <<<'HTML'
+        <div class="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="flex items-center gap-3 text-sm font-semibold text-slate-600">
+                <i class="ti ti-loader-2 animate-spin text-lg text-[#003F87]"></i>
+                <span>Preparing Central Dispatch...</span>
+            </div>
+        </div>
+        HTML;
+    }
  
     public function loadData()
     {
         // 1. Fetch routes
-        $this->routes = Route::getAllCached()->map(function($r) {
+        $routeVariantSelection = app(RouteVariantSelectionService::class);
+        $variantsByRoute = RouteVariant::withCount('stops')->get()->groupBy('route_id');
+
+        $this->routes = Route::getAllCached()->map(function($r) use ($variantsByRoute, $routeVariantSelection) {
+            $variants = ($variantsByRoute->get($r->id, collect()))->map(fn ($variant) => [
+                'id' => $variant->id,
+                'route_id' => $variant->route_id,
+                'label' => $routeVariantSelection->label($variant),
+                'direction' => $variant->direction,
+                'geometry_status' => $variant->geometry_status,
+                'is_default' => (bool) $variant->is_default,
+                'usable_for_dispatch' => $routeVariantSelection->isUsableForLiveDispatch($variant),
+            ])->values()->toArray();
+
             return [
                 'id'   => $r->id,
-                'name' => $r->name . ' — ' . $r->description
+                'name' => $r->name . ' — ' . $r->description,
+                'variants' => $variants,
             ];
         })->toArray();
+
+        $this->routeVariants = collect($this->routes)->mapWithKeys(fn ($route) => [$route['id'] => $route['variants']])->toArray();
  
         // 2. Shared query data
         $activeBusIds        = Trip::whereIn('status', ['dispatched', 'ongoing'])->pluck('bus_id')->toArray();
@@ -66,12 +98,10 @@ new class extends Component
         // Eager load all buses and drivers to prevent N+1 queries.
         $allBusesCollection   = Bus::orderBy('plate_number')->get();
         $allDriversCollection = Driver::orderBy('last_name')->orderBy('first_name')->get();
-        $busesByPlate         = $allBusesCollection->keyBy('plate_number');
- 
-        // 3. Available Buses POOL (left panel) — available only, no active/dispatched trip, matches search
-        $this->availableBuses = $allBusesCollection->filter(function($bus) use ($activeBusIds) {
-            if ($bus->status !== 'available') return false;
-            if (in_array($bus->id, $activeBusIds)) return false;
+        $busesByPlate         = $allBusesCollection->keyBy('plate_number'); 
+        // 3. Available Buses POOL (left panel) - Central Dispatch eligible only.
+        $this->availableBuses = $allBusesCollection->filter(function($bus) {
+            if (! CentralDispatchEligibilityService::busIsEligible($bus)) return false;
             if ($this->busSearch !== '') {
                 return str_contains(strtolower($bus->plate_number), strtolower($this->busSearch));
             }
@@ -80,26 +110,12 @@ new class extends Component
             return [
                 'id'     => $bus->id,
                 'plate'  => $bus->plate_number,
-                'status' => 'Ready',
+                'status' => 'Dispatchable',
             ];
-        })->values()->toArray();
- 
-        // 4. Available Drivers POOL (left panel) — standby only, matches search
-        $this->availableDrivers = $allDriversCollection->filter(function($driver) use ($activeBusDrivers, $activeBusPlates, $activeTripDriverIds, $busesByPlate) {
-            if ($driver->status === 'suspended') return false;
- 
-            $licenseExpired = now()->greaterThan(
-                Carbon::parse($driver->license_expiry)->endOfDay()
-            );
-            if ($licenseExpired) return false;
- 
-            // Driver is unavailable if assigned to a broken down bus
-            if ($driver->assigned_bus) {
-                $assignedBus = $busesByPlate->get($driver->assigned_bus);
-                if ($assignedBus && $assignedBus->status === 'breakdown') {
-                    return false;
-                }
-            }
+        })->values()->toArray(); 
+        // 4. Available Drivers POOL (left panel) - Central Dispatch eligible only.
+        $this->availableDrivers = $allDriversCollection->filter(function($driver) {
+            if (! CentralDispatchEligibilityService::driverIsEligible($driver)) return false;
  
             $fullName = $driver->first_name . ' ' . $driver->last_name;
             if ($this->driverSearch !== '') {
@@ -108,49 +124,20 @@ new class extends Component
                 }
             }
  
-            if (in_array($fullName, $activeBusDrivers)) return false;
-            if ($driver->assigned_bus && in_array($driver->assigned_bus, $activeBusPlates)) return false;
-            if (in_array($driver->id, $activeTripDriverIds)) return false;
- 
             return true;
         })->map(function($driver) {
             return [
                 'id'     => $driver->id,
                 'name'   => $driver->first_name . ' ' . $driver->last_name,
-                'status' => 'Standby',
+                'status' => 'Dispatchable',
             ];
-        })->values()->toArray();
- 
-        // 5. ALL Buses — for dropdown (selectable flag + label per bus)
+        })->values()->toArray(); 
+        // 5. ALL Buses - for dropdown (selectable flag + label per bus)
         $this->allBuses = $allBusesCollection->map(
-            function($bus) use ($activeBusIds) {
-                $onTrip = in_array($bus->id, $activeBusIds);
- 
-                if ($bus->status === 'available' && !$onTrip) {
-                    $selectable = true;
-                    $label      = 'Ready';
-                } elseif ($bus->status === 'ready') {
-                    $selectable = false;
-                    $label      = 'Dispatched';
-                } elseif ($bus->status === 'operating') {
-                    $selectable = false;
-                    $label      = 'On Trip';
-                } elseif ($bus->status === 'maintenance') {
-                    $selectable = false;
-                    $label      = 'Maintenance';
-                } elseif ($bus->status === 'breakdown') {
-                    $selectable = false;
-                    $label      = 'Breakdown';
-                } elseif ($bus->status === 'inactive') {
-                    $selectable = false;
-                    $label      = 'Inactive';
-                } elseif ($onTrip) {
-                    $selectable = false;
-                    $label      = 'On Trip';
-                } else {
-                    $selectable = false;
-                    $label      = 'Needs Review';
-                }
+            function($bus) {
+                $eligibility = CentralDispatchEligibilityService::bus($bus);
+                $selectable = $eligibility['eligible'];
+                $label = $selectable ? 'Dispatchable' : $eligibility['reason'];
  
                 return [
                     'id'              => $bus->id,
@@ -160,41 +147,13 @@ new class extends Component
                     'has_observation' => (bool)$bus->has_observation,
                 ];
             }
-        )->toArray();
- 
-        // 6. ALL Drivers — for dropdown (selectable flag + label per driver)
+        )->toArray(); 
+        // 6. ALL Drivers - for dropdown (selectable flag + label per driver)
         $this->allDrivers = $allDriversCollection->map(
-            function($driver) use ($activeBusPlates, $activeTripDriverIds, $busesByPlate) {
-                $licenseExpired = now()->greaterThan(
-                    Carbon::parse($driver->license_expiry)->endOfDay()
-                );
-                $onDuty = in_array($driver->id, $activeTripDriverIds)
-                    || ($driver->assigned_bus && in_array($driver->assigned_bus, $activeBusPlates));
- 
-                $hasBreakdown = false;
-                if ($driver->assigned_bus) {
-                    $assignedBus = $busesByPlate->get($driver->assigned_bus);
-                    if ($assignedBus && $assignedBus->status === 'breakdown') {
-                        $hasBreakdown = true;
-                    }
-                }
- 
-                if ($driver->status === 'suspended') {
-                    $selectable = false;
-                    $label      = 'Suspended';
-                } elseif ($licenseExpired) {
-                    $selectable = false;
-                    $label      = 'License Expired';
-                } elseif ($hasBreakdown) {
-                    $selectable = false;
-                    $label      = 'Breakdown';
-                } elseif ($onDuty) {
-                    $selectable = false;
-                    $label      = 'On Duty';
-                } else {
-                    $selectable = true;
-                    $label      = 'Standby';
-                }
+            function($driver) {
+                $eligibility = CentralDispatchEligibilityService::driver($driver);
+                $selectable = $eligibility['eligible'];
+                $label = $selectable ? 'Dispatchable' : $eligibility['reason'];
  
                 return [
                     'id'         => $driver->id,
@@ -253,26 +212,42 @@ new class extends Component
     public function updatedSelectedBusId()
     {
         $this->resetErrorBag('selectedBusId');
+        $this->loadData();
     }
  
     public function updatedSelectedDriverId()
     {
         $this->resetErrorBag('selectedDriverId');
+        $this->loadData();
     }
  
     public function updatedSelectedRoute()
     {
         $this->resetErrorBag('selectedRoute');
+        $this->resetErrorBag('selectedRouteVariant');
+        $this->selectedRouteVariant = '';
+        $this->loadData();
+
+        $usableVariants = collect($this->routeVariants[$this->selectedRoute] ?? [])->where('usable_for_dispatch', true)->values();
+        $defaultVariant = $usableVariants->firstWhere('is_default', true);
+
+        if ($defaultVariant) {
+            $this->selectedRouteVariant = (string) $defaultVariant['id'];
+        } elseif ($usableVariants->count() === 1) {
+            $this->selectedRouteVariant = (string) $usableVariants->first()['id'];
+        }
     }
- 
-    public function updatedDepartureTime()
+
+    public function updatedSelectedRouteVariant()
     {
-        $this->resetErrorBag('departureTime');
+        $this->resetErrorBag('selectedRouteVariant');
+        $this->loadData();
     }
  
     public function updatedConfirmDispatch()
     {
         $this->resetErrorBag('confirmDispatch');
+        $this->loadData();
     }
  
     public function createDispatch()
@@ -281,15 +256,15 @@ new class extends Component
  
         $validator = \Illuminate\Support\Facades\Validator::make([
             'selectedRoute'    => $this->selectedRoute,
+            'selectedRouteVariant' => $this->selectedRouteVariant ?: null,
             'selectedBusId'    => $this->selectedBusId,
             'selectedDriverId' => $this->selectedDriverId,
-            'departureTime'    => $this->departureTime,
             'confirmDispatch'  => $this->confirmDispatch,
         ], [
             'selectedRoute'    => 'required|exists:routes,id',
+            'selectedRouteVariant' => 'nullable|exists:route_variants,id',
             'selectedBusId'    => 'required|exists:buses,id',
             'selectedDriverId' => 'required|exists:drivers,id',
-            'departureTime'    => 'required',
             'confirmDispatch'  => 'accepted',
         ], [
             'confirmDispatch.accepted' => 'You must confirm the dispatch details.',
@@ -310,13 +285,15 @@ new class extends Component
  
         try {
             $route = Route::findOrFail($this->selectedRoute);
+            $routeVariant = $this->selectedRouteVariant ? RouteVariant::findOrFail($this->selectedRouteVariant) : null;
  
             \App\Services\SimulationDispatchService::dispatch(
                 $bus,
                 $driver,
                 $route,
                 Auth::id() ?: 1,
-                'Central Dispatch'
+                'Central Dispatch',
+                $routeVariant
             );
         } catch (\App\Exceptions\DispatchException $e) {
             $this->addError('dispatchError', $e->getMessage());
@@ -329,7 +306,7 @@ new class extends Component
         }
         $this->dispatch('dispatchSuccessful');
  
-        $this->reset(['selectedRoute', 'selectedBusId', 'selectedDriverId', 'departureTime', 'confirmDispatch']);
+        $this->reset(['selectedRoute', 'selectedRouteVariant', 'selectedBusId', 'selectedDriverId', 'confirmDispatch']);
         $this->loadData();
     }
 };
@@ -338,13 +315,39 @@ new class extends Component
 <div x-data="{ 
     busesOpen: true, 
     driversOpen: true,
+    dispatchRefreshInFlight: false,
+    dispatchRefreshTimer: null,
     routeSelected: @entangle('selectedRoute'),
+    routeVariantSelected: @entangle('selectedRouteVariant'),
     busSelected: @entangle('selectedBusId'),
     driverSelected: @entangle('selectedDriverId'),
-    timeSelected: @entangle('departureTime'),
     confirmSelected: @entangle('confirmDispatch'),
+    init() {
+        this.startDispatchRefreshPolling();
+    },
+    isDispatchVisible() {
+        const screen = document.getElementById('screen-dispatch');
+        return !!screen && !screen.classList.contains('hidden') && document.visibilityState !== 'hidden';
+    },
+    async requestDispatchRefresh() {
+        if (this.dispatchRefreshInFlight) return;
+        this.dispatchRefreshInFlight = true;
+        try {
+            await this.$wire.refreshDispatchData();
+        } catch (error) {
+            console.error('Dispatch runtime refresh failed:', error);
+        } finally {
+            this.dispatchRefreshInFlight = false;
+        }
+    },
+    startDispatchRefreshPolling() {
+        if (this.dispatchRefreshTimer) return;
+        this.dispatchRefreshTimer = setInterval(() => {
+            if (this.isDispatchVisible()) this.requestDispatchRefresh();
+        }, {{ (int) $refreshInterval * 1000 }});
+    },
     checkScroll() {
-        if (this.routeSelected && this.busSelected && this.driverSelected && this.timeSelected) {
+        if (this.routeSelected && this.busSelected && this.driverSelected) {
             const previewEl = document.getElementById('dispatch-preview-section');
             if (previewEl && window.innerWidth < 1024) {
                 previewEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -355,11 +358,11 @@ new class extends Component
 x-init="
     init();
     $watch('routeSelected', value => checkScroll());
+    $watch('routeVariantSelected', value => checkScroll());
     $watch('busSelected', value => checkScroll());
     $watch('driverSelected', value => checkScroll());
-    $watch('timeSelected', value => checkScroll());
 " 
-wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
+x-on:request-dispatch-runtime-refresh.window="requestDispatchRefresh()">
 
     <!-- Operational Overview (Summary Row) -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-6 select-none animate-fade-in">
@@ -373,7 +376,7 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
             </div>
             <div class="mt-1 flex items-baseline gap-1.5">
                 <span class="text-[20px] font-black text-slate-900 leading-none">{{ $availableBusesCount }}</span>
-                <span class="text-[9px] text-slate-500 font-semibold truncate">Ready standby fleet</span>
+                <span class="text-[9px] text-slate-500 font-semibold truncate">Free standby fleet</span>
             </div>
         </div>
 
@@ -387,7 +390,7 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
             </div>
             <div class="mt-1 flex items-baseline gap-1.5">
                 <span class="text-[20px] font-black text-slate-900 leading-none">{{ $availableDriversCount }}</span>
-                <span class="text-[9px] text-slate-500 font-semibold truncate">Standby ready crew</span>
+                <span class="text-[9px] text-slate-500 font-semibold truncate">Available crew</span>
             </div>
         </div>
 
@@ -432,7 +435,7 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                     <div class="border border-slate-100 rounded-lg p-2 bg-slate-50/20">
                         <button type="button" @click="busesOpen = !busesOpen" class="w-full flex items-center justify-between text-xs font-bold text-slate-700 pb-2 px-1 border-none bg-transparent cursor-pointer">
                             <span class="flex items-center gap-1.5">
-                                <i class="ti ti-bus text-slate-500 text-sm"></i> Standby Buses ({{ count($availableBuses) }})
+                                <i class="ti ti-bus text-slate-500 text-sm"></i> Dispatchable Buses ({{ count($availableBuses) }})
                             </span>
                             <i class="ti text-xs text-slate-450" :class="busesOpen ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
                         </button>
@@ -451,7 +454,7 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                                 </div>
                             @empty
                                 <div class="text-[10px] text-slate-500 py-4 px-2 leading-relaxed text-center">
-                                    No standby buses available. Complete maintenance or release a vehicle to continue.
+                                    No dispatchable buses available. Complete maintenance or release a vehicle to continue.
                                 </div>
                             @endforelse
                         </div>
@@ -461,7 +464,7 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                     <div class="border border-slate-100 rounded-lg p-2 bg-slate-50/20">
                         <button type="button" @click="driversOpen = !driversOpen" class="w-full flex items-center justify-between text-xs font-bold text-slate-700 pb-2 px-1 border-none bg-transparent cursor-pointer">
                             <span class="flex items-center gap-1.5">
-                                <i class="ti ti-id text-slate-500 text-sm"></i> Standby Drivers ({{ count($availableDrivers) }})
+                                <i class="ti ti-id text-slate-500 text-sm"></i> Dispatchable Drivers ({{ count($availableDrivers) }})
                             </span>
                             <i class="ti text-xs text-slate-450" :class="driversOpen ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
                         </button>
@@ -480,7 +483,7 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                                 </div>
                             @empty
                                 <div class="text-[10px] text-slate-500 py-4 px-2 leading-relaxed text-center">
-                                    No standby drivers available. Assign or release a driver to continue.
+                                    No dispatchable drivers available. Assign or release a driver to continue.
                                 </div>
                             @endforelse
                         </div>
@@ -496,14 +499,14 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                 
                 <div class="flex items-center gap-2">
                     <!-- Loading Spinner -->
-                    <div wire:loading wire:target="refreshDispatchData" class="flex items-center gap-1">
+                    <div x-show="dispatchRefreshInFlight" x-cloak class="flex items-center gap-1">
                         <svg class="animate-spin h-3.5 w-3.5 text-[#003F87]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
                     </div>
                     <!-- Refresh button -->
-                    <button type="button" wire:click="refreshDispatchData" wire:loading.attr="disabled"
+                    <button type="button" @click="requestDispatchRefresh()" :disabled="dispatchRefreshInFlight"
                         class="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 hover:text-[#003F87] transition cursor-pointer bg-transparent border-none outline-none"
                         title="Refresh standby resources lists">
                         <i class="ti ti-refresh text-sm"></i>
@@ -534,19 +537,41 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                         <h3 class="text-[10px] font-extrabold uppercase tracking-widest text-[#003F87] mb-3">1. Route Assignment</h3>
                         <div class="space-y-1">
                             <label for="dispatch-route" class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Transit Route</label>
-                            <select wire:model.live="selectedRoute" id="dispatch-route" required tabindex="1"
+                            <select wire:change="$set('selectedRoute', $event.target.value)" id="dispatch-route" required tabindex="1"
                                 aria-required="true" aria-invalid="{{ $errors->has('selectedRoute') ? 'true' : 'false' }}"
                                 :class="!routeSelected ? 'border-[#003F87] ring-1 ring-[#003F87]/20 focus:ring-2 focus:ring-[#003F87]/20 bg-white' : 'bg-slate-50'"
                                 class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white focus:ring-2 focus:ring-[#003F87]/20 cursor-pointer">
-                                <option value="">Choose a route...</option>
+                                <option value="" @selected($selectedRoute === '')>Choose a route...</option>
                                 @foreach($routes as $route)
-                                    <option value="{{ $route['id'] }}">{{ $route['name'] }}</option>
+                                    <option value="{{ $route['id'] }}" @selected((string) $selectedRoute === (string) $route['id'])>{{ $route['name'] }}</option>
                                 @endforeach
                             </select>
                             @error('selectedRoute')
                                 <p class="text-[10px] text-red-500 font-semibold mt-1">{{ $message }}</p>
                             @enderror
                         </div>
+
+                        @php
+                            $selectedRouteVariants = collect($routeVariants[$selectedRoute] ?? []);
+                        @endphp
+                        @if($selectedRouteVariants->isNotEmpty())
+                            <div class="space-y-1 mt-3">
+                                <label for="dispatch-route-variant" class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Direction</label>
+                                <select wire:change="$set('selectedRouteVariant', $event.target.value)" id="dispatch-route-variant" tabindex="2"
+                                    aria-invalid="{{ $errors->has('selectedRouteVariant') ? 'true' : 'false' }}"
+                                    class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white focus:ring-2 focus:ring-[#003F87]/20 cursor-pointer bg-slate-50">
+                                    <option value="" @selected($selectedRouteVariant === '')>{{ $selectedRouteVariants->where('usable_for_dispatch', true)->count() > 1 ? 'Choose a direction...' : 'Use default direction' }}</option>
+                                    @foreach($selectedRouteVariants as $variant)
+                                        <option value="{{ $variant['id'] }}" @selected((string) $selectedRouteVariant === (string) $variant['id']) @disabled(! $variant['usable_for_dispatch'])>
+                                            {{ $variant['label'] }}{{ $variant['usable_for_dispatch'] ? '' : ' (' . $variant['geometry_status'] . ')' }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('selectedRouteVariant')
+                                    <p class="text-[10px] text-red-500 font-semibold mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        @endif
                     </div>
      
                     <!-- 2. Vehicle Section -->
@@ -554,21 +579,21 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                         <h3 class="text-[10px] font-extrabold uppercase tracking-widest text-[#003F87] mb-3">2. Vehicle Assignment</h3>
                         <div class="space-y-1">
                             <label for="dispatch-bus" class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Select Bus</label>
-                            <select wire:model.live="selectedBusId" id="dispatch-bus" required tabindex="2"
+                            <select wire:change="$set('selectedBusId', $event.target.value)" id="dispatch-bus" required tabindex="2"
                                 aria-required="true" aria-invalid="{{ $errors->has('selectedBusId') ? 'true' : 'false' }}"
                                 :class="routeSelected && !busSelected ? 'border-[#003F87] ring-1 ring-[#003F87]/20 focus:ring-2 focus:ring-[#003F87]/20 bg-white' : 'bg-slate-50'"
                                 class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white focus:ring-2 focus:ring-[#003F87]/20 cursor-pointer">
-                                <option value="">Choose a bus...</option>
+                                <option value="" @selected($selectedBusId === '')>Choose a bus...</option>
                                 <optgroup label="Available">
                                     @foreach(collect($allBuses)->where('selectable', true) as $bus)
-                                        <option value="{{ $bus['id'] }}">
+                                        <option value="{{ $bus['id'] }}" @selected((string) $selectedBusId === (string) $bus['id'])>
                                             {{ $bus['plate_number'] }} [{{ $bus['label'] }}]
                                         </option>
                                     @endforeach
                                 </optgroup>
                                 <optgroup label="Hindi Available" class="text-slate-400">
                                     @foreach(collect($allBuses)->where('selectable', false) as $bus)
-                                        <option value="{{ $bus['id'] }}" disabled>
+                                        <option value="{{ $bus['id'] }}" @selected((string) $selectedBusId === (string) $bus['id']) disabled>
                                             {{ $bus['plate_number'] }} [{{ $bus['label'] }}]
                                         </option>
                                     @endforeach
@@ -594,21 +619,21 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                         <h3 class="text-[10px] font-extrabold uppercase tracking-widest text-[#003F87] mb-3">3. Personnel Assignment</h3>
                         <div class="space-y-1">
                             <label for="dispatch-driver" class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Select Driver</label>
-                            <select wire:model.live="selectedDriverId" id="dispatch-driver" required tabindex="3"
+                            <select wire:change="$set('selectedDriverId', $event.target.value)" id="dispatch-driver" required tabindex="3"
                                 aria-required="true" aria-invalid="{{ $errors->has('selectedDriverId') ? 'true' : 'false' }}"
                                 :class="busSelected && !driverSelected ? 'border-[#003F87] ring-1 ring-[#003F87]/20 focus:ring-2 focus:ring-[#003F87]/20 bg-white' : 'bg-slate-50'"
                                 class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white focus:ring-2 focus:ring-[#003F87]/20 cursor-pointer">
-                                <option value="">Choose a driver...</option>
+                                <option value="" @selected($selectedDriverId === '')>Choose a driver...</option>
                                 <optgroup label="Available">
                                     @foreach(collect($allDrivers)->where('selectable', true) as $driver)
-                                        <option value="{{ $driver['id'] }}">
+                                        <option value="{{ $driver['id'] }}" @selected((string) $selectedDriverId === (string) $driver['id'])>
                                             {{ $driver['full_name'] }} [{{ $driver['label'] }}]
                                         </option>
                                     @endforeach
                                 </optgroup>
                                 <optgroup label="Hindi Available" class="text-slate-400">
                                     @foreach(collect($allDrivers)->where('selectable', false) as $driver)
-                                        <option value="{{ $driver['id'] }}" disabled>
+                                        <option value="{{ $driver['id'] }}" @selected((string) $selectedDriverId === (string) $driver['id']) disabled>
                                             {{ $driver['full_name'] }} [{{ $driver['label'] }}]
                                         </option>
                                     @endforeach
@@ -617,29 +642,13 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                             @error('selectedDriverId')
                                 <p class="text-[10px] text-red-500 font-semibold mt-1">{{ $message }}</p>
                             @enderror
-                        </div>
-                    </div>
-     
-                    <!-- 4. Schedule Section -->
-                    <div class="pb-2">
-                        <h3 class="text-[10px] font-extrabold uppercase tracking-widest text-[#003F87] mb-3">4. Schedule</h3>
-                        <div class="space-y-1">
-                            <label for="dispatch-time" class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Departure Time</label>
-                            <input wire:model.live="departureTime" id="dispatch-time" type="time" required tabindex="4"
-                                aria-required="true" aria-invalid="{{ $errors->has('departureTime') ? 'true' : 'false' }}"
-                                :class="driverSelected && !timeSelected ? 'border-[#003F87] ring-1 ring-[#003F87]/20 focus:ring-2 focus:ring-[#003F87]/20 bg-white' : 'bg-slate-50'"
-                                class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white focus:ring-2 focus:ring-[#003F87]/20 cursor-pointer">
-                            @error('departureTime')
-                                <p class="text-[10px] text-red-500 font-semibold mt-1">{{ $message }}</p>
-                            @enderror
-                        </div>
                     </div>
                 </div>
 
                 <!-- Live Dispatch Preview Panel -->
                 <div id="dispatch-preview-section" class="mt-6 rounded-xl border border-slate-200 bg-slate-50/50 p-5 select-none animate-fade-in">
                     <span class="text-[10px] font-extrabold uppercase tracking-widest text-[#003F87] block mb-3">Live Dispatch Preview</span>
-                    <div class="grid grid-cols-2 gap-4 text-xs">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                         <!-- Selected Route -->
                         <div>
                             <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Selected Route</span>
@@ -648,18 +657,6 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                                     {{ collect($routes)->firstWhere('id', $selectedRoute)['name'] ?? 'Route Selected' }}
                                 @else
                                     <span class="text-slate-450 italic font-semibold">No Route Selected</span>
-                                @endif
-                            </span>
-                        </div>
-
-                        <!-- Departure Time -->
-                        <div>
-                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Departure Time</span>
-                            <span class="font-bold text-slate-800 mt-0.5 block">
-                                @if($departureTime)
-                                    {{ Carbon::parse($departureTime)->format('h:i A') }}
-                                @else
-                                    <span class="text-slate-450 italic font-semibold">No Time Specified</span>
                                 @endif
                             </span>
                         </div>
@@ -695,6 +692,12 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                                 @endif
                             </span>
                         </div>
+
+                        <!-- Dispatch Time Read-Only Notice -->
+                        <div class="col-span-1 md:col-span-3 pt-2 border-t border-slate-200/60 flex items-center gap-1.5 text-[10.5px] font-semibold text-slate-500">
+                            <i class="ti ti-clock-play text-slate-400 text-xs"></i>
+                            <span>Dispatch Time: <strong class="text-slate-700">Automatically recorded when dispatch is confirmed.</strong></span>
+                        </div>
                     </div>
                 </div>
 
@@ -703,10 +706,9 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                     $routeOk = !empty($selectedRoute);
                     $busOk = !empty($selectedBusId) && (collect($allBuses)->firstWhere('id', $selectedBusId)['selectable'] ?? false);
                     $driverOk = !empty($selectedDriverId) && (collect($allDrivers)->firstWhere('id', $selectedDriverId)['selectable'] ?? false);
-                    $timeOk = !empty($departureTime);
                     $confirmOk = (bool)$confirmDispatch;
 
-                    $allValid = $routeOk && $busOk && $driverOk && $timeOk && $confirmOk;
+                    $allValid = $routeOk && $busOk && $driverOk && $confirmOk;
                 @endphp
                 <div class="mt-4 rounded-xl border border-slate-200 bg-white p-5 select-none">
                     <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block mb-3">Dispatch Readiness Checklist</span>
@@ -744,19 +746,8 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                             @endif
                         </div>
 
-                        <!-- Departure Time Check -->
-                        <div class="flex items-center gap-2">
-                            @if($timeOk)
-                                <i class="ti ti-circle-check text-emerald-500 text-base"></i>
-                                <span>Departure time selected</span>
-                            @else
-                                <i class="ti ti-circle-x text-rose-400 text-base"></i>
-                                <span class="text-slate-450">Departure time selected</span>
-                            @endif
-                        </div>
-
                         <!-- Confirmation Checkbox Check -->
-                        <div class="flex items-center gap-2 col-span-2">
+                        <div class="flex items-center gap-2">
                             @if($confirmOk)
                                 <i class="ti ti-circle-check text-emerald-500 text-base"></i>
                                 <span>Confirmation checked</span>
@@ -764,6 +755,12 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                                 <i class="ti ti-circle-x text-rose-400 text-base"></i>
                                 <span class="text-slate-450">Confirmation checked</span>
                             @endif
+                        </div>
+
+                        <!-- Informational Dispatch Time Notice -->
+                        <div class="flex items-center gap-2 col-span-2 text-slate-500 pt-1">
+                            <i class="ti ti-info-circle text-blue-500 text-base"></i>
+                            <span>Dispatch time will be recorded automatically upon confirmation.</span>
                         </div>
                     </div>
 
@@ -785,9 +782,9 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                 <!-- Confirmation Checkbox Input -->
                 <div class="pt-4 border-t border-slate-100 space-y-1 mt-4">
                     <div class="flex items-start gap-2.5">
-                        <input type="checkbox" id="confirm-dispatch" wire:model.live="confirmDispatch" required tabindex="5"
+                        <input type="checkbox" id="confirm-dispatch" wire:change="$set('confirmDispatch', $event.target.checked)" @checked($confirmDispatch) required tabindex="4"
                             aria-required="true" aria-invalid="{{ $errors->has('confirmDispatch') ? 'true' : 'false' }}"
-                            :class="timeSelected && !confirmSelected ? 'border-[#003F87] ring-1 ring-[#003F87]/20 focus:ring-2 focus:ring-[#003F87]/20' : 'border-slate-200'"
+                            :class="driverSelected && !confirmSelected ? 'border-[#003F87] ring-1 ring-[#003F87]/20 focus:ring-2 focus:ring-[#003F87]/20' : 'border-slate-200'"
                             class="h-4 w-4 rounded text-[#003F87] focus:ring-[#003F87]/20 mt-0.5 cursor-pointer">
                         <label for="confirm-dispatch" class="text-xs font-semibold text-slate-600 select-none cursor-pointer">
                             I confirm that the selected bus and driver are fit for service and assigned route is correct.
@@ -868,9 +865,9 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                             });
      
                             const originalSwitchScreen = window.switchScreen;
-                            window.switchScreen = (screenName) => {
+                            window.switchScreen = async (screenName) => {
                                 if (screenName !== 'dispatch' && this.isDirty()) {
-                                    if (!confirm('You have unsaved changes in the Dispatch Builder. Are you sure you want to navigate away?')) {
+                                    if (!(await GoPasigUI.confirm('You have unsaved changes in the Dispatch Builder. Are you sure you want to navigate away?'))) {
                                         return;
                                     }
                                 }
@@ -924,12 +921,10 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
                             const r = this.$wire.get('selectedRoute');
                             const b = this.$wire.get('selectedBusId');
                             const d = this.$wire.get('selectedDriverId');
-                            const t = this.$wire.get('departureTime');
                             const c = this.$wire.get('confirmDispatch');
                             return (r && r !== '') ||
                                    (b && b !== '') ||
                                    (d && d !== '') ||
-                                   (t && t !== '') ||
                                    c;
                         }
                     };
@@ -938,3 +933,4 @@ wire:poll.visible.{{ $refreshInterval }}s="refreshDispatchData">
         });
     </script>
 </div>
+

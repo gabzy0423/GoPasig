@@ -9,17 +9,17 @@ class MaintenanceRecordPolicy
 {
     public function view(User $user, MaintenanceRecord $record): bool
     {
-        return $user->role === 'admin' || $user->role === 'dispatcher';
+        return $user->role === 'admin' || $user->role === 'fleet_manager';
     }
 
     public function create(User $user): bool
     {
-        return $user->role === 'admin' || $user->role === 'dispatcher';
+        return $user->role === 'admin' || $user->role === 'fleet_manager';
     }
 
     public function update(User $user, MaintenanceRecord $record): bool
     {
-        return $user->role === 'admin' || $user->role === 'dispatcher';
+        return $user->role === 'admin' || $user->role === 'fleet_manager';
     }
 
     public function delete(User $user, MaintenanceRecord $record): bool

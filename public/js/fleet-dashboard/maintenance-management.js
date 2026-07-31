@@ -20,13 +20,22 @@ let selectedBusPlate = null;
 let currentLogsPage = 1;
 
 // Document Ready Setup
-document.addEventListener('DOMContentLoaded', () => {
-    // Only execute if on the maintenance page
-    if (document.getElementById('log-type-filter') || document.getElementById('log-status-filter')) {
-        setupEventListeners();
-        initializeInitialData();
-    }
-});
+let fleetMaintenanceModuleInitialized = false;
+
+function initFleetMaintenanceModule() {
+    if (fleetMaintenanceModuleInitialized || !(document.getElementById('log-type-filter') || document.getElementById('log-status-filter'))) return;
+    fleetMaintenanceModuleInitialized = true;
+    setupEventListeners();
+    initializeInitialData();
+}
+
+window.initFleetMaintenanceModule = initFleetMaintenanceModule;
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFleetMaintenanceModule, { once: true });
+} else {
+    initFleetMaintenanceModule();
+}
 
 // Setup DOM Event Listeners
 function setupEventListeners() {
@@ -246,7 +255,7 @@ function updateDashboardDOM(data) {
                 listHtml += `
                     <div onclick="openBusDrawer('${entry.bus_id}')" class="rounded-xl border border-black/10 bg-white px-3 py-3 border-l-[3px] border-l-[#185FA5] hover:bg-slate-50 transition cursor-pointer">
                         <p class="text-[13px] font-semibold text-[#001F44]">${entry.scheduled_date}</p>
-                        <p class="text-[12px] text-slate-500 mt-0.5">Bus <strong class="text-slate-700 font-mono">${entry.bus_id}</strong> — ${entry.description}</p>
+                        <p class="text-[12px] text-slate-500 mt-0.5">Bus <strong class="text-slate-700 font-mono">${entry.bus_id}</strong> Ã¢â‚¬â€ ${entry.description}</p>
                     </div>
                 `;
             });
@@ -291,8 +300,8 @@ function updateDashboardDOM(data) {
                     <td class="py-3 px-3 font-mono text-[#003F87] font-bold">${row.bus_id}</td>
                     <td class="py-3 px-3"><span class="font-medium text-slate-800">${row.type}</span></td>
                     <td class="py-3 px-3 text-slate-500 truncate" title="${row.description}">${row.description}</td>
-                    <td class="py-3 px-3 text-slate-700 font-medium">${row.technician_name || '—'}</td>
-                    <td class="py-3 px-3 text-slate-700 font-medium">${row.inspected_by || '—'}</td>
+                    <td class="py-3 px-3 text-slate-700 font-medium">${row.technician_name || 'Ã¢â‚¬â€'}</td>
+                    <td class="py-3 px-3 text-slate-700 font-medium">${row.inspected_by || 'Ã¢â‚¬â€'}</td>
                     <td class="py-3 px-3">
                         <span class="rounded px-2.5 py-0.5 text-[11px] font-bold border uppercase ${statusClasses[row.status] || 'bg-slate-100 text-slate-600'}">${statusLabels[row.status] || row.status}</span>
                     </td>
@@ -489,7 +498,7 @@ async function openDetailDrawer(id) {
             document.getElementById('drawer-record-bus-plate').innerText = `Bus ${rec.bus_plate}`;
             document.getElementById('drawer-record-description').innerText = rec.description;
             document.getElementById('drawer-record-type').innerText = rec.type;
-            document.getElementById('drawer-record-technician').innerText = rec.technician_name || '—';
+            document.getElementById('drawer-record-technician').innerText = rec.technician_name || 'Ã¢â‚¬â€';
             document.getElementById('drawer-record-cost').innerText = `PHP ${rec.cost_formatted}`;
             document.getElementById('drawer-record-date').innerText = rec.scheduled_at_formatted;
 
@@ -712,7 +721,7 @@ async function editRecord(id) {
 
 // Delete Maintenance Record Action
 async function deleteRecord(id) {
-    if (!confirm('Are you sure you want to permanently delete this maintenance log?')) return;
+    if (!(await GoPasigUI.confirm('Are you sure you want to permanently delete this maintenance log?'))) return;
 
     try {
         const response = await fetch(`${window.FleetMaintenanceConfig.deleteUrl}/${id}`, {
@@ -809,7 +818,7 @@ async function submitCompleteMaintenance(event) {
     // Retrieve recordId and validate defensively
     const recordId = document.getElementById('complete-maintenance-id').value;
     if (!recordId || recordId === 'null' || recordId === 'undefined' || recordId === 'NaN') {
-        alert('Error: No active maintenance record selected. Please close and re-open the completion modal.');
+        GoPasigUI.alert('Error: No active maintenance record selected. Please close and re-open the completion modal.');
         return;
     }
     
@@ -821,7 +830,7 @@ async function submitCompleteMaintenance(event) {
     const testDrive = document.getElementById('chk-test-drive').checked;
     
     if (!brakes || !battery || !tires || !lights || !testDrive) {
-        alert('Please complete all inspection items before completing the maintenance.');
+        GoPasigUI.alert('Please complete all inspection items before completing the maintenance.');
         return;
     }
     
@@ -830,11 +839,11 @@ async function submitCompleteMaintenance(event) {
     const recommendation = document.getElementById('comp-recommendation').value.trim();
     
     if (result === 'Passed with Observation' && !recommendation) {
-        alert('Recommendation is required for buses with observations.');
+        GoPasigUI.alert('Recommendation is required for buses with observations.');
         return;
     }
     if (result === 'Failed Inspection' && !recommendation) {
-        alert('Recommendation is required before closing the maintenance record.');
+        GoPasigUI.alert('Recommendation is required before closing the maintenance record.');
         return;
     }
     
@@ -887,7 +896,7 @@ async function submitCompleteMaintenance(event) {
         
     } catch (err) {
         console.error('Error submitting completion details:', err);
-        alert(err.message || 'Error occurred while saving completion details.');
+        GoPasigUI.alert(err.message || 'Error occurred while saving completion details.');
     } finally {
         document.getElementById('complete-submit-text').innerText = 'Complete Service';
         document.getElementById('complete-submit-spinner').classList.add('hidden');

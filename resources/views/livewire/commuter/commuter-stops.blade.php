@@ -32,7 +32,8 @@
             </div>
             
             <button @click="requestLocation()" class="w-[42px] h-[42px] bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-center text-[#003F87] active:scale-95 transition-transform" title="Request Proximity Location">
-                <i class="ti ti-current-location text-lg"></i>
+                <i x-show="!hasLocation" class="ti ti-current-location text-lg"></i>
+                <i x-show="hasLocation" x-cloak class="ti ti-check text-lg"></i>
             </button>
         </div>
         
@@ -70,7 +71,9 @@
                 @php
                     $dotColor = $stop->route?->color ?: '#003F87';
                 @endphp
-                <div wire:click="selectStop({{ $stop->id }})" 
+                <div wire:click="selectStop({{ $stop->id }})"
+                     wire:loading.class="opacity-60 pointer-events-none"
+                     wire:target="selectStop"
                      onclick="focusStopOnMap({{ $stop->id }}, {{ $stop->lat }}, {{ $stop->lng }}, '{{ addslashes($stop->name) }}')"
                      class="bg-white border {{ $selectedStopId === $stop->id ? 'border-[#003F87]' : 'border-slate-100' }} rounded-2xl p-4 flex items-center justify-between cursor-pointer hover:border-slate-200 active:scale-[0.98] transition-all select-none shadow-[0_4px_24px_rgba(15,23,42,0.01)]">
                     
@@ -94,8 +97,9 @@
                             <span class="text-xs font-black text-[#003F87] block">{{ $stop->distance }} km</span>
                             <span class="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mt-0.5">away</span>
                         @else
-                            <i class="ti ti-map-pin text-slate-300 text-sm block"></i>
+                            <i wire:loading.remove wire:target="selectStop({{ $stop->id }})" class="ti ti-map-pin text-slate-300 text-sm block"></i>
                         @endif
+                        <i wire:loading wire:target="selectStop({{ $stop->id }})" class="ti ti-loader-2 text-[#003F87] text-sm block animate-spin"></i>
                     </div>
 
                 </div>
@@ -132,8 +136,12 @@
                         <span class="text-[10px] font-extrabold text-[#003F87] uppercase tracking-widest leading-none">Selected Stop Landmark</span>
                         <h3 class="text-[15.5px] font-black text-slate-800 leading-snug mt-1.5">{{ $selectedStop->name }}</h3>
                     </div>
-                    <button @click="showDrawer = false; $wire.closeDrawer()" class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-slate-600 active:scale-90 transition-transform flex-shrink-0">
-                        <i class="ti ti-x text-sm"></i>
+                    <button @click="showDrawer = false; $wire.closeDrawer()"
+                            wire:loading.attr="disabled"
+                            wire:target="closeDrawer"
+                            class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-slate-600 active:scale-90 transition-transform flex-shrink-0 disabled:opacity-60 disabled:pointer-events-none">
+                        <i wire:loading.remove wire:target="closeDrawer" class="ti ti-x text-sm"></i>
+                        <i wire:loading wire:target="closeDrawer" class="ti ti-loader-2 text-sm animate-spin"></i>
                     </button>
                 </div>
 
@@ -175,7 +183,7 @@
                                 <div class="flex justify-between items-center">
                                     <span class="bg-white border border-[#003F87]/10 px-2 py-0.5 rounded text-[11px] font-mono font-bold text-slate-700 tracking-tight shadow-sm">{{ $nextBus->plate_number }}</span>
                                     
-                                    @if($nextBus->eta <= 5)
+                                    @if($nextBus->eta !== null && $nextBus->eta <= 5)
                                         <span class="px-2.5 py-0.5 text-[9.5px] font-extrabold bg-[#EAF3DE] text-[#3B6D11] border border-emerald-100 rounded-full leading-none">Arriving soon</span>
                                     @else
                                         <span class="px-2.5 py-0.5 text-[9.5px] font-extrabold bg-[#E6F1FB] text-[#0C447C] border border-sky-100 rounded-full leading-none">En route</span>
@@ -183,8 +191,9 @@
                                 </div>
                                 
                                 <div class="flex flex-col leading-tight mt-1 text-slate-700">
-                                    <span class="text-xs font-bold text-slate-450 leading-none">Expected in</span>
-                                    <span class="text-2xl font-black text-[#003F87] mt-1">{{ $nextBus->eta }} mins</span>
+                                    <span class="text-xs font-bold text-slate-450 leading-none">ETA</span>
+                                    <span class="text-xl font-black text-[#003F87] mt-1">{{ $nextBus->eta_label }}</span>
+                                    <span class="text-[10px] font-bold text-slate-400 mt-1">{{ $nextBus->eta_description }}</span>
                                 </div>
                                 
                                 <div class="flex items-center gap-1.5 text-xs font-bold text-slate-500 pl-0.5 border-t border-slate-100 pt-2.5">
@@ -215,3 +224,4 @@
     </div>
 
 </div>
+

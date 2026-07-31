@@ -28,7 +28,7 @@ class FleetRoutePerformanceTest extends TestCase
 
     public function test_dispatcher_can_access_route_performance(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $response = $this->actingAs($dispatcher)->get('/fleet/routes');
         $response->assertRedirect('/fleet/dashboard?tab=routes');
@@ -59,7 +59,7 @@ class FleetRoutePerformanceTest extends TestCase
 
     public function test_export_route_report_works(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $response = $this->actingAs($dispatcher)->get('/fleet/api/routes-export?route_id=all');
 
@@ -70,7 +70,7 @@ class FleetRoutePerformanceTest extends TestCase
 
     public function test_api_routes_data_filtering_works(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $response = $this->actingAs($dispatcher)->get('/fleet/api/routes-data?route_id=1');
         $response->assertStatus(200);
@@ -86,7 +86,7 @@ class FleetRoutePerformanceTest extends TestCase
 
     public function test_api_deviation_filtering_works(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $response = $this->actingAs($dispatcher)->json('GET', '/fleet/api/routes-data', [
             'route_id' => '1',

@@ -236,7 +236,7 @@
             bannerTitle: '✓ Safe for Operation',
             bannerLines: [
                 'Bus will return to <strong>Standby (Inactive)</strong> after completion.',
-                'Bus will be available for dispatch.'
+                'Bus will return to standby for dispatch.'
             ],
             recommendationRequired: false,
             recommendationPlaceholder: 'Optional. Note any minor observations or follow-up schedule if needed.',
@@ -321,10 +321,10 @@
         document.getElementById('total_cost_display').value = '₱' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
-    function handleFormSubmit(event) {
+    async function handleFormSubmit(event) {
         const result = document.getElementById('maintenance_result').value;
         if (result === 'Failed Inspection') {
-            const confirmed = confirm(
+            const confirmed = await GoPasigUI.confirm(
                 'This maintenance inspection has FAILED.\n\n' +
                 'The bus will remain under Maintenance and cannot be dispatched until a new maintenance ticket is created and passed.\n\n' +
                 'Continue?'
@@ -343,3 +343,5 @@
     });
 </script>
 @endsection
+
+

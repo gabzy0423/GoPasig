@@ -5,11 +5,13 @@ namespace App\Livewire\Commuter;
 use Livewire\Component;
 use App\Models\Route;
 use App\Models\Stop;
-use App\Models\Bus;
 use App\Models\Alert;
 use App\Models\RouteDuration;
+use App\Models\RouteVariant;
 use App\Models\SystemSetting;
 use App\Models\Terminal;
+use App\Services\CommuterDashboardCacheService;
+use App\Services\CommuterEtaProvenanceService;
 
 class CommuterRoutes extends Component
 {
@@ -34,43 +36,50 @@ class CommuterRoutes extends Component
 
     public function loadRoutes()
     {
-        // Fetch routes from the database
-        $routes = Route::getAllCached()->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive']);
-        $stopsByRoute = Stop::getAllCached()->groupBy('route_id');
-        $activeBusesByRoute = \App\Services\CommuterDashboardCacheService::getActiveBuses()->groupBy('route_id');
+        $routes = Route::getCanonicalProductionCached();
+        $stopsByRoute = Stop::getAllCached()->whereIn('route_id', $routes->pluck('id'))->groupBy('route_id');
+        $defaultVariantsByRoute = RouteVariant::with(['stops' => fn ($query) => $query->orderBy('sequence')])
+            ->where('is_default', true)
+            ->get()
+            ->keyBy('route_id');
+        $activeBusesByRoute = CommuterDashboardCacheService::getActiveBuses()->groupBy('route_id');
+        $etaProvenanceService = app(CommuterEtaProvenanceService::class);
 
-        $this->routes = $routes->map(function ($route) use ($stopsByRoute, $activeBusesByRoute) {
-            $stops = $stopsByRoute->get($route->id, collect());
+        $this->routes = $routes->values()->map(function ($route) use ($stopsByRoute, $defaultVariantsByRoute, $activeBusesByRoute, $etaProvenanceService) {
+            $defaultVariant = $defaultVariantsByRoute->get($route->id);
+            $stops = $defaultVariant ? $defaultVariant->stops : $stopsByRoute->get($route->id, collect());
 
-            // Determine origin (first stop) and destination (last stop)
-            $origin = $stops->first() ? $stops->first()->name : SystemSetting::get('default_terminal_name', Terminal::getDefaultName());
-            $destination = $stops->last() ? $stops->last()->name : SystemSetting::get('default_terminal_label', Terminal::getDefaultName());
+            $origin = $defaultVariant?->origin_name
+                ?: ($stops->first() ? $stops->first()->name : SystemSetting::get('default_terminal_name', Terminal::getDefaultName()));
+            $destination = $defaultVariant?->destination_name
+                ?: ($stops->last() ? $stops->last()->name : SystemSetting::get('default_terminal_label', Terminal::getDefaultName()));
 
-            // Clean up the origin/destination name if it has long text, or keep it as is
-            // Filter active buses for this route
             $activeBusesOnRoute = $activeBusesByRoute->get($route->id, collect());
             $activeBusCount = $activeBusesOnRoute->count();
-
-            // Next bus ETA is the minimum ETA of active buses
-            $nextBusEta = $activeBusCount > 0 ? $activeBusesOnRoute->min('eta') : null;
-
-            // Get dynamic duration fallback from database
+            $nextBus = $activeBusCount > 0 ? $activeBusesOnRoute->sortBy('eta')->first() : null;
+            $nextBusProvenance = $nextBus ? $etaProvenanceService->forBus($nextBus) : null;
             $fallbackDuration = RouteDuration::getDuration($route->id, now()->englishDayOfWeek, null);
 
             return [
                 'route_id' => $route->id,
-                'route_code' => 'R' . $route->id,
-                'route_name' => 'Route ' . $route->id . ' — ' . ($route->description ?? $route->name),
+                'route_variant_id' => $defaultVariant?->id,
+                'direction' => $defaultVariant?->direction,
+                'route_code' => $route->name,
+                'route_name' => $route->name . ' - ' . ($route->description ?? $route->name),
                 'origin' => $origin,
                 'destination' => $destination,
                 'route_color' => $route->color ?: SystemSetting::get('default_route_color', '#003F87'),
                 'total_stops' => $stops->count(),
+                'pickup_point_count' => $stops->where('stop_type', 'pickup_point')->count(),
+                'designated_stop_count' => $stops->where('stop_type', 'designated_stop')->count(),
                 'est_travel_minutes' => $route->travel_time_minutes ?: $fallbackDuration,
                 'active_bus_count' => $activeBusCount,
-                'next_bus_eta' => $nextBusEta,
-                'stop_names' => $stops->pluck('name')->toArray(), // for client-side search!
+                'next_bus_eta' => $nextBusProvenance?->minutes,
+                'next_bus_eta_label' => $nextBusProvenance?->label,
+                'next_bus_eta_provenance_state' => $nextBusProvenance?->state,
+                'stop_names' => $stops->pluck('name')->toArray(),
             ];
-        })->toArray();
+        })->values()->toArray();
     }
 
     public function selectRoute($routeId)
@@ -84,120 +93,106 @@ class CommuterRoutes extends Component
             return;
         }
 
-        // 1. Fetch all stops for the selected route from cached collection
-        $stops = Stop::getAllCached()
-            ->where('route_id', $this->selectedRouteId)
-            ->sortBy('sequence');
+        $route = Route::getCanonicalProductionCached()->firstWhere('id', $this->selectedRouteId);
 
-        // 2. Fetch all active buses on this route
-        $buses = \App\Services\CommuterDashboardCacheService::getActiveBuses()
-            ->where('route_id', $this->selectedRouteId);
-
-        // 3. Map stops and estimate arrival times
-        $route = Route::getAllCached()
-            ->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])
-            ->firstWhere('id', $this->selectedRouteId);
-        $fallbackDuration = RouteDuration::getDuration($this->selectedRouteId, now()->englishDayOfWeek, null);
-        $routeTravelTime  = $route ? ($route->travel_time_minutes ?: $fallbackDuration) : $fallbackDuration;
-
-        $stopsOrdered    = $stops->values();
-        $totalStopsCount = $stopsOrdered->count();
-
-        // Distance-weighted cumulative offsets: offset[i] = minutes from departure to stop i
-        $offsets = Stop::getDistanceWeightedOffsets($stopsOrdered, $routeTravelTime);
-
-        // Map sequence → offset minutes
-        $seqToOffset = [];
-        foreach ($stopsOrdered as $idx => $s) {
-            $seqToOffset[$s->sequence] = $offsets[$idx] ?? ($idx * ($routeTravelTime / max(1, $totalStopsCount - 1)));
+        if (! $route) {
+            $this->selectedRouteId = null;
+            $this->routeStops = [];
+            $this->activeBuses = [];
+            return;
         }
 
-        $this->routeStops = $stopsOrdered->map(function ($stop) use ($buses, $seqToOffset, $routeTravelTime, $totalStopsCount) {
-            $nextBusId         = null;
-            $nextBusEtaMinutes = null;
+        $defaultVariant = RouteVariant::with(['stops' => fn ($query) => $query->orderBy('sequence')])
+            ->where('route_id', $this->selectedRouteId)
+            ->where('is_default', true)
+            ->first();
 
-            foreach ($buses as $bus) {
-                $busNextStop = Stop::getAllCached()
-                    ->where('route_id', $this->selectedRouteId)
-                    ->where('name', $bus->next_stop)
-                    ->first();
+        $stops = $defaultVariant
+            ? $defaultVariant->stops
+            : Stop::getAllCached()->where('route_id', $this->selectedRouteId)->sortBy('sequence')->values();
 
-                $busNextSequence = $busNextStop ? $busNextStop->sequence : 1;
+        $buses = CommuterDashboardCacheService::getActiveBuses()->where('route_id', $this->selectedRouteId);
+        $etaProvenanceService = app(CommuterEtaProvenanceService::class);
 
-                if ($stop->sequence >= $busNextSequence) {
-                    // Extra minutes = distance-weighted offset difference between target and bus's next stop
-                    $extraMins  = ($seqToOffset[$stop->sequence] ?? 0) - ($seqToOffset[$busNextSequence] ?? 0);
-                    $etaAtStop  = round($bus->eta + $extraMins);
-
-                    if ($nextBusEtaMinutes === null || $etaAtStop < $nextBusEtaMinutes) {
-                        $nextBusEtaMinutes = $etaAtStop;
-                        $nextBusId = $bus->id;
-                    }
-                }
-            }
+        $this->routeStops = $stops->values()->map(function ($stop) use ($buses, $etaProvenanceService) {
+            $bestBus = $buses->sortBy('eta')->first();
+            $stopId = $stop->canonical_stop_id ?? $stop->id;
+            $routeVariantStopId = $stop instanceof \App\Models\RouteVariantStop ? $stop->id : null;
+            $etaProvenance = $bestBus ? $etaProvenanceService->forBus($bestBus, $stopId, $routeVariantStopId) : null;
 
             return [
-                'stop_id'              => $stop->id,
-                'stop_name'            => $stop->name,
-                'stop_sequence'        => $stop->sequence,
-                'next_bus_id'          => $nextBusId,
-                'next_bus_eta_minutes' => $nextBusEtaMinutes,
+                'stop_id' => $stopId,
+                'route_variant_stop_id' => $routeVariantStopId,
+                'stop_name' => $stop->name,
+                'stop_sequence' => $stop->sequence,
+                'stop_type' => $stop->stop_type ?? 'designated_stop',
+                'next_bus_id' => $bestBus?->id,
+                'next_bus_eta_minutes' => $etaProvenance?->minutes,
+                'next_bus_eta_label' => $etaProvenance?->label,
+                'next_bus_eta_provenance_state' => $etaProvenance?->state,
             ];
         })->toArray();
 
-        // 4. Map active buses
-        $this->activeBuses = $buses->map(function ($bus) {
+        $this->activeBuses = $buses->map(function ($bus) use ($etaProvenanceService) {
             $driverName = $bus->driver_name;
             if (!$driverName) {
                 $driver = \App\Models\Driver::where('assigned_bus', $bus->plate_number)->first();
                 $driverName = $driver?->name ?? 'No Driver Assigned';
             }
 
+            $etaProvenance = $etaProvenanceService->forBus($bus);
+
             return [
                 'bus_id' => $bus->id,
                 'plate_number' => $bus->plate_number,
                 'driver_name' => $driverName,
-                'status' => $bus->eta >= $bus->getRouteDelayThreshold() ? 'Delayed' : 'On Time', // On Time / Delayed
+                'status' => $bus->eta >= $bus->getRouteDelayThreshold() ? 'Delayed' : 'On Time',
                 'passengers_onboard' => $bus->passengers,
                 'capacity' => $bus->capacity,
                 'next_stop_name' => $bus->next_stop ?: 'Terminal',
-                'next_stop_eta_minutes' => $bus->eta,
+                'next_stop_eta_minutes' => $etaProvenance->minutes,
+                'next_stop_eta_label' => $etaProvenance->label,
+                'next_stop_eta_provenance_state' => $etaProvenance->state,
             ];
         })->toArray();
 
-        // Find the route object to pass map details
-        $route = Route::find($this->selectedRouteId);
+        $routeModel = Route::find($this->selectedRouteId);
+        $stopsOrdered = $stops->values();
+        $mapStops = $stopsOrdered
+            ->filter(fn ($s) => $s->lat !== null && $s->lng !== null)
+            ->map(fn ($s) => [
+                'name' => $s->name,
+                'lat' => (float) $s->lat,
+                'lng' => (float) $s->lng,
+                'stop_type' => $s->stop_type ?? 'designated_stop',
+            ])->values();
 
-        // Dispatch updated route coordinates and stops for the interactive desktop map
         $this->dispatch('routeDetailsLoaded', [
             'routeId' => $this->selectedRouteId,
-            'polyline' => $route ? $route->polyline_coordinates : [],
-            'color' => $route ? ($route->color ?: SystemSetting::get('default_route_color', '#003F87')) : SystemSetting::get('default_route_color', '#003F87'),
-            'stops' => $stops->map(function ($s) {
-                return [
-                    'name' => $s->name,
-                    'lat' => (float) $s->lat,
-                    'lng' => (float) $s->lng,
-                ];
-            })->toArray(),
+            'routeVariantId' => $defaultVariant?->id,
+            'direction' => $defaultVariant?->direction,
+            'originName' => $defaultVariant?->origin_name,
+            'destinationName' => $defaultVariant?->destination_name,
+            'polyline' => $defaultVariant ? ($defaultVariant->polyline_coordinates ?: []) : ($routeModel ? $routeModel->polyline_coordinates : []),
+            'color' => $routeModel ? ($routeModel->color ?: SystemSetting::get('default_route_color', '#003F87')) : SystemSetting::get('default_route_color', '#003F87'),
+            'stops' => $mapStops->toArray(),
         ]);
     }
 
     public function setArrivalAlert($stopId, $minutesBefore)
     {
-        if (!$stopId)
+        if (!$stopId || !is_numeric($stopId)) {
             return;
+        }
 
-        // Store the alert in the database alerts table
         Alert::create([
-            'stop_id' => $stopId,
+            'stop_id' => (int) $stopId,
             'minutes_before' => (int) $minutesBefore,
             'status' => 'active',
         ]);
 
         $stop = Stop::find($stopId);
 
-        // Dispatch browser event to trigger system notifications and confirmation toasts
         $this->dispatch('alert-created', [
             'stop_name' => $stop ? $stop->name : 'Selected Stop',
             'minutes' => (int) $minutesBefore,
@@ -208,7 +203,7 @@ class CommuterRoutes extends Component
     {
         if ($this->selectedRouteId) {
             $selectedRoute = Route::find($this->selectedRouteId);
-            if ($selectedRoute && in_array(strtolower($selectedRoute->status), ['suspended', 'inactive'])) {
+            if ($selectedRoute && ! Route::getCanonicalProductionCached()->contains('id', $selectedRoute->id)) {
                 $this->dispatch('route-suspended', [
                     'message' => 'This route has been suspended due to an operational issue. Please select another route.'
                 ]);
@@ -218,12 +213,10 @@ class CommuterRoutes extends Component
             }
         }
 
-        // Keep active buses, stops, and ETAs updated in real-time when polling occurs
         if ($this->selectedRouteId !== $this->previousRouteId) {
             $this->selectRoute($this->selectedRouteId);
         }
 
-        // Always reload active counts for routes list
         $this->loadRoutes();
 
         return view('livewire.commuter.commuter-routes');

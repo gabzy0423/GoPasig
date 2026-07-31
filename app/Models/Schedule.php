@@ -17,6 +17,7 @@ class Schedule extends Model
 
     protected $fillable = [
         'route_id',
+        'route_variant_id',
         'service_date',
         'bus_id',
         'driver_id',
@@ -38,6 +39,11 @@ class Schedule extends Model
         return $this->belongsTo(Route::class);
     }
 
+    public function routeVariant()
+    {
+        return $this->belongsTo(RouteVariant::class);
+    }
+
     public function bus()
     {
         return $this->belongsTo(Bus::class);
@@ -46,5 +52,10 @@ class Schedule extends Model
     public function driver()
     {
         return $this->belongsTo(Driver::class);
+    }
+
+    public function trip()
+    {
+        return $this->hasOne(Trip::class);
     }
 }

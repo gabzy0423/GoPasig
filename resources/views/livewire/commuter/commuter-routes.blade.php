@@ -100,9 +100,8 @@
                 <div class="flex justify-between items-center text-[12px]">
                     <div class="flex items-center gap-1.5">
                         <span class="text-slate-400">Next bus:</span>
-                        @if($route['next_bus_eta'] !== null)
-                            <span class="text-[13px] font-medium text-[#003F87]">Arriving in {{ $route['next_bus_eta'] }}
-                                min</span>
+                        @if($route['next_bus_eta_label'])
+                            <span class="text-[13px] font-medium text-[#003F87]">{{ $route['next_bus_eta_label'] }}</span>
                         @else
                             <span class="text-[12px] text-slate-400 italic">No active bus</span>
                         @endif
@@ -126,9 +125,15 @@
 
                 <!-- BOTTOM ROW: Details Button -->
                 <button wire:click="selectRoute({{ $route['route_id'] }})"
-                    class="w-full mt-1 border border-[#003F87] text-[#003F87] text-[13px] font-medium py-2 px-3 rounded-lg flex items-center justify-between hover:bg-[#003F87]/5 active:scale-[0.98] transition-all">
-                    <span>View route details</span>
-                    <i class="ti ti-chevron-right"></i>
+                    wire:loading.attr="disabled"
+                    wire:target="selectRoute({{ $route['route_id'] }})"
+                    class="w-full mt-1 border border-[#003F87] text-[#003F87] text-[13px] font-medium py-2 px-3 rounded-lg flex items-center justify-between hover:bg-[#003F87]/5 active:scale-[0.98] transition-all disabled:opacity-60 disabled:pointer-events-none">
+                    <span wire:loading.remove wire:target="selectRoute({{ $route['route_id'] }})">View route details</span>
+                    <span wire:loading wire:target="selectRoute({{ $route['route_id'] }})" class="inline-flex items-center gap-1.5">
+                        <i class="ti ti-loader-2 animate-spin"></i>
+                        Loading
+                    </span>
+                    <i wire:loading.remove wire:target="selectRoute({{ $route['route_id'] }})" class="ti ti-chevron-right"></i>
                 </button>
             </div>
         @endforeach
@@ -197,8 +202,11 @@
                     </p>
                 </div>
                 <button @click="$wire.set('selectedRouteId', null)"
-                    class="w-7 h-7 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-slate-600 active:scale-90 transition-transform">
-                    <i class="ti ti-x text-[16px]"></i>
+                    wire:loading.attr="disabled"
+                    wire:target="selectedRouteId"
+                    class="w-7 h-7 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-slate-600 active:scale-90 transition-transform disabled:opacity-60 disabled:pointer-events-none">
+                    <i wire:loading.remove wire:target="selectedRouteId" class="ti ti-x text-[16px]"></i>
+                    <i wire:loading wire:target="selectedRouteId" class="ti ti-loader-2 text-[16px] animate-spin"></i>
                 </button>
             </div>
 
@@ -261,12 +269,14 @@
 
                                 <!-- Right Stop Info -->
                                 <div class="flex-1 pb-4 flex flex-col justify-start">
-                                    <span
-                                        class="text-[14px] font-medium text-slate-800 leading-normal">{{ $stop['stop_name'] }}</span>
-                                    @if($stop['next_bus_eta_minutes'] !== null)
+                                    <span class="text-[14px] font-medium text-slate-800 leading-normal">{{ $stop['stop_name'] }}</span>
+                                    <span class="text-[10px] font-extrabold uppercase tracking-wide {{ ($stop['stop_type'] ?? 'designated_stop') === 'pickup_point' ? 'text-[#0F6E56]' : 'text-[#003F87]' }} mt-0.5">
+                                        {{ ($stop['stop_type'] ?? 'designated_stop') === 'pickup_point' ? 'Pick-up Point' : 'Designated Stop' }}
+                                    </span>
+                                    @if($stop['next_bus_eta_label'])
                                         <span class="text-[12px] font-medium text-[#0F6E56] mt-0.5 flex items-center gap-1">
                                             <i class="ti ti-bus text-xs"></i>
-                                            <span>Bus approaching &mdash; arriving in {{ $stop['next_bus_eta_minutes'] }} min</span>
+                                            <span>{{ $stop['next_bus_eta_label'] }}</span>
                                         </span>
                                     @else
                                         <span class="text-[12px] text-slate-400 italic mt-0.5">No bus approaching</span>
@@ -321,7 +331,7 @@
 
                                 <!-- Row 4: Next stop info -->
                                 <div class="text-[11px] text-slate-400 font-medium truncate border-t border-slate-50 pt-1.5">
-                                    Next: {{ $bus['next_stop_name'] }} &bull; {{ $bus['next_stop_eta_minutes'] }}m
+                                    Next: {{ $bus['next_stop_name'] }} &bull; {{ $bus['next_stop_eta_label'] }}
                                 </div>
                             </div>
                         @empty
@@ -359,7 +369,7 @@
                             class="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs font-medium text-slate-700 focus:outline-none focus:border-[#003F87] transition-colors">
                             <option value="">Select a stop...</option>
                             @foreach($routeStops as $stop)
-                                <option value="{{ $stop['stop_id'] }}">{{ $stop['stop_name'] }}</option>
+                                <option value="{{ is_numeric($stop['stop_id']) ? $stop['stop_id'] : '' }}" @disabled(! is_numeric($stop['stop_id']))>{{ $stop['stop_name'] }} - {{ ($stop['stop_type'] ?? 'designated_stop') === 'pickup_point' ? 'Pick-up Point' : 'Designated Stop' }}</option>
                             @endforeach
                         </select>
 
@@ -380,11 +390,15 @@
                         <!-- Set Alert Button -->
                         <button
                             @click="$wire.setArrivalAlert(alertStopId, alertMinutes); alertStopId = ''; expanded = false;"
+                            wire:loading.attr="disabled"
+                            wire:target="setArrivalAlert"
                             :disabled="!alertStopId"
                             :class="!alertStopId ? 'opacity-40 cursor-not-allowed' : 'active:scale-[0.98]'"
-                            class="w-full bg-[#003F87] text-white text-[14px] font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-1.5 shadow-sm transition-all">
-                            <i class="ti ti-bell-plus"></i>
-                            <span>Set alert</span>
+                            class="w-full bg-[#003F87] text-white text-[14px] font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-60 disabled:pointer-events-none">
+                            <i wire:loading.remove wire:target="setArrivalAlert" class="ti ti-bell-plus"></i>
+                            <i wire:loading wire:target="setArrivalAlert" class="ti ti-loader-2 animate-spin"></i>
+                            <span wire:loading.remove wire:target="setArrivalAlert">Set alert</span>
+                            <span wire:loading wire:target="setArrivalAlert">Setting alert</span>
                         </button>
                     </div>
                 </div>
@@ -532,13 +546,15 @@
                                 icon: "/images/pasig_logo.png"
                             });
                         } else {
-                            alert(`GoPasig Alert Set! We will notify you when a bus is ${payload.minutes} minutes away from ${payload.stop_name}.`);
+                            GoPasigUI.alert(`GoPasig Alert Set! We will notify you when a bus is ${payload.minutes} minutes away from ${payload.stop_name}.`);
                         }
                     });
                 } else {
-                    alert(`GoPasig Alert Set! We will notify you when a bus is ${payload.minutes} minutes away from ${payload.stop_name}.`);
+                    GoPasigUI.alert(`GoPasig Alert Set! We will notify you when a bus is ${payload.minutes} minutes away from ${payload.stop_name}.`);
                 }
             });
         });
     </script>
 </div>
+
+

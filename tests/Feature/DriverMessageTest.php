@@ -16,7 +16,7 @@ class DriverMessageTest extends TestCase
     #[Test]
     public function dispatcher_can_send_message_to_driver(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
         $driver = Driver::factory()->create(['first_name' => 'Juan']);
 
         $response = $this->actingAs($dispatcher)->postJson(
@@ -41,7 +41,7 @@ class DriverMessageTest extends TestCase
     #[Test]
     public function message_driver_returns_404_for_unknown_driver(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $response = $this->actingAs($dispatcher)->postJson(
             route('fleet.api.drivers-message', ['id' => 'DRV-9999']),
@@ -57,7 +57,7 @@ class DriverMessageTest extends TestCase
     #[Test]
     public function message_driver_requires_message_body(): void
     {
-        $dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
         $driver = Driver::factory()->create();
 
         $response = $this->actingAs($dispatcher)->postJson(
@@ -89,7 +89,7 @@ class DriverMessageTest extends TestCase
     {
         $driverUser = User::factory()->create(['role' => 'driver', 'name' => 'Fleet Dispatcher']);
         $driver = Driver::factory()->create(['user_id' => $driverUser->id]);
-        $dispatcher = User::factory()->create(['role' => 'dispatcher', 'name' => 'Maria Santos']);
+        $dispatcher = User::factory()->create(['role' => 'fleet_manager', 'name' => 'Maria Santos']);
 
         DriverMessage::create([
             'driver_id' => $driver->id,

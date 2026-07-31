@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             BusSeeder::class,
             RouteSeeder::class,
+            OfficialPasigRouteSeeder::class,
             TerminalSeeder::class,
             DriverSeeder::class,
             ScheduleSeeder::class,
@@ -32,3 +33,4 @@ class DatabaseSeeder extends Seeder
         ]);
     }
 }
+

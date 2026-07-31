@@ -6,13 +6,17 @@ use App\Events\PositionUpdated;
 use App\Events\ETAUpdated;
 use App\Models\Trip;
 use App\Models\TripProgress;
+use App\Services\Routing\AuthoritativeRouteResolver;
 use App\Services\Routing\ETAEngine;
 use App\Services\ValueObjects\Coordinate;
 use Illuminate\Support\Facades\Log;
 
 class ETAListener
 {
-    public function __construct(protected ETAEngine $engine) {}
+    public function __construct(
+        protected ETAEngine $engine,
+        protected AuthoritativeRouteResolver $routeResolver
+    ) {}
 
     /**
      * [GPS_TRACE] TEMPORARY INSTRUMENTATION — REMOVE AFTER INVESTIGATION
@@ -31,15 +35,21 @@ class ETAListener
                 return;
             }
 
-            $trip = Trip::with(['route.stops' => function ($q) {
-                $q->orderBy('sequence');
-            }])->find($position->trip_id);
+            $trip = Trip::find($position->trip_id);
+            if (!$trip) {
+                Log::warning('[GPS_TRACE] L-ETA SKIP - Missing trip', [
+                    'trip_id' => $position->trip_id,
+                ]);
+                return;
+            }
 
-            if (!$trip || !$trip->route || empty($trip->route->polyline_coordinates)) {
-                Log::warning('[GPS_TRACE] L-ETA SKIP - Missing trip/route/polyline', [
-                    'trip_found'       => (bool) $trip,
-                    'route_found'      => (bool) ($trip?->route),
-                    'has_polyline'     => !empty($trip?->route?->polyline_coordinates),
+            $plan = $this->routeResolver->resolveForTrip($trip);
+            if (empty($plan->polylineCoordinates)) {
+                Log::warning('[GPS_TRACE] L-ETA SKIP - Missing authoritative polyline', [
+                    'trip_id' => $position->trip_id,
+                    'route_id' => $trip->route_id,
+                    'route_variant_id' => $trip->route_variant_id,
+                    'source' => $plan->source,
                 ]);
                 return;
             }
@@ -52,17 +62,20 @@ class ETAListener
                 return;
             }
 
-            $completedCount  = $progress->completed_stops_count;
-            $stops           = $trip->route->stops;
-            $upcomingStops   = [];
+            $completedCount = $progress->completed_stops_count;
+            $stops = $plan->orderedStops->values();
+            $upcomingStops = [];
 
             for ($i = $completedCount; $i < count($stops); $i++) {
+                $stop = $stops[$i];
                 $upcomingStops[] = [
-                    'id'       => $stops[$i]->id,
-                    'lat'      => $stops[$i]->lat,
-                    'lng'      => $stops[$i]->lng,
-                    'name'     => $stops[$i]->name,
-                    'sequence' => $stops[$i]->sequence,
+                    'id' => $stop->id,
+                    'lat' => $stop->lat,
+                    'lng' => $stop->lng,
+                    'name' => $stop->name,
+                    'sequence' => $stop->sequence,
+                    'legacy_stop_id' => $plan->usesVariant() ? $stop->canonical_stop_id : $stop->id,
+                    'route_variant_stop_id' => $plan->usesVariant() ? $stop->id : null,
                 ];
             }
 
@@ -73,10 +86,10 @@ class ETAListener
             }
 
             $coord = new Coordinate($position->lat, $position->lng);
-            $etas  = $this->engine->calculateETAs(
+            $etas = $this->engine->calculateETAs(
                 $position->trip_id,
                 $coord,
-                $trip->route->polyline_coordinates,
+                $plan->polylineCoordinates,
                 $upcomingStops,
                 $position->speed
             );
@@ -86,19 +99,19 @@ class ETAListener
             event(new ETAUpdated($position->trip_id, $serialized));
 
             Log::info('[GPS_TRACE] L-ETA2 - ETAListener complete', [
-                'position_id'   => $position->id,
+                'position_id' => $position->id,
                 'etas_computed' => count($serialized),
+                'route_plan_source' => $plan->source,
             ]);
 
         } catch (\Throwable $e) {
             Log::error('[GPS_TRACE] L-ETA-EXCEPTION - ETAListener failed', [
                 'position_id' => $event->position->id,
-                'exception'   => get_class($e),
-                'message'     => $e->getMessage(),
-                'file'        => $e->getFile(),
-                'line'        => $e->getLine(),
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
             ]);
-            // Do not re-throw — ETA failure must not kill the telemetry pipeline
         }
     }
 }

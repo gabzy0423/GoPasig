@@ -3,8 +3,15 @@
     /* Custom Leaflet Map styling */
     #map {
         height: 100%;
+        min-height: 520px;
         width: 100%;
         background: #F1EFE8;
+    }
+
+    @media (min-width: 1024px) {
+        #map {
+            min-height: 0;
+        }
     }
     
     .bus-marker-container {
@@ -126,102 +133,127 @@
         transform: translateY(0);
         opacity: 1;
     }
-</style>
+    .map-ui-enter {
+        animation: map-ui-enter 180ms ease-out both;
+        will-change: opacity, transform;
+    }
+    .map-ui-enter-down { --map-ui-x: 0; --map-ui-y: -6px; }
+    .map-ui-enter-side { --map-ui-x: 6px; --map-ui-y: 0; }
+    @keyframes map-ui-enter {
+        from { opacity: 0; transform: translate(var(--map-ui-x, 0), var(--map-ui-y, 0)); }
+        to { opacity: 1; transform: translate(0, 0); }
+    }
+    .scrollbar-none::-webkit-scrollbar { display: none; }
+    .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+    .map-chip-strip { overscroll-behavior-inline: contain; scroll-padding-inline: 12px; }
+    .map-panel-scroll {
+        scrollbar-color: rgba(148, 163, 184, 0.7) transparent;
+        scrollbar-width: thin;
+    }
+    .map-panel-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+    .map-panel-scroll::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.55);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: content-box;
+    }
+    .map-panel-scroll::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.7); background-clip: content-box; }
+    #vehicle-list-container > div { outline: none; }
+    @media (prefers-reduced-motion: reduce) {
+        .map-ui-enter { animation: none; will-change: auto; }
+        .bus-marker.active .bus-pulse { animation: none; }
+    }</style>
 
-<div class="h-full flex flex-col space-y-4">
-    <!-- Page Header -->
-    <div class="flex flex-col gap-1 border-b border-slate-100 pb-3 mb-2 shrink-0">
-        <h1 class="text-xl font-bold text-slate-900">Trace Buses</h1>
-        <div class="flex items-center gap-1 text-[11px] text-slate-400 font-semibold mt-1 select-none">
-            <span>Dashboard</span>
-            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
-            <span>Fleet</span>
-            <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
-            <span class="text-slate-600 font-bold">Live Monitor</span>
-        </div>
-    </div>
+<div class="relative min-h-[560px] overflow-visible rounded-[18px] border border-slate-200/80 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.16)] ring-1 ring-white/60 lg:left-1/2 lg:h-[calc(100dvh-56px-3rem)] lg:w-[calc(100vw-240px-3rem)] lg:-translate-x-1/2 lg:overflow-hidden">
+    <!-- Map Canvas -->
+    <div id="map" class="h-[520px] w-full lg:h-full"></div>
 
-    <!-- PAGE TITLE ROW / META FILTER CONTROLS -->
-    <div class="flex items-center justify-between shrink-0">
-        <div class="flex items-center gap-1.5 text-[13px] text-slate-500">
-            <span class="font-mono-custom" id="bus-tracked-count">12 buses tracked</span>
-            <span class="text-slate-300">·</span>
-            <div class="flex items-center gap-1">
-                <span class="pulse-dot"></span>
-                <span>Live</span>
+    <!-- Floating toolbar -->
+    <div class="map-ui-enter map-ui-enter-down relative z-[1000] m-3 flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-2.5 shadow-[0_14px_34px_rgba(15,23,42,0.16)] ring-1 ring-white/70 backdrop-blur-md transition duration-150 lg:absolute lg:left-4 lg:right-[392px] lg:top-4 lg:m-0 xl:right-[408px]">
+        <div class="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <!-- Compact page identity -->
+            <div class="min-w-[170px] shrink-0 select-none">
+                <h1 class="text-sm font-black text-slate-900">Trace Buses</h1>
+                <div class="mt-0.5 flex items-center gap-1 text-[10px] font-semibold text-slate-400">
+                    <span>Dashboard</span>
+                    <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+                    <span>Fleet</span>
+                    <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
+                    <span class="font-bold text-slate-600">Live Monitor</span>
+                </div>
             </div>
-        </div>
 
-        <!-- Filter controls -->
-        <div class="flex items-center gap-3">
-            <!-- Route Filter Chips -->
-            <div class="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-black/5">
-                <button onclick="filterByRoute('all')" id="chip-route-all" class="route-chip px-2.5 py-1 text-[12px] font-medium rounded-md transition-colors bg-white text-[#001F44] border border-black/5 shadow-sm">All</button>
-                @foreach($routes as $route)
-                <button onclick="filterByRoute('{{ $route->id }}')" id="chip-route-{{ $route->id }}" class="route-chip px-2.5 py-1 text-[12px] font-medium rounded-md transition-colors text-slate-500 hover:text-[#001F44]">{{ $route->name }}</button>
-                @endforeach
+            <!-- Live state and route filters -->
+            <div class="flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:items-center">
+                <div class="flex shrink-0 items-center gap-1.5 rounded-xl border border-emerald-100 bg-emerald-50/90 px-2.5 py-2 text-[12px] text-slate-600 shadow-sm">
+                    <span class="font-mono-custom" id="bus-tracked-count">12 buses tracked</span>
+                    <span class="text-slate-300">/</span>
+                    <div class="flex items-center gap-1">
+                        <span class="pulse-dot"></span>
+                        <span>Live</span>
+                    </div>
+                </div>
+
+                <div class="map-chip-strip scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 whitespace-nowrap">
+                    <button onclick="filterByRoute('all')" id="chip-route-all" class="route-chip shrink-0 rounded-lg border border-slate-200/80 bg-white px-3 py-1.5 text-[12px] font-semibold text-[#001F44] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]/20">All</button>
+                    @foreach($routes as $route)
+                    <button onclick="filterByRoute('{{ $route['id'] }}')" id="chip-route-{{ $route['id'] }}" class="route-chip shrink-0 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-slate-500 transition-colors hover:bg-white/80 hover:text-[#001F44] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]/20">{{ $route['name'] }}</button>
+                    @endforeach
+                </div>
             </div>
 
-            <!-- Status filter dropdown -->
-            <select id="status-filter" onchange="filterByStatus(this.value)" class="text-[13px] border border-black/15 bg-white rounded-lg px-3 py-1.5 font-medium text-[#001F44] outline-none">
-                <option value="all">All Statuses</option>
-                <option value="active">Active</option>
-                <option value="near-full">Near Full</option>
-                <option value="breakdown">Breakdown</option>
-                <option value="idle">Idle</option>
-            </select>
-        </div>
-    </div>
-
-    <!-- MAIN MONITOR GRID -->
-    <div class="flex-grow flex gap-4 min-h-0">
-        <!-- LEFT: MAP PANEL (68%) -->
-        <div class="w-[68%] bg-white border border-black/10 rounded-xl relative overflow-hidden flex flex-col h-[calc(100vh-220px)]">
-            <!-- Map Canvas -->
-            <div id="map" class="flex-grow"></div>
-
-            <!-- Map Controls Overlay -->
-            <div class="absolute top-3 left-3 flex flex-col gap-1.5 bg-white border border-black/10 rounded-lg p-1.5 shadow-sm z-[1000]">
-                <button onclick="mapZoomIn()" class="w-8 h-8 flex items-center justify-center text-[#001F44] hover:bg-slate-50 rounded transition-colors" title="Zoom In">
-                    <i class="ti ti-plus text-[16px]"></i>
-                </button>
-                <button onclick="mapZoomOut()" class="w-8 h-8 flex items-center justify-center text-[#001F44] hover:bg-slate-50 rounded transition-colors" title="Zoom Out">
-                    <i class="ti ti-minus text-[16px]"></i>
-                </button>
-                <button onclick="mapRecenter()" class="w-8 h-8 flex items-center justify-center text-[#001F44] hover:bg-slate-50 rounded transition-colors" title="Re-center Map">
-                    <i class="ti ti-current-location text-[16px]"></i>
-                </button>
-                <div class="h-px bg-black/8 my-0.5"></div>
-                <button onclick="toggleMapLayers()" class="w-8 h-8 flex items-center justify-center text-[#001F44] hover:bg-slate-50 rounded transition-colors" title="Toggle Layer">
-                    <i class="ti ti-layers text-[16px]"></i>
-                </button>
-            </div>
-        </div>
-
-        <!-- RIGHT: VEHICLE LIST PANEL (32%) -->
-        <div class="w-[32%] bg-white border border-black/10 rounded-xl flex flex-col h-[calc(100vh-220px)]">
-            <!-- Panel Header -->
-            <div class="px-4 py-3 border-b border-black/10 flex items-center justify-between shrink-0">
-                <span class="text-[13px] font-semibold text-[#001F44]" id="list-header-count">12 vehicles</span>
-                <select id="sort-dropdown" onchange="sortVehicles(this.value)" class="text-[12px] border border-black/10 bg-white rounded px-2 py-1 text-slate-600 outline-none">
-                    <option value="status">Sort: Status</option>
-                    <option value="plate">Sort: Plate</option>
-                    <option value="occupancy">Sort: Occupancy</option>
+            <!-- Status filter -->
+            <div class="flex shrink-0 items-center gap-2 sm:justify-end">
+                <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Status:</span>
+                <select id="status-filter" onchange="filterByStatus(this.value)" class="rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-[13px] font-semibold text-[#001F44] outline-none transition focus:border-[#003F87] focus-visible:ring-2 focus-visible:ring-[#003F87]/20">
+                    <option value="all">All Statuses</option>
+                    <option value="active">Active</option>
+                    <option value="near-full">Near Full</option>
+                    <option value="breakdown">Breakdown</option>
+                    <option value="idle">Idle</option>
                 </select>
             </div>
+        </div>
+    </div>
 
-            <!-- Search input -->
-            <div class="px-4 py-2 border-b border-black/10 flex items-center gap-2 shrink-0 bg-slate-50/50">
-                <i class="ti ti-search text-slate-400 text-[16px]"></i>
-                <input type="text" id="vehicle-search" oninput="searchVehicles(this.value)" placeholder="Search plate or driver…" class="text-[13px] bg-transparent outline-none w-full border-none p-0 text-[#001F44] placeholder-slate-400">
-            </div>
+    <!-- Map Controls Overlay -->
+    <div class="map-ui-enter map-ui-enter-down absolute left-4 top-[92px] z-[1000] flex flex-col gap-1.5 rounded-xl border border-slate-200/80 bg-white/90 p-1.5 shadow-[0_12px_28px_rgba(15,23,42,0.14)] ring-1 ring-white/60 backdrop-blur-md max-lg:top-[536px]">
+        <button onclick="mapZoomIn()" class="flex h-8 w-8 items-center justify-center rounded-lg text-[#001F44] transition-colors hover:bg-[#E6F1FB]/70" aria-label="Zoom in" title="Zoom in">
+            <i class="ti ti-plus text-[16px]"></i>
+        </button>
+        <button onclick="mapZoomOut()" class="flex h-8 w-8 items-center justify-center rounded-lg text-[#001F44] transition-colors hover:bg-[#E6F1FB]/70" aria-label="Zoom out" title="Zoom out">
+            <i class="ti ti-minus text-[16px]"></i>
+        </button>
+        <button onclick="mapRecenter()" class="flex h-8 w-8 items-center justify-center rounded-lg text-[#001F44] transition-colors hover:bg-[#E6F1FB]/70" aria-label="Re-center map" title="Re-center map">
+            <i class="ti ti-current-location text-[16px]"></i>
+        </button>
+        <div class="my-0.5 h-px bg-black/8"></div>
+        <button onclick="toggleMapLayers()" class="flex h-8 w-8 items-center justify-center rounded-lg text-[#001F44] transition-colors hover:bg-[#E6F1FB]/70" aria-label="Toggle map layer" title="Toggle map layer">
+            <i class="ti ti-layers text-[16px]"></i>
+        </button>
+    </div>
 
-            <!-- Vehicle list -->
-            <div class="flex-grow overflow-y-auto divide-y divide-black/6" id="vehicle-list-container">
-                <!-- Javascript will inject list rows here -->
-            </div>
+    <!-- Floating Vehicle Operations Panel -->
+    <div class="map-ui-enter map-ui-enter-side relative z-[1000] m-3 flex max-h-[640px] flex-col rounded-[18px] border border-slate-200/90 bg-white/90 shadow-[0_18px_45px_rgba(15,23,42,0.16)] ring-1 ring-white/70 backdrop-blur-md transition duration-150 lg:absolute lg:bottom-4 lg:right-4 lg:top-[76px] lg:m-0 lg:max-h-none lg:w-[320px] xl:w-[360px]">
+        <!-- Panel Header -->
+        <div class="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-slate-100 bg-white/80 px-4 py-3.5 backdrop-blur">
+            <span class="text-[13px] font-semibold text-[#001F44]" id="list-header-count">12 vehicles</span>
+            <select id="sort-dropdown" onchange="sortVehicles(this.value)" class="rounded-xl border border-slate-200/90 bg-white px-2.5 py-1.5 text-[12px] font-medium text-slate-600 outline-none transition focus:border-[#003F87] focus-visible:ring-2 focus-visible:ring-[#003F87]/20 focus-visible:ring-2 focus-visible:ring-[#003F87]/20">
+                <option value="status">Sort: Status</option>
+                <option value="plate">Sort: Plate</option>
+                <option value="occupancy">Sort: Occupancy</option>
+            </select>
+        </div>
 
-            </div>
+        <!-- Search input -->
+        <div class="flex shrink-0 items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-3 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#003F87]/10">
+            <i class="ti ti-search text-[16px] text-slate-400"></i>
+            <input type="text" id="vehicle-search" oninput="searchVehicles(this.value)" placeholder="Search plate or driver..." class="w-full border-none bg-transparent p-0 text-[13px] font-medium text-[#001F44] outline-none placeholder-slate-400">
+        </div>
+
+        <!-- Vehicle list -->
+        <div class="map-panel-scroll flex-grow overflow-y-auto divide-y divide-slate-100" id="vehicle-list-container">
+            <!-- Javascript will inject list rows here -->
         </div>
     </div>
 </div>
@@ -356,6 +388,9 @@
     ];
 
     const palette = ['#003F87', '#3B6D11', '#854F0B', '#E24B4A', '#378ADD', '#639922', '#BA7517'];
+    const MONITOR_DEFAULT_CENTER = [14.5670, 121.0600];
+    const MONITOR_DEFAULT_ZOOM = 13.5;
+    const MONITOR_INITIAL_ROUTE_IDS = new Set(['1', '2', '3']);
 
     let map;
     let markersMap = {}; // mapping plate -> Leaflet marker
@@ -371,12 +406,38 @@
     let lightTile, satelliteTile;
     let activeLayer = 'light';
 
+    function applyInitialMonitorViewport() {
+        if (!map) return;
+
+        const canonicalBounds = L.latLngBounds([]);
+        Object.entries(routesMap).forEach(([key, polyline]) => {
+            const routeId = key.split('-')[0];
+            if (!MONITOR_INITIAL_ROUTE_IDS.has(routeId)) return;
+
+            const bounds = typeof polyline.getBounds === 'function' ? polyline.getBounds() : null;
+            if (bounds && bounds.isValid()) {
+                canonicalBounds.extend(bounds);
+            }
+        });
+
+        if (canonicalBounds.isValid()) {
+            map.fitBounds(canonicalBounds, {
+                paddingTopLeft: [24, 96],
+                paddingBottomRight: [384, 32],
+                maxZoom: 14
+            });
+            return;
+        }
+
+        map.setView(MONITOR_DEFAULT_CENTER, MONITOR_DEFAULT_ZOOM);
+    }
+
     function initMonitorMap() {
         // Initialize Map
         map = L.map('map', {
             zoomControl: false,
             attributionControl: false
-        }).setView([14.5670, 121.0600], 13.5);
+        }).setView(MONITOR_DEFAULT_CENTER, MONITOR_DEFAULT_ZOOM);
 
         // Map Tile Layers
         try {
@@ -400,16 +461,24 @@
 
         // Draw Route Polylines
         @foreach($routes as $index => $route)
-            @if($route->polyline_coordinates)
-                routesMap['{{ $route->id }}'] = L.polyline({!! json_encode($route->polyline_coordinates) !!}, {
+            @if($route['map_geometry_source'] === 'route_variant')
+                @foreach($route['map_variant_geometries'] as $variantGeometry)
+                    @if($variantGeometry['polyline_coordinates'])
+                        routesMap['{{ $route['id'] }}-{{ $variantGeometry['route_variant_id'] }}'] = L.polyline({!! json_encode($variantGeometry['polyline_coordinates']) !!}, {
+                            color: palette[{{ $index }} % palette.length],
+                            weight: 3,
+                            opacity: 0.85
+                        }).addTo(map);
+                    @endif
+                @endforeach
+            @elseif($route['polyline_coordinates'])
+                routesMap['{{ $route['id'] }}'] = L.polyline({!! json_encode($route['polyline_coordinates']) !!}, {
                     color: palette[{{ $index }} % palette.length],
                     weight: 3,
                     opacity: 0.85
                 }).addTo(map);
             @endif
-        @endforeach
-
-        // Draw Stops
+        @endforeach        // Draw Stops
         stops.forEach(stop => {
             let m = L.circleMarker([stop.lat, stop.lng], {
                 radius: 4.5,
@@ -427,6 +496,7 @@
 
         // Populate Vehicle List
         renderVehicleList();
+        applyInitialMonitorViewport();
 
         // Check if there are query string parameters to select a bus
         const urlParams = new URLSearchParams(window.location.search);
@@ -523,7 +593,7 @@
             <div class="bg-white p-3 space-y-3">
                 <div class="flex justify-between items-center border-b border-black/6 pb-2">
                     <span class="font-mono-custom text-[13px] font-bold text-[#001F44]">${bus.plate}</span>
-                    <span class="rounded-full px-2 py-0.2 text-[10px] font-semibold tracking-wide uppercase ${getStatusChipClass(bus.status)}">${bus.statusLabel}</span>
+                    <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${getStatusChipClass(bus.status)}">${bus.statusLabel}</span>
                 </div>
                 <div class="space-y-1.5 text-[12px] text-[#001F44]">
                     <div class="flex items-center gap-2">
@@ -678,7 +748,7 @@
         }
 
         filtered.forEach(bus => {
-            const activeClass = currentSelectedBus === bus.plate ? 'bg-[#F5F8FF] border-l-[3px] border-[#003F87]' : '';
+            const activeClass = currentSelectedBus === bus.plate ? 'bg-[#F5F8FF] border-l-[3px] border-[#003F87] shadow-sm' : 'border-l-[3px] border-transparent';
             const leftDotColor = bus.status === 'active' ? 'bg-[#003F87]' : 
                                  bus.status === 'near-full' ? 'bg-[#BA7517]' : 
                                  bus.status === 'breakdown' ? 'bg-[#E24B4A]' : 'bg-[#888780]';
@@ -702,7 +772,7 @@
 
             const row = document.createElement('div');
             row.id = `bus-row-${bus.plate}`;
-            row.className = `p-3.5 border-b border-black/6 cursor-pointer hover:bg-[#F5F8FF]/50 transition-colors ${activeClass}`;
+            row.className = `p-3.5 border-b border-slate-100 cursor-pointer hover:bg-[#F5F8FF]/55 transition-colors focus-within:bg-[#F5F8FF]/55 ${activeClass}`;
             row.onclick = () => selectBus(bus.plate);
             let spatialStatusHtml = '';
             if (bus.currentFence && bus.currentFence !== 'Outside Geofence') {
@@ -751,7 +821,7 @@
                 const speed = bus.speed || '0 km/h';
 
                 detailsHtml = `
-                    <div class="mt-3 p-3 bg-slate-50 border border-slate-100 rounded-lg text-[11px] text-slate-700 space-y-2 select-none">
+                    <div class="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 text-[11px] text-slate-700 space-y-2 select-none">
                         <div class="grid grid-cols-2 gap-x-4 gap-y-2">
                             <div>
                                 <span class="text-slate-400 block font-medium">Current Stop</span>
@@ -808,7 +878,7 @@
                         <span class="h-2 w-2 rounded-full ${leftDotColor}"></span>
                         <span class="font-mono-custom font-semibold text-[#001F44] text-[13px]">${bus.plate}</span>
                     </div>
-                    <span class="rounded-full px-2 py-0.2 text-[10px] font-semibold tracking-wide uppercase ${getStatusChipClass(bus.status)}">${bus.statusLabel}</span>
+                    <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${getStatusChipClass(bus.status)}">${bus.statusLabel}</span>
                 </div>
                 
                 <div class="flex items-center gap-1 text-[12px] text-slate-500 mt-1">
@@ -880,12 +950,12 @@
         
         // Update chip UI
         document.querySelectorAll('.route-chip').forEach(btn => {
-            btn.className = btn.className.replace('bg-white text-[#001F44] border border-black/5 shadow-sm', 'text-slate-500 hover:text-[#001F44]');
+            btn.className = btn.className.replace('bg-white text-[#001F44] border border-slate-200/80 shadow-sm', 'text-slate-500 hover:bg-white/80 hover:text-[#001F44]');
         });
 
         const activeBtn = document.getElementById(`chip-route-${route}`);
         if (activeBtn) {
-            activeBtn.className = activeBtn.className.replace('text-slate-500 hover:text-[#001F44]', 'bg-white text-[#001F44] border border-black/5 shadow-sm');
+            activeBtn.className = activeBtn.className.replace('text-slate-500 hover:bg-white/80 hover:text-[#001F44]', 'bg-white text-[#001F44] border border-slate-200/80 shadow-sm');
         }
 
         // Highlight map route polyline

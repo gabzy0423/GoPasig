@@ -22,7 +22,7 @@ class UserSeeder extends Seeder
             [
                 'name' => 'Danielle Dispatcher',
                 'email' => 'dispatcher@example.com',
-                'role' => 'dispatcher',
+                'role' => 'fleet_manager',
             ],
             [
                 'name' => 'David Driver',

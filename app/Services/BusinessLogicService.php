@@ -55,34 +55,7 @@ class BusinessLogicService
 
         return ['allowed' => true];
     }
-
-    /**
-     * Validate maintenance duration is within reasonable bounds
-     * Issue 3.1.4: Maintenance duration not validated
-     */
-    public static function validateMaintenanceDuration(int $minutes): array
-    {
-        $minDuration = (int) SystemSetting::get('maintenance_duration_min_minutes', 15);
-        $maxDuration = (int) SystemSetting::get('maintenance_duration_max_minutes', 480); // 8 hours max
-
-        if ($minutes < $minDuration) {
-            return [
-                'valid' => false,
-                'error' => "Maintenance duration must be at least {$minDuration} minutes (provided: {$minutes})"
-            ];
-        }
-
-        if ($minutes > $maxDuration) {
-            return [
-                'valid' => false,
-                'error' => "Maintenance duration cannot exceed {$maxDuration} minutes (provided: {$minutes})"
-            ];
-        }
-
-        return ['valid' => true];
-    }
-
-    /**
+    /**
      * Validate GPS coordinates are within Philippines boundaries
      * Issue 3.2.1: Route polyline not validated
      */
@@ -234,27 +207,16 @@ class BusinessLogicService
             ];
         }
 
-        if ($bus->status === 'maintenance') {
+        if (in_array($bus->status, ['maintenance', 'out_of_service', 'decommissioned'], true)) {
             return [
                 'available' => false,
-                'error' => 'Bus is currently in maintenance'
-            ];
-        }
-
-        if ($bus->status === 'inactive') {
-            return [
-                'available' => false,
-                'error' => 'Bus is inactive'
+                'error' => "Bus {$bus->plate_number} is not available for dispatch (status: {$bus->status})"
             ];
         }
 
         return ['available' => true];
     }
 
-    /**
-     * Validate driver can operate (active, license not expired, not suspended, etc)
-     * Related to 3.1.1
-     */
     public static function validateDriverAvailability(int $driverId): array
     {
         $driver = \App\Models\Driver::find($driverId);
@@ -300,3 +262,5 @@ class BusinessLogicService
         return $result['error'] ?? $result['message'] ?? null;
     }
 }
+
+

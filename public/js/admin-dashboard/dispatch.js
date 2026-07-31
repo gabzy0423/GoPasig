@@ -1,8 +1,13 @@
+function refreshDispatchRuntimeState() {
+    window.dispatchEvent(new CustomEvent('request-dispatch-runtime-refresh'));
+    return Promise.resolve();
+}
+
 // Listener for dynamic database-driven Livewire dispatch success event
 window.addEventListener('dispatchSuccessful', () => {
-    if (typeof loadDatabaseFleetData === 'function') {
-        loadDatabaseFleetData();
-    }
-    alert('Bus successfully dispatched on route!');
-    switchScreen('overview');
+    GoPasigUI.alert('Bus successfully dispatched on route!');
+
+    refreshDispatchRuntimeState().catch((error) => {
+        console.error('Background dispatch runtime refresh failed:', error);
+    });
 });

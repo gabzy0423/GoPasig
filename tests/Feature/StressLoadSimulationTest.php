@@ -92,7 +92,7 @@ class StressLoadSimulationTest extends TestCase
         }
 
         foreach ([5, 10] as $dispatchers) {
-            $users = User::factory()->count($dispatchers)->create(['role' => 'dispatcher']);
+            $users = User::factory()->count($dispatchers)->create(['role' => 'fleet_manager']);
 
             $this->benchmark("Scenario 3: {$dispatchers} dispatchers poll overview + dispatch data", $dispatchers * 2, function ($i) use ($users) {
                 $endpoint = $i % 2 === 0 ? '/fleet/api/overview-data' : '/fleet/api/dispatch-data';
@@ -104,7 +104,7 @@ class StressLoadSimulationTest extends TestCase
             });
         }
 
-        $dispatcherUsers = User::factory()->count(5)->create(['role' => 'dispatcher']);
+        $dispatcherUsers = User::factory()->count(5)->create(['role' => 'fleet_manager']);
         $adminUsers = User::factory()->count(3)->create(['role' => 'admin']);
         $driverUsers = $this->driverUsers(10);
 
@@ -265,7 +265,7 @@ class StressLoadSimulationTest extends TestCase
             'sequence' => 2,
         ]);
 
-        User::factory()->create(['role' => 'dispatcher', 'name' => 'Load Dispatcher']);
+        User::factory()->create(['role' => 'fleet_manager', 'name' => 'Load Dispatcher']);
         User::factory()->create(['role' => 'admin', 'name' => 'Load Admin']);
 
         for ($i = 0; $i < $busCount; $i++) {

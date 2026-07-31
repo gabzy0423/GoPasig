@@ -31,6 +31,10 @@ class StopController extends Controller
         ]);
 
         $routeId = $validated['route_id'];
+        $officialRoute = Route::findOrFail($routeId);
+        if ($this->isOfficialReferenceRoute($officialRoute)) {
+            return response()->json(['success' => false, 'message' => 'Official Route 1/2/3 stop definitions are fixed reference data.'], 422);
+        }
         $routeDefaults = DefaultRouteSetting::first();
         $defaultOriginLabel = $routeDefaults?->default_origin_label
             ?? SystemSetting::get('default_route_origin_label', Terminal::getDefaultName());
@@ -111,6 +115,10 @@ class StopController extends Controller
      */
     public function reorder(Request $request, Route $route)
     {
+        $route = $route ?? $stop->route;
+        if ($this->isOfficialReferenceRoute($route)) {
+            return response()->json(['success' => false, 'message' => 'Official Route 1/2/3 stop definitions are fixed reference data.'], 422);
+        }
         // Admin only
         if (auth()->user()->role !== 'admin') {
             return response()->json([
@@ -152,6 +160,10 @@ class StopController extends Controller
      */
     public function destroy(Stop $stop)
     {
+        $route = $route ?? $stop->route;
+        if ($this->isOfficialReferenceRoute($route)) {
+            return response()->json(['success' => false, 'message' => 'Official Route 1/2/3 stop definitions are fixed reference data.'], 422);
+        }
         // Admin only
         if (auth()->user()->role !== 'admin') {
             return response()->json([
@@ -193,5 +205,9 @@ class StopController extends Controller
             
             $route->update(['polyline_coordinates' => $coords]);
         }
+    }
+    private function isOfficialReferenceRoute(?Route $route): bool
+    {
+        return $route && in_array($route->name, ['Route 1', 'Route 2', 'Route 3'], true);
     }
 }

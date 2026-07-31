@@ -4,6 +4,7 @@ let overviewMapInstance = null;
 const overviewMarkersMap = {};
 let overviewPolylines = [];
 let overviewStops = [];
+const scheduledDispatchesInFlight = new Set();
 
 // Expose dynamic rendering globally so it can be re-triggered by dashboard-data.js
 function renderOverviewBuses() {
@@ -341,7 +342,7 @@ function updateOverviewDashboard() {
                     </div>
                     <div class="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2 shrink-0">
                         <span class="text-[10px] font-bold text-slate-400">Departure: ${dispatch.departureTime}</span>
-                        <button onclick="viewTripDetails(${dispatch.busId})" class="text-[10px] font-extrabold text-[#003F87] hover:text-[#002D62] transition uppercase tracking-wider cursor-pointer">View Details</button>
+                        ${renderScheduleDispatchAction(dispatch)}
                     </div>
                 `;
                 dispatchList.appendChild(card);
@@ -437,6 +438,113 @@ function updateOverviewDashboard() {
     }
 }
 
+function renderScheduleDispatchAction(dispatch) {
+    const isSuspended = dispatch.isRouteSuspended || dispatch.dispatchState === 'route_suspended';
+    const reason = dispatch.suspensionReason || dispatch.dispatchBlockedReason || 'Route is currently suspended.';
+    const tripCount = typeof dispatch.remainingActiveTrips === 'number' ? dispatch.remainingActiveTrips : 0;
+    const tripCountLabel = `${tripCount} ${tripCount === 1 ? 'ongoing trip' : 'ongoing trips'}`;
+    const tooltipText = `Route Suspended\n\nReason: ${reason}\n\nRemaining ongoing trips: ${tripCount}`;
+
+    // 1. Primary State: Dispatched
+    if (dispatch.dispatchState === 'dispatched' || dispatch.isDispatched) {
+        const tripLabel = dispatch.tripId ? `Trip #${dispatch.tripId}` : 'Linked Trip';
+        let html = `<div class="flex flex-col items-end gap-1"><span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Dispatched - ${tripLabel}</span>`;
+
+        // UI-06: Secondary badge for Dispatched + Route Suspended
+        if (isSuspended) {
+            html += `<span class="inline-flex items-center gap-1 rounded bg-rose-50 border border-rose-200 px-1.5 py-0.5 text-[9px] font-extrabold text-rose-700 uppercase tracking-wider shadow-2xs" title="${tooltipText}" aria-label="Route suspended. ${tripCountLabel}."><i class="ti ti-ban text-[10px]"></i><span>Route Suspended</span></span>`;
+        }
+
+        html += `</div>`;
+        return html;
+    }
+
+    // 2. Primary State: Cancelled (UI-07: No secondary badge when cancelled)
+    if (dispatch.dispatchState === 'cancelled') {
+        return `<span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Cancelled</span>`;
+    }
+
+    // 3. Primary State: Invalid Resource / Missing Assignment (Blocked)
+    if (dispatch.dispatchState === 'blocked') {
+        const blockedReason = dispatch.dispatchBlockedReason || 'Missing required assignment';
+        return `<span class="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-700 uppercase tracking-wider" title="${blockedReason}"><i class="ti ti-alert-triangle text-xs"></i><span>Blocked</span></span>`;
+    }
+
+    // 4. Primary State: Route Suspended (No prior dispatch, resources valid)
+    if (isSuspended) {
+        return `<div class="flex flex-col items-end gap-1 select-none">
+            <span class="inline-flex items-center gap-1 rounded-md bg-rose-50 border border-rose-200 px-2 py-1 text-[10px] font-extrabold text-rose-700 uppercase tracking-wider shadow-2xs"
+                  title="${tooltipText}"
+                  aria-label="Route suspended. Reason: ${reason}. ${tripCountLabel}.">
+                <i class="ti ti-ban text-xs text-rose-600"></i>
+                <span>Route Suspended</span>
+            </span>
+            <span class="text-[9.5px] font-semibold text-slate-500 tracking-tight">${tripCountLabel}</span>
+        </div>`;
+    }
+
+    // 5. Primary State: Ready
+    if (!dispatch.canDispatch) {
+        const blockedReason = dispatch.dispatchBlockedReason || 'Unavailable';
+        return `<span class="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-700 uppercase tracking-wider" title="${blockedReason}"><i class="ti ti-alert-triangle text-xs"></i><span>Blocked</span></span>`;
+    }
+
+    return `<button type="button" data-schedule-dispatch-button="${dispatch.id}" onclick="dispatchSchedule(${dispatch.id}, this)" class="text-[10px] font-extrabold text-[#003F87] hover:text-[#002D62] transition uppercase tracking-wider cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">Dispatch Schedule</button>`;
+}
+
+function scheduleDispatchUrl(scheduleId) {
+    const template = window.GoPasigConfig && window.GoPasigConfig.scheduleDispatchUrlTemplate
+        ? window.GoPasigConfig.scheduleDispatchUrlTemplate
+        : '/admin/api/schedules/:id/dispatch';
+
+    return template.replace(':id', scheduleId);
+}
+
+async function dispatchSchedule(scheduleId, button) {
+    if (scheduledDispatchesInFlight.has(scheduleId)) return;
+
+    scheduledDispatchesInFlight.add(scheduleId);
+    if (button) {
+        button.disabled = true;
+        button.textContent = 'Dispatching...';
+    }
+
+    try {
+        const response = await fetch(scheduleDispatchUrl(scheduleId), {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': window.GoPasigConfig?.csrfToken || '',
+            },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || 'Schedule dispatch failed.');
+        }
+
+        if (typeof refreshBusManagementState === 'function') {
+            await refreshBusManagementState();
+        } else {
+            if (typeof loadTodayDispatchQueue === 'function') {
+                await loadTodayDispatchQueue();
+            }
+            if (typeof updateOverviewDashboard === 'function') {
+                updateOverviewDashboard();
+            }
+        }
+    } catch (error) {
+        GoPasigUI.alert(error.message || 'Schedule dispatch failed.');
+        if (button) {
+            button.disabled = false;
+            button.textContent = 'Dispatch Schedule';
+        }
+    } finally {
+        scheduledDispatchesInFlight.delete(scheduleId);
+    }
+}
 // Navigation bridge from dispatch queue view buttons
 function viewTripDetails(busId) {
     switchScreen('map');
@@ -452,3 +560,4 @@ function viewTripDetails(busId) {
         }, 400);
     }
 }
+

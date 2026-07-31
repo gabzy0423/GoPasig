@@ -74,10 +74,13 @@
         <div class="flex items-center gap-2.5 px-4 overflow-x-auto no-scrollbar" style="-webkit-overflow-scrolling: touch;">
             
             <!-- All Routes -->
-            <button wire:click="setRoute(null)" 
-                    class="flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-200 active:scale-95
+            <button wire:click="setRoute(null)"
+                    wire:loading.attr="disabled"
+                    wire:target="setRoute"
+                    class="flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-200 active:scale-95 disabled:opacity-60 disabled:pointer-events-none inline-flex items-center gap-1.5
                            {{ is_null($selectedRouteId) ? 'bg-[#003F87] text-white shadow-sm' : 'bg-white border border-[#C8C7C2] text-slate-500' }}">
-                All Routes
+                <i wire:loading wire:target="setRoute(null)" class="ti ti-loader-2 animate-spin"></i>
+                <span>All Routes</span>
             </button>
 
             <!-- Route Chips dynamically -->
@@ -86,11 +89,14 @@
                     $dotColor = $route->color ?: '#003F87';
                     $isActive = $selectedRouteId === $route->id;
                 @endphp
-                <button wire:click="setRoute({{ $route->id }})" 
-                        class="flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-200 active:scale-95 flex items-center gap-1.5
+                <button wire:click="setRoute({{ $route->id }})"
+                        wire:loading.attr="disabled"
+                        wire:target="setRoute"
+                        class="flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-200 active:scale-95 flex items-center gap-1.5 disabled:opacity-60 disabled:pointer-events-none
                                {{ $isActive ? 'bg-[#003F87] text-white shadow-sm' : 'bg-white border border-[#C8C7C2] text-slate-500 hover:bg-slate-50' }}">
+                    <i wire:loading wire:target="setRoute({{ $route->id }})" class="ti ti-loader-2 animate-spin"></i>
                     @if(!$isActive)
-                        <span class="h-2 w-2 rounded-full flex-shrink-0" style="background-color: {{ $dotColor }};"></span>
+                        <span wire:loading.remove wire:target="setRoute({{ $route->id }})" class="h-2 w-2 rounded-full flex-shrink-0" style="background-color: {{ $dotColor }};"></span>
                     @endif
                     <span>{{ $route->name }}</span>
                 </button>
@@ -142,25 +148,29 @@
                                             Estimated
                                         </span>
                                     @endif
-                                    
                                     @php
-                                        $nearestUpdated = \Carbon\Carbon::parse($nearestBus->updated_at);
-                                        $nearestDiff = now()->diffInSeconds($nearestUpdated);
+                                        $nearestFreshnessState = $nearestBus->gps_freshness_state ?? 'UNKNOWN';
+                                        $nearestFreshnessAge = $nearestBus->gps_freshness_age_seconds ?? null;
                                     @endphp
-                                    @if($nearestDiff < 30)
+                                    @if($nearestFreshnessState === 'LIVE')
                                         <span class="px-1.5 py-0.5 text-[8.5px] font-extrabold bg-emerald-50 text-[#0F6E56] border border-emerald-100 rounded-full flex items-center gap-0.5">
                                             <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                                             LIVE
                                         </span>
-                                    @elseif($nearestDiff <= 120)
-                                        <span class="px-1.5 py-0.5 text-[8.5px] font-extrabold bg-amber-50 text-[#854F0B] border border-amber-100 rounded-full flex items-center gap-0.5" title="Bus signal temporarily lost — last known position shown">
+                                    @elseif($nearestFreshnessState === 'STALE')
+                                        <span class="px-1.5 py-0.5 text-[8.5px] font-extrabold bg-amber-50 text-[#854F0B] border border-amber-100 rounded-full flex items-center gap-0.5" title="Bus signal temporarily lost - last known position shown">
                                             <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                            STALE ({{ $nearestDiff }}s)
+                                            STALE ({{ $nearestFreshnessAge }}s)
                                         </span>
-                                    @else
+                                    @elseif($nearestFreshnessState === 'OFFLINE')
                                         <span class="px-1.5 py-0.5 text-[8.5px] font-extrabold bg-rose-50 text-[#A32D2D] border border-rose-100 rounded-full flex items-center gap-0.5">
                                             <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
                                             OFFLINE
+                                        </span>
+                                    @else
+                                        <span class="px-1.5 py-0.5 text-[8.5px] font-extrabold bg-slate-50 text-slate-500 border border-slate-200 rounded-full flex items-center gap-0.5">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                            UNKNOWN
                                         </span>
                                     @endif
                                 </div>
@@ -171,7 +181,7 @@
                                 <span class="text-xs text-slate-400 font-bold mt-0.5">{{ $nearestBus->distance_km }} km away</span>
                             </div>
                             <div class="text-right">
-                                <span class="text-lg font-black text-[#003F87] block leading-none">In {{ $nearestBus->eta_minutes }} min</span>
+                                <span class="text-lg font-black text-[#003F87] block leading-none">{{ $nearestBus->eta_label }}</span>
                                 @if(($nearestBus->passenger_count / $nearestBus->capacity) > 0.8)
                                     <div class="flex items-center gap-1 text-[11px] font-extrabold text-[#A32D2D] justify-end mt-1.5">
                                         <i class="ti ti-users"></i> Nearly Full
@@ -179,7 +189,7 @@
                                 @endif
                             </div>
                         </div>
-                        <button onclick="requestAlertPermission('{{ $nearestBus->plate_number }}', {{ $nearestBus->eta_minutes }})"
+                        <button onclick="requestAlertPermission('{{ $nearestBus->plate_number }}', {{ $nearestBus->eta_minutes ?? 'null' }})"
                                 class="w-full h-[38px] bg-[#003F87] text-white font-bold text-xs rounded-xl shadow-sm hover:bg-[#002f66] active:scale-95 transition-all flex items-center justify-center gap-1.5">
                             <i class="ti ti-bell text-[14px]"></i> Set Alert
                         </button>
@@ -237,26 +247,30 @@
                             @else
                                 <span class="px-2.5 py-0.5 text-[10px] font-extrabold bg-[#FCEBEB] text-[#A32D2D] border border-rose-100 rounded-full">{{ \App\Models\SystemSetting::get('label_bus_status_breakdown', 'Breakdown') }}</span>
                             @endif
-
                             @php
-                                $updatedTime = \Carbon\Carbon::parse($bus->updated_at);
-                                $diffSeconds = now()->diffInSeconds($updatedTime);
+                                $freshnessState = $bus->gps_freshness_state ?? 'UNKNOWN';
+                                $freshnessAge = $bus->gps_freshness_age_seconds ?? null;
                             @endphp
 
-                            @if($diffSeconds < 30)
+                            @if($freshnessState === 'LIVE')
                                 <span class="px-1.5 py-0.5 text-[9px] font-extrabold bg-emerald-50 text-[#0F6E56] border border-emerald-100 rounded-full flex items-center gap-0.5">
                                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                                     LIVE
                                 </span>
-                            @elseif($diffSeconds <= 120)
-                                <span class="px-1.5 py-0.5 text-[9px] font-extrabold bg-amber-50 text-[#854F0B] border border-amber-100 rounded-full flex items-center gap-0.5" title="Bus signal temporarily lost — last known position shown">
+                            @elseif($freshnessState === 'STALE')
+                                <span class="px-1.5 py-0.5 text-[9px] font-extrabold bg-amber-50 text-[#854F0B] border border-amber-100 rounded-full flex items-center gap-0.5" title="Bus signal temporarily lost - last known position shown">
                                     <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                    STALE ({{ $diffSeconds }}s)
+                                    STALE ({{ $freshnessAge }}s)
                                 </span>
-                            @else
+                            @elseif($freshnessState === 'OFFLINE')
                                 <span class="px-1.5 py-0.5 text-[9px] font-extrabold bg-rose-50 text-[#A32D2D] border border-rose-100 rounded-full flex items-center gap-0.5">
                                     <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
                                     OFFLINE
+                                </span>
+                            @else
+                                <span class="px-1.5 py-0.5 text-[9px] font-extrabold bg-slate-50 text-slate-500 border border-slate-200 rounded-full flex items-center gap-0.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                    UNKNOWN
                                 </span>
                             @endif
                         </div>
@@ -271,7 +285,7 @@
                     <!-- Card row 3: ETA Details -->
                     <div class="flex items-center gap-1.5 text-xs font-bold text-[#003F87] pl-0.5">
                         <i class="ti ti-clock text-[13px]"></i>
-                        <span>Next: <strong class="font-extrabold text-slate-700">{{ $bus->next_stop_name }}</strong> — <strong class="text-[#003F87] font-black">{{ $bus->eta_minutes }} min</strong></span>
+                        <span><strong class="font-extrabold text-slate-700">{{ $bus->next_stop_name }}</strong> - <strong class="text-[#003F87] font-black">{{ $bus->eta_label }}</strong></span>
                     </div>
 
                     <!-- Card row 4: Passengers load -->
@@ -380,3 +394,8 @@
     </div>
 
 </div>
+
+
+
+
+

@@ -6,6 +6,73 @@ let globalBusesRecords = [];
 let busCurrentPage = 1;
 let busLastPage = 1;
 let globalBusPaginationMeta = null;
+let latestBusListRequestSeq = 0;
+let busManagementRefreshPromise = null;
+let busManagementPollIntervalId = null;
+let wasBusManagementPollingEligible = false;
+const BUS_LIST_SPEED_DEADBAND_KMH = 0.5;
+
+function isBusRuntimeOperational(bus, normalizedStatus) {
+    return normalizedStatus === 'operating'
+        || normalizedStatus === 'active'
+        || bus.has_active_trip === true;
+}
+
+function isBusPassengerOccupancyAvailable(normalizedStatus) {
+    return normalizedStatus === 'ready' || normalizedStatus === 'operating';
+}
+
+function formatBusRuntimeSpeedKmh(bus) {
+    let speedKmh;
+
+    if (bus.speed_kmh !== undefined && bus.speed_kmh !== null) {
+        speedKmh = Number(bus.speed_kmh);
+    } else if (bus.speed_mps !== undefined && bus.speed_mps !== null) {
+        speedKmh = Number(bus.speed_mps) * 3.6;
+    } else {
+        const rawSpeed = Number(bus.speed) || 0;
+        const unit = String(bus.speed_unit || 'm/s').toLowerCase();
+        speedKmh = unit.includes('km') ? rawSpeed : rawSpeed * 3.6;
+    }
+
+    if (!Number.isFinite(speedKmh)) {
+        speedKmh = 0;
+    }
+
+    const roundedSpeed = Math.round(speedKmh * 10) / 10;
+    const displaySpeed = roundedSpeed < BUS_LIST_SPEED_DEADBAND_KMH ? 0 : roundedSpeed;
+
+    return Number.isInteger(displaySpeed) ? `${displaySpeed}` : displaySpeed.toFixed(1);
+}
+
+function renderBusRuntimePlaceholder(label) {
+    return `<span class="text-slate-400 text-xs italic font-semibold">${label}</span>`;
+}
+
+function renderBusPassengerOccupancyCell(bus, isRuntimeOperational) {
+    if (!isRuntimeOperational) {
+        return renderBusRuntimePlaceholder('Not in Service');
+    }
+
+    const passengers = Math.max(0, Number(bus.passengers) || 0);
+    const capacity = Math.max(0, Number(bus.capacity) || 0);
+    const occupancyPct = capacity > 0
+        ? Math.max(0, Math.min(100, (passengers / capacity) * 100))
+        : 0;
+    const occupancyLabel = Math.round(occupancyPct);
+
+    return `
+        <div class="mx-auto flex w-24 max-w-full flex-col gap-1.5">
+            <div class="flex items-center justify-between gap-2 leading-none">
+                <span class="text-[12px] font-extrabold text-slate-700">${passengers} / ${capacity}</span>
+                <span class="text-[10px] font-bold text-slate-400">${occupancyLabel}%</span>
+            </div>
+            <div class="h-1.5 w-full overflow-hidden rounded-full bg-blue-50 border border-blue-100/70">
+                <div class="h-full rounded-full bg-[#003F87] transition-[width] duration-200" style="width:${occupancyPct}%;"></div>
+            </div>
+        </div>
+    `;
+}
 
 // Helper: Retrieve CSRF Token from Head Meta tag or Config
 function getCsrfToken() {
@@ -53,22 +120,39 @@ async function fetchBuses() {
     const tbody = document.getElementById('buses-tbody');
     if (!tbody) return;
 
+    const requestSeq = ++latestBusListRequestSeq;
+
     try {
         const baseUrl = '/admin/api/buses';
         const url = `${baseUrl}?page=${busCurrentPage}&status=${activeBusStatusFilter}&search=${encodeURIComponent(busSearchQuery)}`;
         const response = await fetch(url);
+        if (requestSeq !== latestBusListRequestSeq) return;
+
         if (response.ok) {
             const paginated = await response.json();
-            globalBusesRecords = paginated.data || [];
+            if (requestSeq !== latestBusListRequestSeq) return;
+
+            const requestedPage = busCurrentPage;
+            const lastPage = paginated.last_page || 1;
+            const records = paginated.data || [];
+
+            if (records.length === 0 && requestedPage > lastPage) {
+                busCurrentPage = lastPage;
+                return fetchBuses();
+            }
+
+            globalBusesRecords = records;
             busCurrentPage = paginated.current_page || 1;
-            busLastPage = paginated.last_page || 1;
+            busLastPage = lastPage;
             globalBusPaginationMeta = paginated;
             
             renderBusesTable();
             renderBusesPagination(paginated);
         }
     } catch (error) {
-        console.error('Failed to load buses:', error);
+        if (requestSeq === latestBusListRequestSeq) {
+            console.error('Failed to load buses:', error);
+        }
     }
 }
 
@@ -98,14 +182,20 @@ function renderBusesTable() {
         
         // Define badge style and display label
         let statusBadgeHtml = '';
-        if (normalizedStatus === 'active') {
-            statusBadgeHtml = `<span class="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">Active</span>`;
+        if (normalizedStatus === 'operating') {
+            statusBadgeHtml = `<span class="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">Operating</span>`;
+        } else if (normalizedStatus === 'ready') {
+            statusBadgeHtml = `<span class="inline-flex items-center rounded-full bg-cyan-50 text-cyan-700 border border-cyan-100 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">Ready</span>`;
         } else if (normalizedStatus === 'inactive') {
             statusBadgeHtml = `<span class="inline-flex items-center rounded-full bg-blue-50 text-blue-700 border border-blue-100 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">Standby</span>`;
         } else if (normalizedStatus === 'maintenance') {
             statusBadgeHtml = `<span class="inline-flex items-center rounded-full bg-amber-50 text-amber-700 border border-amber-100 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">Maintenance</span>`;
         } else if (normalizedStatus === 'breakdown') {
             statusBadgeHtml = `<span class="inline-flex items-center rounded-full bg-rose-50 text-rose-700 border border-rose-100 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">Breakdown</span>`;
+        } else if (normalizedStatus === 'available') {
+            statusBadgeHtml = `<span class="inline-flex items-center rounded-full bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">Legacy Available</span>`;
+        } else if (normalizedStatus === 'active') {
+            statusBadgeHtml = `<span class="inline-flex items-center rounded-full bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">Legacy Active</span>`;
         } else {
             statusBadgeHtml = `<span class="inline-flex items-center rounded-full bg-slate-50 text-slate-550 border border-slate-200 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">${normalizedStatus}</span>`;
         }
@@ -114,13 +204,15 @@ function renderBusesTable() {
         const routeLabel = bus.route ? `Route ${bus.route.name}` : 'No Route Assigned';
         const routeClass = bus.route ? `bm-route-pill bm-route-${bus.route.id}` : 'bm-route-pill bm-route-none';
         
-        const driverLabel = (bus.driver_name && bus.driver_name !== 'Unassigned') ? bus.driver_name : 'No Driver Assigned';
-        const paxLabel = normalizedStatus === 'active' ? `${bus.passengers || 0}` : 'Not in Service';
-        const speedLabel = normalizedStatus === 'active' ? `${bus.speed || 0} km/h` : 'Not in Service';
+        const hasAssignedDriver = bus.driver_name && bus.driver_name !== 'Unassigned';
+        const driverLabel = hasAssignedDriver ? bus.driver_name : renderBusRuntimePlaceholder('No Driver Assigned');
+        const isRuntimeOperational = isBusRuntimeOperational(bus, normalizedStatus);
+        const paxLabel = renderBusPassengerOccupancyCell(bus, isBusPassengerOccupancyAvailable(normalizedStatus));
+        const speedLabel = isRuntimeOperational ? `${formatBusRuntimeSpeedKmh(bus)} km/h` : renderBusRuntimePlaceholder('Not in Service');
         
-        let nextStopLabel = 'No Active Trip';
-        if (normalizedStatus === 'active') {
-            nextStopLabel = (bus.next_stop && bus.next_stop !== 'None') ? bus.next_stop : 'No Active Trip';
+        let nextStopLabel = renderBusRuntimePlaceholder('No Active Trip');
+        if (isRuntimeOperational && bus.next_stop && bus.next_stop !== 'None') {
+            nextStopLabel = bus.next_stop;
         }
 
         // Actions overflow dropdown menu
@@ -153,7 +245,7 @@ function renderBusesTable() {
             <td class="bm-td"><span class="${routeClass}">${routeLabel}</span></td>
             <td class="bm-td font-semibold text-slate-700">${driverLabel}</td>
             <td class="bm-td font-bold text-center text-slate-655">${bus.capacity} seats</td>
-            <td class="bm-td font-bold text-center text-slate-655">${paxLabel}</td>
+            <td class="bm-td text-center text-slate-655">${paxLabel}</td>
             <td class="bm-td font-bold text-center text-slate-655">${speedLabel}</td>
             <td class="bm-td font-semibold text-slate-550">${nextStopLabel}</td>
             <td class="bm-td">${statusBadgeHtml}</td>
@@ -185,7 +277,7 @@ function updateBusSummaryStats() {
         const normalizedStatus = (bus.status ?? '').toLowerCase();
         
         // Primary Life Cycle Counts
-        if (normalizedStatus === 'active') active++;
+        if (normalizedStatus === 'operating' || normalizedStatus === 'active') active++;
         else if (normalizedStatus === 'inactive' || normalizedStatus === 'standby') inactive++;
         else if (normalizedStatus === 'maintenance') maintenance++;
         else if (normalizedStatus === 'breakdown') breakdown++;
@@ -201,8 +293,8 @@ function updateBusSummaryStats() {
         }
     });
 
-    // Available for Dispatch = Inactive (Standby) buses
-    let availableForDispatch = inactive;
+    // Standby / Inactive = non-dispatchable buses awaiting release workflow
+    let standbyInactive = inactive;
 
     // Populate Primary Stats Cards
     const totalEl = document.getElementById('bm-stat-total');
@@ -228,7 +320,7 @@ function updateBusSummaryStats() {
     if (assignedEl) assignedEl.textContent = assignedBuses;
 
     const dispatchEl = document.getElementById('bm-health-dispatch');
-    if (dispatchEl) dispatchEl.textContent = availableForDispatch;
+    if (dispatchEl) dispatchEl.textContent = standbyInactive;
 
     const labelEl = document.getElementById('bm-buses-registered-label');
     if (labelEl) labelEl.textContent = `${total} registered municipal buses in Pasig Libreng Sakay Fleet`;
@@ -325,7 +417,7 @@ async function changeBusesPage(page) {
 // Export all bus records to CSV client-side
 function exportBusesCSV() {
     if (!fleetData || fleetData.length === 0) {
-        alert('No records available to export.');
+        GoPasigUI.alert('No records available to export.');
         return;
     }
 
@@ -382,7 +474,7 @@ async function populateDriverDropdown(selectedDriverName, busPlate) {
             const activeBusDrivers = fleetData
                 .filter(b => {
                     const normalizedStatus = (b.status ?? '').toLowerCase();
-                    return normalizedStatus === 'active' && b.plate !== busPlate;
+                    return (normalizedStatus === 'operating' || normalizedStatus === 'active') && b.plate !== busPlate;
                 })
                 .map(b => b.driver);
 
@@ -416,6 +508,89 @@ async function populateDriverDropdown(selectedDriverName, busPlate) {
     }
 }
 
+function normalizeBusRecordForForm(bus) {
+    if (!bus) return null;
+
+    return {
+        id: bus.id,
+        plate: bus.plate || bus.plate_number || '',
+        plate_number: bus.plate_number || bus.plate || '',
+        vin: bus.vin || '',
+        fleet_number: bus.fleet_number || '',
+        manufacturer: bus.manufacturer || '',
+        model: bus.model || '',
+        year_model: bus.year_model || '',
+        capacity: bus.capacity || '',
+        battery_capacity_kwh: bus.battery_capacity_kwh || '',
+        max_charging_power_kw: bus.max_charging_power_kw || '',
+        charging_port_type: bus.charging_port_type || 'CCS2',
+        status: String(bus.status || bus.operationalStatus || '').toLowerCase(),
+        driver: bus.driver || bus.driver_name || 'Unassigned',
+        driver_name: bus.driver_name || bus.driver || 'Unassigned',
+        route: bus.route || bus.route_id || 'None',
+        route_id: bus.route_id || (bus.route && bus.route.id) || null,
+    };
+}
+
+function findCurrentBusRecord(busId) {
+    const normalizedId = Number(busId);
+    const listRecord = globalBusesRecords.find(b => Number(b.id) === normalizedId);
+    if (listRecord) return normalizeBusRecordForForm(listRecord);
+
+    const fleetRecord = fleetData.find(b => Number(b.id) === normalizedId);
+    return normalizeBusRecordForForm(fleetRecord);
+}
+
+async function refreshBusManagementState() {
+    if (busManagementRefreshPromise) {
+        return busManagementRefreshPromise;
+    }
+
+    busManagementRefreshPromise = Promise.all([
+        typeof loadDatabaseFleetData === 'function'
+            ? loadDatabaseFleetData({ renderBusTable: false })
+            : Promise.resolve(),
+        fetchBuses()
+    ])
+        .finally(() => {
+            busManagementRefreshPromise = null;
+        });
+
+    return busManagementRefreshPromise;
+}
+
+function isBusManagementPollingEligible() {
+    const screen = document.getElementById('screen-buses');
+    return !!screen &&
+        !screen.classList.contains('hidden') &&
+        document.visibilityState !== 'hidden';
+}
+
+function refreshBusManagementIfVisible() {
+    if (!isBusManagementPollingEligible()) return Promise.resolve(false);
+    return refreshBusManagementState().then(() => true);
+}
+
+function initBusManagementRuntimePolling() {
+    if (busManagementPollIntervalId) return;
+
+    const refreshInterval = (typeof pollingInterval !== 'undefined') ? pollingInterval : 5000;
+
+    busManagementPollIntervalId = setInterval(() => {
+        const eligible = isBusManagementPollingEligible();
+        wasBusManagementPollingEligible = eligible;
+        if (!eligible || busManagementRefreshPromise) return;
+        refreshBusManagementState();
+    }, refreshInterval);
+}
+
+function handleBusManagementVisibilityResume() {
+    const eligible = isBusManagementPollingEligible();
+    if (eligible && !wasBusManagementPollingEligible) {
+        refreshBusManagementIfVisible();
+    }
+    wasBusManagementPollingEligible = eligible;
+}
 // Toggle custom manufacturer input field
 window.toggleCustomManufacturer = function(select) {
     const wrapper = document.getElementById('bm-manufacturer-custom-wrapper');
@@ -471,7 +646,7 @@ function openAddBusModal(mode, busId) {
             if (statusNoteWrapper) statusNoteWrapper.classList.remove('hidden');
             statusInput.removeAttribute('required');
 
-            const optInactive = new Option('Inactive (Idle / off-duty)', 'inactive');
+            const optInactive = new Option('Standby (Inactive)', 'inactive');
             optInactive.selected = true;
             statusInput.add(optInactive);
             statusInput.value = 'inactive';
@@ -480,7 +655,7 @@ function openAddBusModal(mode, busId) {
             if (statusNoteWrapper) statusNoteWrapper.classList.add('hidden');
             statusInput.setAttribute('required', 'required');
 
-            const bus = fleetData.find(b => b.id === busId);
+            const bus = findCurrentBusRecord(busId);
             if (bus && bus.status) {
                 const currentStatusLower = bus.status.toLowerCase();
                 if (currentStatusLower === 'active') {
@@ -489,7 +664,7 @@ function openAddBusModal(mode, busId) {
                     optActive.selected = true;
                     statusInput.add(optActive);
                 }
-                const optInactive = new Option('Inactive (Idle / off-duty)', 'inactive');
+                const optInactive = new Option('Standby (Inactive)', 'inactive');
                 if (currentStatusLower === 'inactive') optInactive.selected = true;
                 statusInput.add(optInactive);
 
@@ -525,7 +700,7 @@ function openAddBusModal(mode, busId) {
         if (desc) desc.textContent = "Update the operational status, capacity, and technical specifications for this bus.";
         if (submitBtn) submitBtn.textContent = "Update Bus Details";
         
-        const bus = fleetData.find(b => b.id === busId);
+        const bus = findCurrentBusRecord(busId);
         if (bus) {
             const editIdInput = document.getElementById('edit-bus-id');
             if (editIdInput) editIdInput.value = bus.id;
@@ -679,11 +854,11 @@ async function handleBusSubmit(event) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             closeAddBusModal();
             
-            // Reload all dynamic records (re-draws maps and tables automatically)
-            await loadDatabaseFleetData();
+            // Synchronize dashboard state and the authoritative paginated bus list.
+            await refreshBusManagementState();
         } else {
             // Log the complete validation response
             console.error('Validation Response:', data);
@@ -698,20 +873,20 @@ async function handleBusSubmit(event) {
             } else {
                 alertMsg += `\n• ${data.message || 'Validation error. Please verify input data.'}`;
             }
-            alert(alertMsg);
+            GoPasigUI.alert(alertMsg);
         }
     } catch (error) {
-        alert('Server connection error. Failed to save bus details.');
+        GoPasigUI.alert('Server connection error. Failed to save bus details.');
         console.error('AJAX Bus submit error:', error);
     }
 }
 
 // AJAX Bus Delete
 async function deleteBus(busId) {
-    const bus = fleetData.find(b => b.id === busId);
+    const bus = findCurrentBusRecord(busId);
     if (!bus) return;
 
-    if (!confirm(`Are you absolutely sure you want to delete bus registration ${bus.plate}?\nThis action cannot be undone.`)) {
+    if (!(await GoPasigUI.confirm(`Are you absolutely sure you want to delete bus registration ${bus.plate}?\nThis action cannot be undone.`))) {
         return;
     }
 
@@ -728,14 +903,14 @@ async function deleteBus(busId) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
-            // Reload dynamic records
-            await loadDatabaseFleetData();
+            GoPasigUI.alert(data.message);
+            // Synchronize dashboard state and the authoritative paginated bus list.
+            await refreshBusManagementState();
         } else {
-            alert(data.message || 'Failed to delete bus registration.');
+            GoPasigUI.alert(data.message || 'Failed to delete bus registration.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to delete bus registration.');
+        GoPasigUI.alert('Server connection error. Failed to delete bus registration.');
         console.error('AJAX Bus delete error:', error);
     }
 }
@@ -746,4 +921,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof isDatabaseDataLoaded !== 'undefined' && isDatabaseDataLoaded) {
         updateBusSummaryStats();
     }
+    initBusManagementRuntimePolling();
+    wasBusManagementPollingEligible = isBusManagementPollingEligible();
 });
+
+document.addEventListener('visibilitychange', handleBusManagementVisibilityResume);
+window.addEventListener('focus', handleBusManagementVisibilityResume);
+
+const originalBusManagementSwitchScreen = typeof switchScreen === 'function' ? switchScreen : null;
+if (originalBusManagementSwitchScreen) {
+    switchScreen = function(screenName) {
+        originalBusManagementSwitchScreen(screenName);
+        if (screenName === 'buses') {
+            refreshBusManagementIfVisible();
+        }
+        handleBusManagementVisibilityResume();
+    };
+}
+
+
+
+
+
+
+
+
+

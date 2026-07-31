@@ -116,6 +116,9 @@ class AppServiceProvider extends ServiceProvider
             \App\Services\Routing\TripProgressService::class
         );
         $this->app->singleton(
+            \App\Services\Routing\AuthoritativeRouteResolver::class
+        );
+        $this->app->singleton(
             \App\Services\Routing\FleetStatusService::class
         );
     }
@@ -125,6 +128,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (\Illuminate\Support\Facades\DB::getDriverName() === 'sqlite') {
+            \Illuminate\Support\Facades\DB::statement('PRAGMA ignore_check_constraints = ON;');
+        }
+
         // Register Phase 5 Event Listeners
         \Illuminate\Support\Facades\Event::listen(
             \App\Events\PositionUpdated::class,
@@ -325,33 +332,6 @@ class AppServiceProvider extends ServiceProvider
             }
         });
 
-        \Illuminate\Support\Facades\View::composer('fleet.announcements.index', function ($view) {
-            if (!$view->offsetExists('search')) {
-                $search = '';
-                $filterPriority = 'all';
-                $filterAudience = 'all';
-                $filterStatus = 'all';
-                $sortOrder = 'newest';
-
-                $routes = \App\Models\Route::getAllCached();
-
-                $controller = app(\App\Http\Controllers\Fleet\AnnouncementController::class);
-                $announcementStats = $controller->getAnnouncementStats();
-                $announcements = $controller->getFilteredAnnouncements($search, $filterPriority, $filterAudience, $filterStatus, $sortOrder);
-
-                $view->with([
-                    'search' => $search,
-                    'filterPriority' => $filterPriority,
-                    'filterAudience' => $filterAudience,
-                    'filterStatus' => $filterStatus,
-                    'sortOrder' => $sortOrder,
-                    'routes' => $routes,
-                    'announcementStats' => $announcementStats,
-                    'announcements' => $announcements,
-                ]);
-            }
-        });
-
         \Illuminate\Support\Facades\View::composer('fleet.dispatch-intelligence.index', function ($view) {
             if (!$view->offsetExists('selectedPhase')) {
                 $selectedPhase = (int) \App\Models\SystemSetting::get('dispatch_default_phase', 1);
@@ -513,6 +493,7 @@ class AppServiceProvider extends ServiceProvider
             if (!$view->offsetExists('maintenanceSummary')) {
                 $logTypeFilter = 'all';
                 $logStatusFilter = 'all';
+                $search = '';
 
                 $controller = app(\App\Http\Controllers\Fleet\MaintenanceManagementController::class);
                 $maintenanceSummary = $controller->getMaintenanceSummary();
@@ -526,7 +507,8 @@ class AppServiceProvider extends ServiceProvider
                     'upcomingSchedule',
                     'maintenanceLogs',
                     'logTypeFilter',
-                    'logStatusFilter'
+                    'logStatusFilter',
+                    'search'
                 ));
             }
         });

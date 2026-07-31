@@ -81,14 +81,14 @@
             <table class="w-full text-left border-collapse">
                 <thead>
                     <tr class="bg-slate-50/75 border-b border-slate-200">
-                        <th class="py-3 px-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 w-[15%]">Date & time</th>
+                        <th class="py-3 px-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 w-[15%]">Original alert date</th>
                         <th class="py-3 px-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 w-[12%]">Type</th>
                         <th class="py-3 px-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 w-[13%]">Severity</th>
                         <th class="py-3 px-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 w-[25%]">Title</th>
                         <th class="py-3 px-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 w-[15%]">Affects</th>
-                        <th class="py-3 px-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 w-[10%]">Sent by</th>
-                        <th class="py-3 px-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 w-[10%]">Reached</th>
-                        <th class="py-3 px-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 w-[10%]">Status</th>
+                        <th class="py-3 px-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 w-[10%]">Archived date</th>
+                        <th class="py-3 px-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 w-[10%]">Operational</th>
+                        <th class="py-3 px-4 text-[10px] font-bold uppercase tracking-wider text-slate-400 w-[10%]">Final status</th>
                     </tr>
                 </thead>
                 <tbody id="history-table-body" class="divide-y divide-slate-100 text-xs">
@@ -234,3 +234,4 @@
         animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
 </style>
+

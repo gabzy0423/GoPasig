@@ -15,6 +15,17 @@ function getCsrfToken() {
     return meta ? meta.getAttribute('content') : '';
 }
 
+async function refreshMaintenanceBusRuntimeState() {
+    if (typeof refreshBusManagementState === 'function') {
+        await refreshBusManagementState();
+        return;
+    }
+
+    if (typeof loadDatabaseFleetData === 'function') {
+        await loadDatabaseFleetData();
+    }
+}
+
 // Format date for display (e.g., "May 26, 2026, 09:30 AM")
 function formatMaintenanceDate(dateString) {
     if (!dateString) return '—';
@@ -149,7 +160,7 @@ async function handleInspectionSubmit(event) {
     const inspectionNotes = document.getElementById('inspection-notes').value.trim();
 
     if (!recordId || !inspectedBy) {
-        alert('Please fill in all required fields.');
+        GoPasigUI.alert('Please fill in all required fields.');
         return;
     }
 
@@ -175,20 +186,18 @@ async function handleInspectionSubmit(event) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             closeInspectionModal();
             
             // Reload logs
             await fetchMaintenanceLogs();
-            if (typeof loadDatabaseFleetData === 'function') {
-                await loadDatabaseFleetData();
-            }
+            await refreshMaintenanceBusRuntimeState();
         } else {
-            alert(data.message || 'Failed to submit inspection.');
+            GoPasigUI.alert(data.message || 'Failed to submit inspection.');
             console.error('Inspection failed:', data);
         }
     } catch (error) {
-        alert('Server connection error. Failed to submit inspection.');
+        GoPasigUI.alert('Server connection error. Failed to submit inspection.');
         console.error('AJAX inspection error:', error);
     }
 }
@@ -204,7 +213,7 @@ async function handleMaintenanceSubmit(event) {
     const scheduledAt = document.getElementById('maintenance-date').value;
 
     if (!busId || !scheduledAt) {
-        alert('Please select a bus unit and scheduled date/time.');
+        GoPasigUI.alert('Please select a bus unit and scheduled date/time.');
         return;
     }
 
@@ -235,20 +244,18 @@ async function handleMaintenanceSubmit(event) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             closeScheduleMaintenanceModal();
             
             // Reload logs and refresh the global fleet tables/maps
             await fetchMaintenanceLogs();
-            if (typeof loadDatabaseFleetData === 'function') {
-                await loadDatabaseFleetData();
-            }
+            await refreshMaintenanceBusRuntimeState();
         } else {
-            alert(data.message || 'Validation error. Please verify input data.');
+            GoPasigUI.alert(data.message || 'Validation error. Please verify input data.');
             console.error('Maintenance schedule failed:', data.errors || data);
         }
     } catch (error) {
-        alert('Server connection error. Failed to schedule maintenance.');
+        GoPasigUI.alert('Server connection error. Failed to schedule maintenance.');
         console.error('AJAX maintenance submit error:', error);
     }
 }
@@ -485,7 +492,7 @@ function closeRowMenuOutside() {
 // Export loaded maintenance records to CSV client-side
 function exportMaintenanceCSV() {
     if (!globalMaintenanceRecords || globalMaintenanceRecords.length === 0) {
-        alert('No records available to export.');
+        GoPasigUI.alert('No records available to export.');
         return;
     }
     
@@ -623,7 +630,7 @@ async function changeMaintenancePage(page) {
 
 // Cancel Maintenance Record
 async function cancelMaintenanceRecord(id) {
-    if (!confirm('Are you sure you want to cancel this scheduled maintenance session?\nThis will return the bus to Standby (Inactive).')) {
+    if (!(await GoPasigUI.confirm('Are you sure you want to cancel this scheduled maintenance session?\nThis will return the bus to Standby (Inactive).'))) {
         return;
     }
 
@@ -640,24 +647,22 @@ async function cancelMaintenanceRecord(id) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             // Refresh logs
             await fetchMaintenanceLogs();
-            if (typeof loadDatabaseFleetData === 'function') {
-                await loadDatabaseFleetData();
-            }
+            await refreshMaintenanceBusRuntimeState();
         } else {
-            alert(data.message || 'Failed to cancel maintenance.');
+            GoPasigUI.alert(data.message || 'Failed to cancel maintenance.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to cancel maintenance.');
+        GoPasigUI.alert('Server connection error. Failed to cancel maintenance.');
         console.error('AJAX cancel error:', error);
     }
 }
 
 // Complete Maintenance Task
 async function completeMaintenanceTask(id) {
-    if (!confirm('Are you sure you want to mark this maintenance task as COMPLETED?\nThis will restore the bus operational status back to ACTIVE.')) {
+    if (!(await GoPasigUI.confirm('Are you sure you want to mark this maintenance task as COMPLETED?\nThis will restore the bus operational status back to ACTIVE.'))) {
         return;
     }
 
@@ -675,24 +680,22 @@ async function completeMaintenanceTask(id) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             // Refresh local logs and global fleet state
             await fetchMaintenanceLogs();
-            if (typeof loadDatabaseFleetData === 'function') {
-                await loadDatabaseFleetData();
-            }
+            await refreshMaintenanceBusRuntimeState();
         } else {
-            alert(data.message || 'Failed to update maintenance task status.');
+            GoPasigUI.alert(data.message || 'Failed to update maintenance task status.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to complete maintenance task.');
+        GoPasigUI.alert('Server connection error. Failed to complete maintenance task.');
         console.error('AJAX complete error:', error);
     }
 }
 
 // Delete Maintenance Record
 async function deleteMaintenanceRecord(id) {
-    if (!confirm('Are you sure you want to delete this maintenance record?\nIf the task is not completed, this will unlock the bus back to active.')) {
+    if (!(await GoPasigUI.confirm('Are you sure you want to delete this maintenance record?\nIf the task is not completed, this will unlock the bus back to active.'))) {
         return;
     }
 
@@ -710,17 +713,15 @@ async function deleteMaintenanceRecord(id) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             // Refresh local logs and global fleet state
             await fetchMaintenanceLogs();
-            if (typeof loadDatabaseFleetData === 'function') {
-                await loadDatabaseFleetData();
-            }
+            await refreshMaintenanceBusRuntimeState();
         } else {
-            alert(data.message || 'Failed to delete maintenance record.');
+            GoPasigUI.alert(data.message || 'Failed to delete maintenance record.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to delete maintenance record.');
+        GoPasigUI.alert('Server connection error. Failed to delete maintenance record.');
         console.error('AJAX delete error:', error);
     }
 }
@@ -741,3 +742,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 });
+
+
+

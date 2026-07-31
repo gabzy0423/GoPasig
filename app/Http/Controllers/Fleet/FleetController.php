@@ -28,6 +28,7 @@ use App\Models\GeofenceTransition;
 use App\Models\TripProgress;
 use App\Models\VehiclePosition;
 use App\Services\ValueObjects\Coordinate;
+use App\Services\RouteMapGeometryService;
 use App\Services\Contracts\GeospatialServiceInterface;
 
 class FleetController extends Controller
@@ -47,8 +48,34 @@ class FleetController extends Controller
     {
         $operator = Auth::user() ?? (object) ['name' => 'Dispatcher'];
         $now = Carbon::now('Asia/Manila');
+        $allowedTabs = [
+            'overview',
+            'monitor',
+            'utilization',
+            'drivers',
+            'routes',
+            'schedule',
+            'incidents',
+            'maintenance',
+            'analytics',
+            'dispatch-intelligence',
+            'commuter-trips',
+            'commuter-sessions',
+            'profile',
+        ];
+        $activeFleetTab = request()->query('tab', 'overview');
+        if (! in_array($activeFleetTab, $allowedTabs, true)) {
+            $activeFleetTab = 'overview';
+        }
 
-        // Load operating hours from database settings (fallback: 05:00 – 21:00)
+        if (request()->boolean('fragment') && $activeFleetTab !== 'overview') {
+            return response()->json([
+                'success' => true,
+                'tab' => $activeFleetTab,
+                'html' => view($this->fleetModuleView($activeFleetTab))->render(),
+            ]);
+        }
+        // Load operating hours from database settings (fallback: 05:00 - 21:00)
         $startTime = SystemSetting::get('service_start_time', '05:00');
         $endTime   = SystemSetting::get('service_end_time',   '21:00');
         [$startH, $startM] = array_map('intval', explode(':', $startTime));
@@ -63,9 +90,31 @@ class FleetController extends Controller
         return view('fleet.dashboard', array_merge([
             'operator' => $operator,
             'inService' => $inService,
+            'activeFleetTab' => $activeFleetTab,
         ], $data));
     }
 
+    /**
+     * Resolve an on-demand dashboard module to its existing Blade partial.
+     */
+    private function fleetModuleView(string $tab): string
+    {
+        return match ($tab) {
+            'monitor' => 'fleet.monitor.index',
+            'utilization' => 'fleet.utilization.index',
+            'drivers' => 'fleet.performance.drivers.index',
+            'routes' => 'fleet.performance.routes.index',
+            'schedule' => 'fleet.schedule.index',
+            'incidents' => 'fleet.incidents.index',
+            'maintenance' => 'fleet.maintenance.index',
+            'analytics' => 'fleet.analytics.index',
+            'dispatch-intelligence' => 'fleet.dispatch-intelligence.index',
+            'commuter-trips' => 'fleet.commuter-trips.index',
+            'commuter-sessions' => 'fleet.commuter-sessions.index',
+            'profile' => 'fleet.profile.index',
+            default => 'fleet.overview-content',
+        };
+    }
     /**
      * API endpoint to get refreshed overview data.
      */
@@ -129,7 +178,7 @@ class FleetController extends Controller
 
         // Log recent activity
         $user = Auth::user();
-        $this->logActivity('Incident', 'Reported: ' . ($trip->bus ? $trip->bus->plate_number : 'Bus') . ' — ' . $type . ' (' . $incident->description . ') by ' . ($user->name ?? 'Dispatcher'));
+        $this->logActivity('Incident', 'Reported: ' . ($trip->bus ? $trip->bus->plate_number : 'Bus') . ' â€” ' . $type . ' (' . $incident->description . ') by ' . ($user->name ?? 'Dispatcher'));
 
         return response()->json([
             'success' => true,
@@ -161,7 +210,7 @@ class FleetController extends Controller
         // Log activity
         $user = Auth::user();
         $plate = ($incident->trip && $incident->trip->bus) ? $incident->trip->bus->plate_number : 'Bus';
-        $this->logActivity('Incident', 'Incident resolved: ' . $plate . ' — ' . $incident->type . ' by ' . ($user->name ?? 'Dispatcher'));
+        $this->logActivity('Incident', 'Incident resolved: ' . $plate . ' â€” ' . $incident->type . ' by ' . ($user->name ?? 'Dispatcher'));
 
         return response()->json([
             'success' => true,
@@ -246,10 +295,9 @@ class FleetController extends Controller
         foreach ($offlineBusesCheck as $busCheck) {
             $ongoingTrip = Trip::where('bus_id', $busCheck->id)->where('status', 'ongoing')->first();
             if ($ongoingTrip) {
-                // Check if a signal lost incident already exists (including resolved ones within last hour)
                 $alreadyLogged = Incident::where('trip_id', $ongoingTrip->id)
                     ->where('type', 'Delay')
-                    ->where('description', 'like', '%signal lost%')
+                    ->where('description', 'like', "%Bus {$busCheck->plate_number} signal lost%")
                     ->where('reported_at', '>=', now()->subHour())
                     ->exists();
 
@@ -259,7 +307,7 @@ class FleetController extends Controller
                         'trip_id' => $ongoingTrip->id,
                         'driver_id' => $ongoingTrip->driver_id,
                         'type' => 'Delay', // maps to Medium severity
-                        'description' => "Bus {$busCheck->plate_number} signal lost — last known position: {$location}",
+                        'description' => "Bus {$busCheck->plate_number} signal lost â€” last known position: {$location}",
                         'status' => 'reported',
                         'reported_at' => now(),
                     ]);
@@ -269,7 +317,7 @@ class FleetController extends Controller
 
         $overviewKpi = $this->dashboardService->getFleetOverviewKpi();
 
-        // ─── 2. ACTIVE INCIDENTS ──────────────────────────────────────────────
+        // 2. ACTIVE INCIDENTS
         $dbIncidents = DB::table('incidents')
             ->leftJoin('drivers', 'incidents.driver_id', '=', 'drivers.id')
             ->leftJoin('trips', 'incidents.trip_id', '=', 'trips.id')
@@ -305,7 +353,7 @@ class FleetController extends Controller
                 return [
                     'id' => 'db-' . $incident->id,
                     'severity' => $severity,
-                    'title' => trim($plateNumber) . ' — ' . $incident->type . ': ' . $incident->description,
+                    'title' => trim($plateNumber) . ' â€” ' . $incident->type . ': ' . $incident->description,
                     'location' => 'Active Route',
                     'affected_route' => $routeName,
                     'reported_at' => Carbon::parse($incident->reported_at)->toIso8601String(),
@@ -316,7 +364,7 @@ class FleetController extends Controller
         $activeIncidents = $dbIncidentsMapped;
         $overviewKpi['open_incidents'] = count($activeIncidents);
 
-        // ─── 3. ROUTE HEALTH ──────────────────────────────────────────────────
+        // 3. ROUTE HEALTH
         // Get route colors from database
         $routeColorsList = ColorPalette::where('usage', 'routes')->orderBy('order')->get();
         $routeColors = [];
@@ -387,7 +435,7 @@ class FleetController extends Controller
 
             return [
                 'route_id' => $route->id,
-                'route_name' => $route->name . ' — ' . $route->description,
+                'route_name' => $route->name . ' â€” ' . $route->description,
                 'route_color' => $routeColors[$route->id] ?? '#888780',
                 'health_status' => $healthStatus,
                 'buses_on_route' => $busesOnRoute,
@@ -397,7 +445,7 @@ class FleetController extends Controller
             ];
         })->toArray();
 
-        // ─── 4. SCHEDULE COMPLIANCE ───────────────────────────────────────────
+        // 4. SCHEDULE COMPLIANCE
         $totalSchedules = Schedule::count();
         $onTimeCount   = Schedule::where('status', Schedule::STATUS_ON_TIME)->count();
         $delayedCount  = Schedule::where('status', Schedule::STATUS_DELAYED)->count();
@@ -413,7 +461,7 @@ class FleetController extends Controller
             'as_of' => Carbon::now('Asia/Manila')->format('h:i A'),
         ];
 
-        // ─── 5. RECENT ACTIVITY FEED ──────────────────────────────────────────
+        // 5. RECENT ACTIVITY FEED
         $activities = collect();
 
         $dispatchLogs = DB::table('dispatch_logs')
@@ -457,7 +505,7 @@ class FleetController extends Controller
                 $prefix = $inc->status === 'resolved' ? 'Resolved' : 'Reported';
                 return [
                     'type' => 'Incident',
-                    'description' => $prefix . ': ' . $inc->plate_number . ' — ' . $inc->type . ' (' . $inc->description . ')',
+                    'description' => $prefix . ': ' . $inc->plate_number . ' â€” ' . $inc->type . ' (' . $inc->description . ')',
                     'timestamp' => Carbon::parse($inc->event_time)->diffForHumans(),
                     'sort_time' => $inc->event_time,
                 ];
@@ -478,7 +526,7 @@ class FleetController extends Controller
             ->map(function ($rec) {
                 return [
                     'type' => 'Maintenance',
-                    'description' => $rec->plate_number . ' — ' . $rec->type . ' (' . $rec->status . ')',
+                    'description' => $rec->plate_number . ' â€” ' . $rec->type . ' (' . $rec->status . ')',
                     'timestamp' => Carbon::parse($rec->event_time)->diffForHumans(),
                     'sort_time' => $rec->event_time,
                 ];
@@ -529,15 +577,22 @@ class FleetController extends Controller
         })->toArray();
 
         // All Routes
+        $activeTripsForMap = Trip::where('status', 'ongoing')->with('routeVariant')->get();
+        $routeMapGeometry = app(RouteMapGeometryService::class);
+
         $allRoutes = Route::getAllCached()
             ->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])
             ->sortBy('id')
-            ->map(function ($route) {
+            ->map(function ($route) use ($activeTripsForMap, $routeMapGeometry) {
+                $mapGeometry = $routeMapGeometry->forRoute($route, $activeTripsForMap);
                 return [
                     'id' => $route->id,
                     'name' => $route->name,
                     'description' => $route->description,
-                    'polyline_coordinates' => $route->polyline_coordinates,
+                    'polyline_coordinates' => $mapGeometry['polyline_coordinates'],
+                    'map_geometry_source' => $mapGeometry['source'],
+                    'map_geometry_status' => $mapGeometry['geometry_status'],
+                    'map_variant_geometries' => $mapGeometry['variant_geometries'],
                 ];
             })
             ->values()
@@ -639,7 +694,7 @@ class FleetController extends Controller
      */
     public function getBusGpsPositions()
     {
-        $activeTrips = Trip::where('status', 'ongoing')->get()->keyBy('bus_id');
+        $activeTrips = Trip::where('status', 'ongoing')->with('routeVariant')->get()->keyBy('bus_id');
         $activeBusIds = $activeTrips->keys()->all();
 
         $rawBuses = Bus::where(function ($q) use ($activeBusIds) {
@@ -694,27 +749,33 @@ class FleetController extends Controller
 
             if ($trip) {
                 $progress = TripProgress::where('trip_id', $trip->id)
-                    ->with('currentStop', 'nextStop')
+                    ->with('currentStop', 'nextStop', 'currentRouteVariantStop', 'nextRouteVariantStop')
                     ->first();
 
                 if ($progress) {
-                    if ($progress->currentStop) {
-                        $currentStopName = $progress->currentStop->name;
-                        $nearestStopName = $progress->currentStop->name;
+                    $currentStopModel = $progress->currentRouteVariantStop ?: $progress->currentStop;
+                    $nextStopModel = $progress->nextRouteVariantStop ?: $progress->nextStop;
+
+                    if ($currentStopModel) {
+                        $currentStopName = $currentStopModel->name;
+                        $nearestStopName = $currentStopModel->name;
                     }
 
-                    if ($progress->nextStop) {
-                        $upcomingStopName = $progress->nextStop->name;
+                    if ($nextStopModel) {
+                        $upcomingStopName = $nextStopModel->name;
                         if ($currentStopName === null) {
-                            $nearestStopName = $progress->nextStop->name;
+                            $nearestStopName = $nextStopModel->name;
                         }
                     }
 
                     $adherence = $progress->route_adherence;
                     $tripProgress = [
                         'current_stop_id' => $progress->current_stop_id,
+                        'current_route_variant_stop_id' => $progress->current_route_variant_stop_id,
                         'next_stop_id' => $progress->next_stop_id,
+                        'next_route_variant_stop_id' => $progress->next_route_variant_stop_id,
                         'last_completed_stop_id' => $progress->last_completed_stop_id,
+                        'last_completed_route_variant_stop_id' => $progress->last_completed_route_variant_stop_id,
                         'completed_stops' => $progress->completed_stops_count,
                         'remaining_stops' => $progress->remaining_stops_count,
                         'completion_percentage' => $progress->trip_percentage,
@@ -745,7 +806,7 @@ class FleetController extends Controller
             $routeName = 'Unassigned';
             $tripId = null;
             if ($trip) {
-                $trip->loadMissing('driver', 'route');
+                $trip->loadMissing('driver', 'route', 'routeVariant');
                 $driverName = $trip->driver ? $trip->driver->name : 'Unassigned';
                 $routeId = $trip->route_id;
                 $routeName = $trip->route ? ($trip->route->name . ' - ' . $trip->route->description) : 'Unassigned';
@@ -767,6 +828,10 @@ class FleetController extends Controller
                 'driver_name'        => $driverName,
                 'route_id'           => $routeId,
                 'route_name'         => $routeName,
+                'route_variant_id'   => $trip?->route_variant_id,
+                'direction'          => $trip?->routeVariant?->direction,
+                'origin_name'        => $trip?->routeVariant?->origin_name,
+                'destination_name'   => $trip?->routeVariant?->destination_name,
                 'trip_id'            => $tripId,
                 'trip_progress'      => $tripProgress,
                 'speed_mps'          => $liveSpeedMps,

@@ -166,7 +166,7 @@
                                         <span class="absolute inset-y-0 left-3 flex items-center text-slate-400">
                                             <i class="ti ti-users text-base"></i>
                                         </span>
-                                        <input id="new-bus-capacity" name="capacity" type="number" placeholder="e.g. 45" value="{{ $defaultCapacity }}" min="{{ $minCapacity }}" max="{{ $maxCapacity }}" required
+                                        <input id="new-bus-capacity" name="capacity" type="number" placeholder="Enter seating capacity" value="{{ $defaultCapacity }}" min="{{ $minCapacity }}" max="{{ $maxCapacity }}" required
                                             class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87]">
                                     </div>
                                     <p class="text-[10px] text-slate-400 font-medium">Passenger limit of this bus unit (minimum {{ $minCapacity }}, maximum {{ $maxCapacity }}).</p>
@@ -333,18 +333,18 @@
             const data = await response.json();
 
             if (response.ok && data.success) {
-                alert(data.message);
+                GoPasigUI.alert(data.message);
                 // Redirect back to admin dashboard's buses tab
                 window.location.href = "{{ route('admin.dashboard') }}#buses";
             } else {
-                alert(data.message || 'Validation error. Please verify input data.');
+                GoPasigUI.alert(data.message || 'Validation error. Please verify input data.');
                 if (submitBtn) {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Register Bus';
                 }
             }
         } catch (error) {
-            alert('Server connection error. Failed to register bus.');
+            GoPasigUI.alert('Server connection error. Failed to register bus.');
             console.error('AJAX Bus submit error:', error);
             if (submitBtn) {
                 submitBtn.disabled = false;

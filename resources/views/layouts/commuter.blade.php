@@ -38,15 +38,45 @@
         .premium-transition {
             transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
+        :root {
+            --commuter-header-height: 60px;
+            --commuter-bottom-nav-height: 68px;
+            --commuter-bottom-nav-offset: 1rem;
+            --commuter-content-breathing-room: 1rem;
+            --commuter-safe-top: env(safe-area-inset-top, 0px);
+            --commuter-safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        .commuter-shell {
+            height: 100vh;
+            min-height: 100vh;
+        }
+        @supports (height: 100dvh) {
+            .commuter-shell {
+                height: 100dvh;
+                min-height: 100dvh;
+            }
+        }
+        .commuter-header {
+            height: calc(var(--commuter-header-height) + var(--commuter-safe-top));
+            padding-top: var(--commuter-safe-top);
+        }
+        .commuter-main {
+            padding-top: calc(var(--commuter-header-height) + var(--commuter-safe-top));
+            padding-bottom: calc(var(--commuter-bottom-nav-height) + var(--commuter-bottom-nav-offset) + var(--commuter-safe-bottom) + var(--commuter-content-breathing-room));
+        }
+        .commuter-bottom-nav {
+            bottom: calc(var(--commuter-bottom-nav-offset) + var(--commuter-safe-bottom));
+            height: var(--commuter-bottom-nav-height);
+        }
     </style>
 </head>
 <body class="h-full flex justify-center items-center overflow-hidden antialiased">
     
     <!-- Centered premium mobile container -->
-    <div class="relative w-full max-w-[430px] h-screen bg-[#F8FAFC] flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.3)] overflow-hidden">
+    <div class="commuter-shell relative w-full max-w-[430px] bg-[#F8FAFC] flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.3)] overflow-hidden">
         
         <!-- TOP NAVBAR (Clean Premium White with Highlight Shadow) -->
-        <header class="absolute top-0 left-0 right-0 h-[60px] bg-white border-b border-slate-100 px-4 flex justify-between items-center z-50 shadow-[0_4px_16px_rgba(15,23,42,0.06)]">
+        <header class="commuter-header absolute top-0 left-0 right-0 bg-white border-b border-slate-100 px-4 flex justify-between items-center z-50 shadow-[0_4px_16px_rgba(15,23,42,0.06)]">
             <!-- Left: Pasig Seal Logo + Brand Title -->
             <a href="{{ route('commuter.dashboard') }}" class="flex items-center gap-2.5 active:opacity-80 transition-opacity select-none">
                 <img src="{{ asset('images/pasig_logo.png') }}" alt="Pasig Seal" class="h-8.5 w-8.5 object-contain drop-shadow-[0_2px_4px_rgba(0,0,0,0.1)]">
@@ -59,7 +89,7 @@
             <!-- Right: Notifications & Profile -->
             <div class="flex items-center gap-2">
                 @php
-                    $activeAlertsCount = \App\Models\ServiceAlert::where('status', 'active')->count();
+                    $activeAlertsCount = \App\Models\ServiceAlert::activeAlerts()->publicCommuterVisible()->count();
                 @endphp
                 <!-- Alert Bell in sleek slate button -->
                 <a href="{{ route('commuter.alerts') }}" class="relative w-10 h-10 flex items-center justify-center text-slate-600 hover:text-slate-800 rounded-full bg-slate-50 border border-slate-100 active:scale-95 transition-transform" aria-label="Service Alerts">
@@ -72,20 +102,21 @@
                     @endif
                 </a>
 
-                <!-- Profile Badge in sleek slate button -->
-                <button class="w-10 h-10 flex items-center justify-center text-slate-600 hover:text-slate-800 rounded-full bg-slate-50 border border-slate-100 active:scale-95 transition-transform" aria-label="Profile">
-                    <i class="ti ti-user-circle text-[21px]"></i>
-                </button>
+                <!-- Secondary staff access -->
+                <a href="{{ route('login') }}" class="h-10 px-3 flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-600 hover:text-[#003F87] rounded-full bg-slate-50 border border-slate-100 active:scale-95 transition-transform" aria-label="Staff / Driver Login">
+                    <i class="ti ti-user-circle text-[18px]"></i>
+                    <span>Staff Login</span>
+                </a>
             </div>
         </header>
 
         <!-- MAIN SCROLLABLE VIEW -->
-        <main class="flex-grow overflow-y-auto pt-[60px] pb-[88px] no-scrollbar" style="-webkit-overflow-scrolling: touch;">
+        <main class="commuter-main flex-grow overflow-y-auto no-scrollbar" style="-webkit-overflow-scrolling: touch;">
             @yield('content')
         </main>
 
         <!-- FLOATING BOTTOM TAB BAR (Refined and Sleek Capsule) -->
-        <nav class="absolute bottom-4 left-4 right-4 h-[68px] bg-white/95 backdrop-blur-lg border border-[#E2E8F0] rounded-2xl shadow-[0_8px_30px_rgba(15,23,42,0.08)] z-50 flex items-center justify-around px-2">
+        <nav class="commuter-bottom-nav absolute left-4 right-4 bg-white/95 backdrop-blur-lg border border-[#E2E8F0] rounded-2xl shadow-[0_8px_30px_rgba(15,23,42,0.08)] z-50 flex items-center justify-around px-2">
             
             <!-- 1. Home -->
             @php $isHome = request()->routeIs('commuter.dashboard') || request()->routeIs('commuter.index'); @endphp
@@ -143,7 +174,12 @@
 
     </div>
 
-    @livewireScripts
+    @livewireScriptConfig
+    <script src="{{ asset('js/shared/ui-feedback.js') }}?v={{ time() }}" defer></script>
     @yield('scripts')
 </body>
 </html>
+
+
+
+

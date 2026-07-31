@@ -31,7 +31,7 @@ class BusFactory extends Factory
             'eta' => 0,
             'lat' => $this->faker->latitude(),
             'lng' => $this->faker->longitude(),
-            'status' => 'available',
+            'status' => 'inactive',
             'is_simulated' => false,
         ];
     }

@@ -234,7 +234,7 @@
                                                     <a href="{{ route('fleet.maintenance.start', $row->id) }}" class="p-1 rounded bg-[#003F87] hover:bg-[#002d62] text-white transition cursor-pointer" title="Start Service">
                                                         <i class="ti ti-player-play text-sm"></i>
                                                     </a>
-                                                    <form method="POST" action="{{ route('fleet.maintenance.cancelService', $row->id) }}" onsubmit="return confirm('Are you sure you want to cancel this maintenance schedule?')" class="inline">
+                                                    <form method="POST" action="{{ route('fleet.maintenance.cancelService', $row->id) }}" onsubmit="event.preventDefault(); GoPasigUI.confirm('Are you sure you want to cancel this maintenance schedule?').then(ok => { if (ok) this.submit(); }); return false;" class="inline">
                                                         @csrf
                                                         <button type="submit" class="p-1 rounded bg-red-50 hover:bg-red-100 text-red-600 transition cursor-pointer" title="Cancel Service">
                                                             <i class="ti ti-ban text-sm"></i>
@@ -274,3 +274,5 @@
     </div>
 </div>
 @endsection
+
+

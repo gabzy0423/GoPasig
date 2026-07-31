@@ -25,7 +25,7 @@ class CommuterTrackingDashboardTest extends TestCase
     {
         parent::setUp();
 
-        $this->dispatcher = User::factory()->create(['role' => 'dispatcher']);
+        $this->dispatcher = User::factory()->create(['role' => 'fleet_manager']);
         $this->admin = User::factory()->create(['role' => 'admin']);
         $this->driver = User::factory()->create(['role' => 'driver']);
 

@@ -10,6 +10,7 @@
 
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <script src="{{ asset('js/shared/ui-feedback.js') }}?v={{ time() }}" defer></script>
 
     @if ($showCaptcha)
         <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
@@ -309,17 +310,23 @@
         }
         // Button Loading State Trigger
         function triggerLoadingState() {
+            window.GoPasigUI?.showLoadingOverlay('Signing you in...', 'Please wait.');
+
             const submitBtn = document.getElementById('submit-btn');
             const btnText = document.getElementById('btn-text');
             const btnSpinner = document.getElementById('btn-spinner');
 
-            btnText.classList.add('hidden');
-            btnSpinner.classList.remove('hidden');
-            btnSpinner.classList.add('flex');
+            if (btnText && btnSpinner) {
+                btnText.classList.add('hidden');
+                btnSpinner.classList.remove('hidden');
+                btnSpinner.classList.add('flex');
+            }
 
-            // Add loading background scale
-            submitBtn.classList.remove('bg-[#10234a]', 'hover:bg-[#0b1936]');
-            submitBtn.classList.add('bg-[#0b1936]', 'pointer-events-none');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.classList.remove('bg-[#10234a]', 'hover:bg-[#0b1936]');
+                submitBtn.classList.add('bg-[#0b1936]', 'pointer-events-none');
+            }
         }
     </script>
 </body>

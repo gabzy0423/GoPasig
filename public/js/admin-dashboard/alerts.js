@@ -8,11 +8,17 @@ let activeAlerts = [];
 let resolvedAlerts = [];
 let scheduledAlerts = [];
 let historyAlerts = [];
+let broadcastInFlight = false;
+let broadcastRefreshPromise = null;
+let broadcastRefreshFailed = false;
+let lastBroadcastAlertId = null;
 
 // ── COMPOSER STATE ───────────────────────────────────────────
 // ISSUE-045 FIX: Available routes are loaded dynamically from the DB.
 // 'Route A/B/C' hardcoding is removed throughout this file.
+const ALL_OFFICIAL_ROUTES = 'All official routes';
 let availableRoutes = []; // Populated by loadRoutesIntoComposer()
+let routeTargetsLoadFailed = false;
 
 let composerState = {
     editingId: null,
@@ -34,9 +40,9 @@ let composerState = {
  * pills in the composer. Replaces the old hardcoded Route A / B / C buttons.
  */
 async function loadRoutesIntoComposer() {
-    const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.routesBaseUrl)
-        ? window.GoPasigConfig.routesBaseUrl
-        : '/admin/api/routes';
+    const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.alertTargetRoutesUrl)
+        ? window.GoPasigConfig.alertTargetRoutesUrl
+        : '/admin/api/service-alert-target-routes';
 
     try {
         const resp = await fetch(baseUrl, {
@@ -48,18 +54,27 @@ async function loadRoutesIntoComposer() {
         // Support both {routes: [...]} and direct array responses
         const routes = Array.isArray(data) ? data : (data.routes || []);
         availableRoutes = routes.map(r => r.name || r).filter(Boolean);
+        routeTargetsLoadFailed = availableRoutes.length === 0;
     } catch (e) {
-        console.warn('Could not load routes for composer, falling back to empty list.', e);
+        console.warn('Could not load official routes for composer.', e);
         availableRoutes = [];
+        routeTargetsLoadFailed = true;
     }
 
-    // Inject dynamic pills before the "All routes" button
+    // Inject dynamic pills before the ALL_OFFICIAL_ROUTES button
     const pillRow = document.getElementById('composer-route-pills-row');
     if (pillRow) {
         // Remove any previously injected dynamic pills
         pillRow.querySelectorAll('.am-route-pill[data-dynamic]').forEach(b => b.remove());
 
-        const allBtn = pillRow.querySelector('[data-route="All routes"]');
+        const allBtn = pillRow.querySelector('[data-route="' + ALL_OFFICIAL_ROUTES + '"]') || pillRow.querySelector('[data-route="All routes"]');
+        if (allBtn) {
+            allBtn.setAttribute('data-route', ALL_OFFICIAL_ROUTES);
+            allBtn.textContent = ALL_OFFICIAL_ROUTES;
+            allBtn.onclick = () => toggleComposerRoute(ALL_OFFICIAL_ROUTES);
+            allBtn.disabled = routeTargetsLoadFailed;
+            allBtn.title = routeTargetsLoadFailed ? 'Official route targets are unavailable. Please refresh or contact support.' : '';
+        }
         availableRoutes.forEach(name => {
             const btn = document.createElement('button');
             btn.type = 'button';
@@ -76,6 +91,8 @@ async function loadRoutesIntoComposer() {
         });
     }
 
+    renderRouteTargetLoadState();
+
     // Default selection: first available route (or empty)
     if (composerState.affects.length === 0 && availableRoutes.length > 0) {
         composerState.affects = [availableRoutes[0]];
@@ -86,8 +103,23 @@ async function loadRoutesIntoComposer() {
 /**
  * Get route pill style class based on index-based color cycling.
  */
+function renderRouteTargetLoadState() {
+    const pillRow = document.getElementById('composer-route-pills-row');
+    if (!pillRow) return;
+
+    const existing = document.getElementById('composer-route-load-error');
+    if (existing) existing.remove();
+
+    if (!routeTargetsLoadFailed) return;
+
+    const error = document.createElement('div');
+    error.id = 'composer-route-load-error';
+    error.className = 'mt-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700';
+    error.textContent = 'Official route targets are unavailable. Refresh before creating a public route alert.';
+    pillRow.insertAdjacentElement('afterend', error);
+}
 function getRoutePillClass(route) {
-    if (route === 'All routes') return 'selected-all';
+    if (route === ALL_OFFICIAL_ROUTES) return 'selected-all';
     const idx = availableRoutes.indexOf(route);
     const colors = ['selected-a', 'selected-b', 'selected-c'];
     return colors[idx % colors.length] || 'selected-a';
@@ -98,6 +130,8 @@ let currentFeedStatusTab = 'All'; // 'All', 'Active', 'Resolved', 'Scheduled'
 let currentFeedTypeFilter = 'All';
 let currentFeedSearchQuery = '';
 
+const deletingAlertIds = new Set();
+
 let databaseStats = {
     total_commuters: 1000,
     total_drivers: 8,
@@ -105,7 +139,7 @@ let databaseStats = {
         'Route A': { commuters: 335, drivers: 5 },
         'Route B': { commuters: 268, drivers: 1 },
         'Route C': { commuters: 253, drivers: 1 },
-        'All routes': { commuters: 1000, drivers: 8 }
+        [ALL_OFFICIAL_ROUTES]: { commuters: 1000, drivers: 8 }
     }
 };
 
@@ -130,6 +164,88 @@ function getAlertsBaseUrl() {
         return window.GoPasigConfig.alertsBaseUrl;
     }
     return '/admin/api/alerts';
+}
+
+function getAlertsHistoryUrl() {
+    if (window.GoPasigConfig && window.GoPasigConfig.alertsHistoryUrl) {
+        return window.GoPasigConfig.alertsHistoryUrl;
+    }
+    return '/admin/api/alerts/history';
+}
+
+function mapDbSeverityToDisplay(severity) {
+    if (severity === 'info' || severity === 'low') return 'Low';
+    if (severity === 'warning' || severity === 'medium') return 'Medium';
+    if (severity === 'high') return 'High';
+    if (severity === 'critical' || severity === 'emergency') return 'Emergency';
+    return severity ? String(severity).charAt(0).toUpperCase() + String(severity).slice(1) : 'Low';
+}
+
+function formatHistoryDate(value) {
+    if (!value) return '-';
+    const dateObj = new Date(value);
+    if (Number.isNaN(dateObj.getTime())) return '-';
+    const options = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
+    return dateObj.toLocaleDateString('en-US', options).replace(',', ' �');
+}
+
+function normalizeComposerAlertType(type) {
+    return String(type || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+function normalizeComposerSeverity(severity) {
+    return String(severity || '').trim().toLowerCase();
+}
+
+function getDefaultSeverityForType(type) {
+    return {
+        delay: 'Medium',
+        route_change: 'Medium',
+        route_changes: 'Medium',
+        weather: 'Medium',
+        breakdown: 'High',
+        suspension: 'High',
+        emergency: 'Emergency'
+    }[normalizeComposerAlertType(type)] || 'Medium';
+}
+
+function canSelectedTypeSuspendRoute() {
+    const type = normalizeComposerAlertType(composerState.type);
+    const severity = normalizeComposerSeverity(composerState.severity);
+
+    if (type === 'suspension') return true;
+    if (['weather', 'breakdown', 'delay'].includes(type)) return severity === 'emergency';
+    if (type === 'emergency') return ['high', 'emergency'].includes(severity);
+
+    return false;
+}
+
+function isOperationalSuspensionAlert(alert) {
+    return Boolean(alert && alert.suspendRoute);
+}
+
+function renderAlertDeleteMenuItem(alert) {
+    if (isOperationalSuspensionAlert(alert)) {
+        return `<button class="am-dropdown-item font-red is-disabled" disabled title="Resolve this operational suspension before archiving it."><i class="ti ti-archive"></i> Archive</button>`;
+    }
+
+    return `<button class="am-dropdown-item font-red" data-archive-alert-id="${alert.id}" onclick="deleteAlert(${alert.id})"><i class="ti ti-archive"></i> Archive</button>`;
+}
+
+function getDefaultSuspendRouteForType(type) {
+    return normalizeComposerAlertType(type) === 'suspension';
+}
+
+function getSuspensionPolicyMessage() {
+    if (composerState.suspendRoute && canSelectedTypeSuspendRoute()) {
+        return 'New dispatches on the selected route(s) will be blocked immediately. Existing trips will continue until completed.';
+    }
+
+    if (normalizeComposerAlertType(composerState.type) === 'suspension') {
+        return 'This is an advance suspension advisory. Drivers and commuters will be notified. The selected route(s) will remain active until Route Suspension is activated.';
+    }
+
+    return 'This alert is informational only. No operational changes will be made.';
 }
 
 // Dynamic loader from MySQL Database API
@@ -191,21 +307,15 @@ async function loadDatabaseAlertsData() {
                         id: alert.id,
                         type: alert.type,
                         title: alert.title,
+                        body: alert.message,
+                        affects: affectsArr,
                         resolvedBy: 'Admin',
                         resolvedTime: new Date(alert.updated_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-                        severity: severityStr
+                        severity: severityStr,
+                        suspendRoute: Boolean(alert.suspend_route)
                     });
 
-                    historyAlerts.push({
-                        dateTime: formattedDate,
-                        type: alert.type,
-                        severity: severityStr,
-                        title: alert.title,
-                        affects: affectsArr,
-                        sentBy: 'Admin',
-                        reached: reachedCnt,
-                        status: 'Resolved'
-                    });
+
                 } else {
                     if (createdTime > now) {
                         scheduledAlerts.push({
@@ -215,7 +325,8 @@ async function loadDatabaseAlertsData() {
                             title: alert.title,
                             body: alert.message,
                             affects: affectsArr,
-                            publishTime: formattedDate
+                            publishTime: formattedDate,
+                            suspendRoute: Boolean(alert.suspend_route)
                         });
                     } else {
                         activeAlerts.push({
@@ -228,18 +339,8 @@ async function loadDatabaseAlertsData() {
                             body: alert.message,
                             affects: affectsArr,
                             reached: reachedCnt,
-                            status: 'Active'
-                        });
-
-                        historyAlerts.push({
-                            dateTime: formattedDate,
-                            type: alert.type,
-                            severity: severityStr,
-                            title: alert.title,
-                            affects: affectsArr,
-                            sentBy: 'Admin',
-                            reached: reachedCnt,
-                            status: 'Active'
+                            status: 'Active',
+                            suspendRoute: Boolean(alert.suspend_route)
                         });
                     }
                 }
@@ -253,6 +354,33 @@ async function loadDatabaseAlertsData() {
 }
 
 // ── INITIALIZER ──────────────────────────────────────────────
+async function loadHistoryAlertsData() {
+    try {
+        const response = await fetch(getAlertsHistoryUrl());
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            historyAlerts = (data.history || []).map(log => ({
+                id: log.id,
+                serviceAlertId: log.service_alert_id,
+                dateTime: formatHistoryDate(log.alert_created_at),
+                archivedDate: formatHistoryDate(log.archived_at),
+                type: log.type || 'Alert',
+                severity: mapDbSeverityToDisplay(log.severity),
+                title: log.title,
+                affects: Array.isArray(log.affected_routes) ? log.affected_routes : [],
+                suspendRoute: Boolean(log.suspend_route),
+                status: log.status ? String(log.status).charAt(0).toUpperCase() + String(log.status).slice(1) : 'Archived'
+            }));
+        } else {
+            historyAlerts = [];
+            GoPasigUI.alert(data.message || 'Failed to load alert history.');
+        }
+    } catch (error) {
+        console.error('Failed to load alert history:', error);
+        historyAlerts = [];
+    }
+}
 async function initAlertsDashboard() {
     await loadRoutesIntoComposer();
     await loadDatabaseAlertsData();
@@ -324,30 +452,28 @@ function updateDashboardHeaderStats() {
 // ── COMPOSER ACTIONS & EVENTS ─────────────────────────────────
 function selectComposerType(type) {
     composerState.type = type;
-    
-    // Automatically set default severity based on type for helpful UX
-    if (type === 'Emergency') {
-        composerState.severity = 'Emergency';
-    } else if (type === 'Breakdown') {
-        composerState.severity = 'High';
-    } else if (type === 'Suspension') {
-        composerState.severity = 'High';
-    }
+    composerState.severity = getDefaultSeverityForType(type);
+    composerState.suspendRoute = getDefaultSuspendRouteForType(type) && canSelectedTypeSuspendRoute();
 
     syncComposerUI();
 }
 
 function selectComposerSeverity(severity) {
     composerState.severity = severity;
+
+    if (!canSelectedTypeSuspendRoute()) {
+        composerState.suspendRoute = false;
+    }
+
     syncComposerUI();
 }
 
 function toggleComposerRoute(route) {
-    if (route === 'All routes') {
-        composerState.affects = ['All routes'];
+    if (route === ALL_OFFICIAL_ROUTES) {
+        composerState.affects = [ALL_OFFICIAL_ROUTES];
     } else {
         // If All routes was selected, clear it
-        if (composerState.affects.includes('All routes')) {
+        if (composerState.affects.includes(ALL_OFFICIAL_ROUTES)) {
             composerState.affects = [];
         }
         
@@ -415,6 +541,12 @@ function onComposerScheduleTimeChange(val) {
 }
 
 function toggleComposerSuspension() {
+    if (!canSelectedTypeSuspendRoute()) {
+        composerState.suspendRoute = false;
+        syncComposerUI();
+        return;
+    }
+
     composerState.suspendRoute = !composerState.suspendRoute;
     syncComposerUI();
 }
@@ -580,17 +712,31 @@ function syncComposerUI() {
     const suspensionWarning = document.getElementById('suspension-warning-card');
     const suspensionWarningText = document.getElementById('suspension-warning-text');
     const suspensionRow = document.getElementById('suspension-toggle-row');
+    const suspensionPolicyHelper = document.getElementById('suspension-policy-helper');
+    const canSuspendRoute = canSelectedTypeSuspendRoute();
+
+    if (suspensionPolicyHelper) {
+        suspensionPolicyHelper.textContent = getSuspensionPolicyMessage();
+        suspensionPolicyHelper.classList.remove('hidden');
+    }
+
+    if (!canSuspendRoute) {
+        composerState.suspendRoute = false;
+        if (suspensionRow) suspensionRow.className = 'am-toggle-row hidden';
+        if (suspensionWarning) suspensionWarning.classList.add('hidden');
+        return;
+    }
+
+    if (suspensionRow) suspensionRow.className = 'am-toggle-row';
 
     if (composerState.suspendRoute) {
         if (toggleSuspensionTrack) toggleSuspensionTrack.className = 'am-toggle-track am-toggle-on';
         if (toggleSuspensionLabel) toggleSuspensionLabel.style.color = '#A32D2D';
         if (suspensionRow) suspensionRow.className = 'am-toggle-row suspension-active';
         
-        let affectedText = composerState.affects.join(' and ');
-        if (composerState.affects.includes('All routes')) affectedText = 'All routes';
 
         if (suspensionWarningText) {
-            suspensionWarningText.textContent = `${affectedText} will be removed from the dispatch pool. Drivers will receive a stop command. Commuters will see 'Suspended' status on the map.`;
+            suspensionWarningText.textContent = 'New dispatches on the selected route(s) will be blocked immediately. Existing trips will continue until completed.';
         }
         if (suspensionWarning) suspensionWarning.classList.remove('hidden');
     } else {
@@ -601,7 +747,7 @@ function syncComposerUI() {
     }
 }
 
-// ── ALERTS FEED FILTERING & RENDER ─────────────────────────────
+// --- ALERTS FEED FILTERING & RENDER ─────────────────────────────
 function setFeedStatusTab(tab) {
     currentFeedStatusTab = tab;
     
@@ -695,8 +841,8 @@ function renderAlertsFeed() {
             const severityClass = alert.severity.toLowerCase();
             const bgClass = isEmergency ? 'bg-emergency-tint' : '';
             
-            const routePillsHtml = alert.affects.includes('All routes')
-                ? `<span class="am-route-pill-display selected-all">All routes</span>`
+            const routePillsHtml = alert.affects.includes(ALL_OFFICIAL_ROUTES)
+                ? `<span class="am-route-pill-display selected-all">All official routes</span>`
                 : alert.affects.map(route => {
                     return `<span class="am-route-pill-display ${getRoutePillClass(route)}">${route}</span>`;
                   }).join('');
@@ -728,7 +874,7 @@ function renderAlertsFeed() {
                                     <button class="am-dropdown-item" onclick="broadcastAgain(${alert.id})"><i class="ti ti-send"></i> Broadcast again</button>
                                     <button class="am-dropdown-item font-green" onclick="markResolved(${alert.id})"><i class="ti ti-check"></i> Mark resolved</button>
                                     <div class="am-dropdown-divider"></div>
-                                    <button class="am-dropdown-item font-red" onclick="deleteAlert(${alert.id})"><i class="ti ti-trash"></i> Delete</button>
+                                    ${renderAlertDeleteMenuItem(alert)}
                                 </div>
                             </div>
                         </div>
@@ -824,6 +970,7 @@ function renderResolvedList() {
             <span class="am-resolved-title">${alert.title}</span>
             <div class="am-resolved-right">
                 <span class="am-resolved-meta">Resolved by ${alert.resolvedBy} · ${alert.resolvedTime}</span>
+                <button class="am-resolved-delete" data-archive-alert-id="${alert.id}" onclick="deleteAlert(${alert.id})" title="Archive resolved alert"><i class="ti ti-archive"></i></button>
                 <i class="ti ti-circle-check"></i>
             </div>
         </div>
@@ -868,8 +1015,8 @@ function renderScheduledList() {
     }
 
     container.innerHTML = scheduledAlerts.map(alert => {
-        const routePillsHtml = alert.affects.includes('All routes')
-            ? `<span class="am-route-pill-display selected-all">All routes</span>`
+        const routePillsHtml = alert.affects.includes(ALL_OFFICIAL_ROUTES)
+            ? `<span class="am-route-pill-display selected-all">All official routes</span>`
             : alert.affects.map(route => {
                 return `<span class="am-route-pill-display ${getRoutePillClass(route)}">${route}</span>`;
               }).join('');
@@ -946,15 +1093,23 @@ function toggleCardBodyText(id) {
 // ── BROADCAST CONFIRMATION OVERLAYS ───────────────────────────
 function triggerComposerBroadcast() {
     if (!composerState.title.trim()) {
-        alert('Please specify an alert title.');
+        GoPasigUI.alert('Please specify an alert title.');
         return;
     }
     if (!composerState.message.trim()) {
-        alert('Please describe the situation in the message.');
+        GoPasigUI.alert('Please describe the situation in the message.');
         return;
     }
     if (composerState.timing === 'later' && !composerState.scheduleTime) {
-        alert('Please choose a publish date and time.');
+        GoPasigUI.alert('Please choose a publish date and time.');
+        return;
+    }
+    if (routeTargetsLoadFailed || availableRoutes.length === 0) {
+        GoPasigUI.alert('Official route targets are unavailable. Refresh before creating a public route alert.');
+        return;
+    }
+    if (!composerState.affects.length) {
+        GoPasigUI.alert('Please select at least one official route target.');
         return;
     }
 
@@ -1022,8 +1177,8 @@ function showBroadcastConfirmation() {
     }
 
     if (sumRoutes) {
-        if (composerState.affects.includes('All routes')) {
-            sumRoutes.innerHTML = '<span class="am-route-pill-display selected-all">All routes</span>';
+        if (composerState.affects.includes(ALL_OFFICIAL_ROUTES)) {
+            sumRoutes.innerHTML = '<span class="am-route-pill-display selected-all">All official routes</span>';
         } else {
             sumRoutes.innerHTML = composerState.affects.map(route => {
                 return `<span class="am-route-pill-display ${getRoutePillClass(route)}">${route}</span>`;
@@ -1037,7 +1192,7 @@ function showBroadcastConfirmation() {
         } else {
             let commuterCnt = 0;
             let driverCnt = 0;
-            if (composerState.affects.includes('All routes') || composerState.affects.length === 0) {
+            if (composerState.affects.includes(ALL_OFFICIAL_ROUTES) || composerState.affects.length === 0) {
                 commuterCnt = databaseStats.total_commuters;
                 driverCnt = databaseStats.total_drivers;
             } else {
@@ -1056,7 +1211,7 @@ function showBroadcastConfirmation() {
     if (sumSuspension) {
         if (composerState.suspendRoute) {
             let affectedText = composerState.affects.join(' and ');
-            if (composerState.affects.includes('All routes')) affectedText = 'All routes';
+            if (composerState.affects.includes(ALL_OFFICIAL_ROUTES)) affectedText = ALL_OFFICIAL_ROUTES;
             sumSuspension.innerHTML = `<span class="font-red">Yes — ${affectedText} will be suspended</span>`;
         } else {
             sumSuspension.textContent = 'No';
@@ -1077,9 +1232,81 @@ function hideBroadcastConfirmation() {
     if (overlay) overlay.classList.add('hidden');
 }
 
+function setConfirmBroadcastLoading(isLoading) {
+    const confirmBtn = document.getElementById('btn-confirm-broadcast');
+    if (!confirmBtn) return;
+
+    confirmBtn.disabled = isLoading;
+    confirmBtn.classList.toggle('is-loading', isLoading);
+
+    if (isLoading) {
+        confirmBtn.innerHTML = '<i class="ti ti-loader-2 am-spin"></i> Broadcasting...';
+        return;
+    }
+
+    confirmBtn.innerHTML = composerState.timing === 'later'
+        ? '<i class="ti ti-calendar-time"></i> Confirm scheduling'
+        : '<i class="ti ti-send"></i> Confirm broadcast';
+}
+
+function refreshBroadcastFeedsInBackground() {
+    broadcastRefreshFailed = false;
+    broadcastRefreshPromise = loadDatabaseAlertsData()
+        .then(() => {
+            renderAlertsFeed();
+            renderResolvedAlerts();
+            renderScheduledAlerts();
+            updateDashboardHeaderStats();
+        })
+        .catch(error => {
+            broadcastRefreshFailed = true;
+            console.error('Background alert refresh failed:', error);
+        });
+
+    return broadcastRefreshPromise;
+}
+
+async function ensureBroadcastRefreshComplete() {
+    if (broadcastRefreshPromise) {
+        await broadcastRefreshPromise;
+    }
+
+    if (broadcastRefreshFailed) {
+        broadcastRefreshFailed = false;
+        await loadDatabaseAlertsData();
+        renderAlertsFeed();
+        renderResolvedAlerts();
+        renderScheduledAlerts();
+        updateDashboardHeaderStats();
+    }
+}
+
+function focusLatestBroadcastAlert() {
+    if (!lastBroadcastAlertId) return;
+
+    setFeedStatusTab('Active');
+    currentFeedTypeFilter = 'All';
+    currentFeedSearchQuery = '';
+
+    const typeFilter = document.getElementById('feed-type-filter');
+    if (typeFilter) typeFilter.value = 'All';
+
+    const searchInput = document.getElementById('feed-search-input');
+    if (searchInput) searchInput.value = '';
+
+    renderAlertsFeed();
+    updateDashboardHeaderStats();
+
+    const card = document.getElementById(`alert-card-${lastBroadcastAlertId}`);
+    if (!card) return;
+
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.add('am-alert-card-highlight');
+    window.setTimeout(() => card.classList.remove('am-alert-card-highlight'), 1800);
+}
+
 async function confirmBroadcast() {
-    const overlayCard = document.getElementById('broadcast-overlay-card');
-    if (overlayCard) overlayCard.classList.add('hidden');
+    if (broadcastInFlight) return;
 
     const csrfToken = getCsrfToken();
 
@@ -1091,8 +1318,11 @@ async function confirmBroadcast() {
         affects: composerState.affects,
         timing: composerState.timing,
         schedule_time: composerState.scheduleTime,
-        suspend_route: composerState.suspendRoute
+        suspend_route: canSelectedTypeSuspendRoute() && composerState.suspendRoute
     };
+
+    broadcastInFlight = true;
+    setConfirmBroadcastLoading(true);
 
     try {
         let response;
@@ -1120,17 +1350,26 @@ async function confirmBroadcast() {
 
         const data = await response.json();
         if (response.ok && data.success) {
-            await loadDatabaseAlertsData();
-            renderAlertsFeed();
-            renderScheduledAlerts();
-            updateDashboardHeaderStats();
+            lastBroadcastAlertId = data.alert && data.alert.id ? data.alert.id : null;
+            setConfirmBroadcastLoading(false);
+            broadcastInFlight = false;
+
+            const overlayCard = document.getElementById('broadcast-overlay-card');
+            if (overlayCard) overlayCard.classList.add('hidden');
+
             showBroadcastReceipt();
+            refreshBroadcastFeedsInBackground();
         } else {
-            alert(data.message || 'Failed to save alert.');
+            GoPasigUI.alert(data.message || 'Failed to save alert.');
         }
     } catch (error) {
         console.error("AJAX confirm broadcast error:", error);
-        alert('Server connection error. Failed to save alert.');
+        GoPasigUI.alert('Server connection error. Failed to save alert.');
+    } finally {
+        if (broadcastInFlight) {
+            broadcastInFlight = false;
+            setConfirmBroadcastLoading(false);
+        }
     }
 }
 
@@ -1141,6 +1380,21 @@ function showBroadcastReceipt() {
     const title = document.getElementById('receipt-title');
     const timeLabel = document.getElementById('receipt-time-label');
     const statsRow = document.getElementById('receipt-stats-row');
+    const primaryAction = document.getElementById('receipt-primary-action');
+    const secondaryAction = document.getElementById('receipt-secondary-action');
+
+    if (primaryAction) {
+        primaryAction.style.display = '';
+        primaryAction.className = 'am-btn-outline flex-1';
+        primaryAction.setAttribute('onclick', 'viewBroadcastAlertInFeed()');
+        primaryAction.innerHTML = '<i class="ti ti-arrow-right"></i> View alert in feed';
+    }
+    if (secondaryAction) {
+        secondaryAction.style.display = '';
+        secondaryAction.className = 'am-btn-primary flex-1 text-white';
+        secondaryAction.setAttribute('onclick', 'closeBroadcastReceipt()');
+        secondaryAction.innerHTML = '<i class="ti ti-bell-plus"></i> Create another alert';
+    }
 
     const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -1162,7 +1416,7 @@ function showBroadcastReceipt() {
 
         let commuterCnt = 0;
         let driverCnt = 0;
-        if (composerState.affects.includes('All routes') || composerState.affects.length === 0) {
+        if (composerState.affects.includes(ALL_OFFICIAL_ROUTES) || composerState.affects.length === 0) {
             commuterCnt = databaseStats.total_commuters;
             driverCnt = databaseStats.total_drivers;
         } else {
@@ -1180,7 +1434,7 @@ function showBroadcastReceipt() {
 
         if (composerState.suspendRoute) {
             let affectedText = composerState.affects.join('/');
-            if (composerState.affects.includes('All routes')) affectedText = 'All';
+            if (composerState.affects.includes(ALL_OFFICIAL_ROUTES)) affectedText = ALL_OFFICIAL_ROUTES;
             statsSuspended.textContent = `${affectedText} suspended`;
             statsSuspended.style.display = 'inline-flex';
         } else {
@@ -1191,12 +1445,91 @@ function showBroadcastReceipt() {
     receiptCard.classList.remove('hidden');
 }
 
+async function viewBroadcastAlertInFeed() {
+    await ensureBroadcastRefreshComplete();
+    hideBroadcastConfirmation();
+    clearComposerForm();
+    focusLatestBroadcastAlert();
+}
+
 function closeBroadcastReceipt() {
     hideBroadcastConfirmation();
     clearComposerForm();
 }
 
 // ── ACTION BUTTON WORKFLOWS ───────────────────────────────────
+function isAlertHistoryVaultVisible() {
+    const historyScreen = document.getElementById('screen-alerts-history');
+    return Boolean(historyScreen && !historyScreen.classList.contains('hidden'));
+}
+
+function showArchiveStatusModal(titleText, messageText, isSuccess = true) {
+    const overlay = document.getElementById('broadcast-overlay');
+    const confirmCard = document.getElementById('broadcast-confirmation-card');
+    const receiptCard = document.getElementById('receipt-confirmation-card');
+    if (!overlay || !receiptCard) return;
+
+    const title = document.getElementById('receipt-title');
+    const timeLabel = document.getElementById('receipt-time-label');
+    const statsRow = document.getElementById('receipt-stats-row');
+    const primaryAction = document.getElementById('receipt-primary-action');
+    const secondaryAction = document.getElementById('receipt-secondary-action');
+
+    if (confirmCard) confirmCard.classList.add('hidden');
+    if (title) {
+        title.textContent = titleText;
+        title.style.color = isSuccess ? '#3B6D11' : '#B42318';
+    }
+    if (timeLabel) timeLabel.textContent = messageText;
+    if (statsRow) statsRow.style.display = 'none';
+    if (primaryAction) {
+        primaryAction.style.display = '';
+        primaryAction.className = isSuccess ? 'am-btn-primary flex-1 text-white' : 'am-btn-outline flex-1';
+        primaryAction.setAttribute('onclick', 'closeArchiveStatusModal()');
+        primaryAction.innerHTML = isSuccess
+            ? '<i class="ti ti-check"></i> Done'
+            : '<i class="ti ti-x"></i> Close';
+    }
+    if (secondaryAction) secondaryAction.style.display = 'none';
+
+    overlay.classList.remove('hidden');
+    receiptCard.classList.remove('hidden');
+}
+
+function closeArchiveStatusModal() {
+    hideBroadcastConfirmation();
+}
+
+function setArchiveButtonLoading(id, isLoading) {
+    document.querySelectorAll(`[data-archive-alert-id="${id}"]`).forEach(button => {
+        button.disabled = isLoading;
+        button.classList.toggle('is-loading', isLoading);
+
+        if (button.classList.contains('am-resolved-delete')) {
+            button.innerHTML = isLoading ? '<i class="ti ti-loader-2 am-spin"></i>' : '<i class="ti ti-archive"></i>';
+        } else {
+            button.innerHTML = isLoading ? '<i class="ti ti-loader-2 am-spin"></i> Archiving...' : '<i class="ti ti-archive"></i> Archive';
+        }
+    });
+}
+
+function refreshArchiveViewsInBackground() {
+    return loadDatabaseAlertsData()
+        .then(() => {
+            renderAlertsFeed();
+            renderResolvedAlerts();
+            renderScheduledAlerts();
+            updateDashboardHeaderStats();
+        })
+        .then(() => {
+            if (!isAlertHistoryVaultVisible()) return;
+
+            return loadHistoryAlertsData().then(renderHistoryTable);
+        })
+        .catch(error => {
+            console.error('Background archive refresh failed:', error);
+        });
+}
 function markResolved(id) {
     const card = document.getElementById(`alert-card-${id}`);
     if (card) {
@@ -1210,21 +1543,40 @@ function markResolved(id) {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': getCsrfToken(),
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
                 }
             });
-            const data = await response.json();
-            if (response.ok && data.success) {
+            let data = await response.json();
+
+            if (data.requiresConfirmation) {
+                if (await GoPasigUI.confirm(data.message)) {
+                    const confirmResponse = await fetch(`${getAlertsBaseUrl()}/${id}/resolve`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': getCsrfToken(),
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ confirm: true })
+                    });
+                    data = await confirmResponse.json();
+                } else {
+                    return;
+                }
+            }
+
+            if (data.success) {
                 await loadDatabaseAlertsData();
                 renderAlertsFeed();
                 renderResolvedAlerts();
                 updateDashboardHeaderStats();
-            } else {
-                alert(data.message || 'Failed to resolve alert.');
+            } else if (!data.requiresConfirmation) {
+                GoPasigUI.alert(data.message || 'Failed to resolve alert.');
             }
         } catch (error) {
             console.error("AJAX resolve error:", error);
-            alert('Server error resolving alert.');
+            GoPasigUI.alert('Server error resolving alert.');
         }
     }, 300);
 }
@@ -1245,7 +1597,7 @@ function editAlert(id) {
         notifyAdminOnly: false,
         timing: 'now',
         scheduleTime: '',
-        suspendRoute: false
+        suspendRoute: Boolean(alert.suspendRoute)
     };
 
     const titleInput = document.getElementById('composer-title');
@@ -1290,7 +1642,17 @@ function broadcastAgain(id) {
 }
 
 async function deleteAlert(id) {
-    if (!confirm('Are you sure you want to delete this alert?')) return;
+    const activeAlert = activeAlerts.find(a => a.id === id);
+    if (isOperationalSuspensionAlert(activeAlert)) {
+        showArchiveStatusModal('Archive Blocked', 'Resolve this operational suspension before archiving it.', false);
+        return;
+    }
+
+    if (deletingAlertIds.has(id)) return;
+    if (!(await GoPasigUI.confirm('Archive this Service Alert? It will be removed from the Service Alerts list and retained in the Alert History Vault.'))) return;
+
+    deletingAlertIds.add(id);
+    setArchiveButtonLoading(id, true);
 
     try {
         const response = await fetch(`${getAlertsBaseUrl()}/${id}`, {
@@ -1300,20 +1662,22 @@ async function deleteAlert(id) {
                 'Accept': 'application/json'
             }
         });
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         if (response.ok && data.success) {
-            await loadDatabaseAlertsData();
-            renderAlertsFeed();
-            updateDashboardHeaderStats();
+            showArchiveStatusModal('Alert Archived Successfully', data.message || 'Alert successfully archived.');
+            refreshArchiveViewsInBackground();
         } else {
-            alert(data.message || 'Failed to delete alert.');
+            refreshArchiveViewsInBackground();
+            showArchiveStatusModal('Archive Failed', data.message || 'Failed to archive alert.', false);
         }
     } catch (error) {
         console.error("AJAX delete error:", error);
-        alert('Server error deleting alert.');
+        showArchiveStatusModal('Archive Failed', 'Server error archiving alert.', false);
+    } finally {
+        deletingAlertIds.delete(id);
+        setArchiveButtonLoading(id, false);
     }
 }
-
 // ── SCHEDULED ALERTS ACTIONS ──────────────────────────────────
 function editScheduledAlert(id) {
     const alert = scheduledAlerts.find(s => s.id === id);
@@ -1331,7 +1695,7 @@ function editScheduledAlert(id) {
         notifyAdminOnly: false,
         timing: 'later',
         scheduleTime: '',
-        suspendRoute: false
+        suspendRoute: Boolean(alert.suspendRoute)
     };
 
     const titleInput = document.getElementById('composer-title');
@@ -1348,7 +1712,7 @@ function editScheduledAlert(id) {
 }
 
 async function cancelScheduledAlert(id) {
-    if (!confirm('Are you sure you want to cancel this scheduled alert?')) return;
+    if (!(await GoPasigUI.confirm('Are you sure you want to cancel this scheduled alert?'))) return;
 
     try {
         const response = await fetch(`${getAlertsBaseUrl()}/${id}`, {
@@ -1364,11 +1728,11 @@ async function cancelScheduledAlert(id) {
             renderScheduledAlerts();
             updateDashboardHeaderStats();
         } else {
-            alert(data.message || 'Failed to cancel scheduled alert.');
+            GoPasigUI.alert(data.message || 'Failed to cancel scheduled alert.');
         }
     } catch (error) {
         console.error("AJAX cancel scheduled alert error:", error);
-        alert('Server error cancelling scheduled alert.');
+        GoPasigUI.alert('Server error cancelling scheduled alert.');
     }
 }
 
@@ -1377,7 +1741,7 @@ async function markAllAlertsResolved(event) {
     if (event) event.preventDefault();
     if (activeAlerts.length === 0) return;
 
-    if (!confirm('Resolve all active service alerts?')) return;
+    if (!(await GoPasigUI.confirm('Resolve all active service alerts?'))) return;
 
     try {
         const response = await fetch(`${getAlertsBaseUrl()}/resolve-all`, {
@@ -1394,11 +1758,11 @@ async function markAllAlertsResolved(event) {
             renderResolvedAlerts();
             updateDashboardHeaderStats();
         } else {
-            alert(data.message || 'Failed to resolve all alerts.');
+            GoPasigUI.alert(data.message || 'Failed to resolve all alerts.');
         }
     } catch (error) {
         console.error("AJAX resolve all error:", error);
-        alert('Server error resolving all alerts.');
+        GoPasigUI.alert('Server error resolving all alerts.');
     }
 }
 
@@ -1457,10 +1821,10 @@ function renderHistoryTable() {
         if (historyFilterSeverity !== 'All' && row.severity !== historyFilterSeverity) return false;
         if (historyFilterType !== 'All' && row.type !== historyFilterType) return false;
         if (historyFilterRoute !== 'All') {
-            if (historyFilterRoute === 'All routes') {
-                if (!row.affects.includes('All routes')) return false;
+            if (historyFilterRoute === ALL_OFFICIAL_ROUTES) {
+                if (!row.affects.includes(ALL_OFFICIAL_ROUTES)) return false;
             } else {
-                if (!row.affects.includes(historyFilterRoute) && !row.affects.includes('All routes')) return false;
+                if (!row.affects.includes(historyFilterRoute) && !row.affects.includes(ALL_OFFICIAL_ROUTES)) return false;
             }
         }
         return true;
@@ -1494,14 +1858,14 @@ function renderHistoryTable() {
         tbody.innerHTML = paginatedRows.map(row => {
             const sevLower = row.severity.toLowerCase();
             
-            const routePillsHtml = row.affects.includes('All routes')
-                ? `<span class="am-route-pill-display selected-all">All routes</span>`
+            const routePillsHtml = row.affects.includes(ALL_OFFICIAL_ROUTES)
+                ? `<span class="am-route-pill-display selected-all">All official routes</span>`
                 : row.affects.map(route => {
                     return `<span class="am-route-pill-display ${getRoutePillClass(route)}">${route}</span>`;
                   }).join('');
 
             const statusClass = row.status === 'Active' ? 'badge-emergency' : 'badge-low';
-            const reachedClass = row.reached >= 800 ? 'font-blue font-bold' : '';
+            const reachedClass = row.suspendRoute ? 'font-blue font-bold' : '';
 
             let sevIcon = 'ti-info-circle';
             if (row.severity === 'Emergency') sevIcon = 'ti-alert-octagon';
@@ -1523,9 +1887,9 @@ function renderHistoryTable() {
                     <td class="am-table-cell" style="padding: 12px 16px;">
                         <div class="am-card-route-pills" style="margin-top:0;">${routePillsHtml}</div>
                     </td>
-                    <td class="am-table-cell" style="padding: 12px 16px;">${row.sentBy}</td>
+                    <td class="am-table-cell" style="padding: 12px 16px;">${row.archivedDate}</td>
                     <td class="am-table-cell ${reachedClass}" style="padding: 12px 16px;">
-                        ${row.reached} <i class="ti ti-users" style="color:var(--color-text-secondary); font-size:12px; margin-left: 2px;"></i>
+                        ${row.suspendRoute ? 'Yes' : 'No'}
                     </td>
                     <td class="am-table-cell" style="padding: 12px 16px;">
                         <span class="am-severity-chip ${statusClass}">${row.status}</span>
@@ -1562,16 +1926,16 @@ function setHistoryPage(page) {
 
 function exportHistoryCSV() {
     if (!historyAlerts || historyAlerts.length === 0) {
-        alert('No service alert records available to export.');
+        GoPasigUI.alert('No service alert records available to export.');
         return;
     }
-    const headers = ['Date/Time', 'Type', 'Severity', 'Title', 'Affected Routes', 'Sent By', 'Reached Count', 'Status'];
+    const headers = ['Original Alert Date', 'Type', 'Severity', 'Title', 'Affected Routes', 'Archived Date', 'Operational Suspension', 'Final Status'];
     const rows = historyAlerts.map(a => [
         a.dateTime,
         a.type,
         a.severity,
         a.title,
-        Array.isArray(a.affects) ? a.affects.join(', ') : (a.affects || 'All Routes'),
+        Array.isArray(a.affects) ? a.affects.join(', ') : (a.affects || ALL_OFFICIAL_ROUTES),
         a.sentBy,
         a.reached,
         a.status
@@ -1597,3 +1961,8 @@ function format12Hour(time24) {
     hour = hour ? hour : 12;
     return `${hour}:${min} ${ampm}`;
 }
+
+
+
+
+

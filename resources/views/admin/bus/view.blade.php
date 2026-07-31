@@ -382,7 +382,7 @@
 
             const text = el.textContent || el.innerText;
             navigator.clipboard.writeText(text).then(() => {
-                alert(`Copied VIN: ${text}`);
+                GoPasigUI.alert(`Copied VIN: ${text}`);
             }).catch(err => {
                 console.error('Failed to copy text: ', err);
             });

@@ -17,6 +17,7 @@ class RouteGenerationSession extends Model
     protected $fillable = [
         'id',
         'route_id',
+        'route_variant_id',
         'provider',
         'generated_geometry',
         'comparison_metrics',
@@ -43,6 +44,11 @@ class RouteGenerationSession extends Model
     public function route(): BelongsTo
     {
         return $this->belongsTo(Route::class);
+    }
+
+    public function routeVariant(): BelongsTo
+    {
+        return $this->belongsTo(RouteVariant::class);
     }
 
     public function creator(): BelongsTo

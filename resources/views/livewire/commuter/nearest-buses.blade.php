@@ -41,10 +41,10 @@
                     <span class="text-[13px] font-semibold text-slate-800 leading-tight truncate mt-0.5">{{ $bus->next_stop }}</span>
                 </div>
 
-                <!-- Row 4: ETA Large Value -->
-                <div class="flex items-baseline gap-1" wire:loading.class="opacity-40 animate-pulse">
-                    <span class="text-[25px] font-black text-[#003F87] leading-none tracking-tight">{{ $bus->eta_minutes }} min</span>
-                    <span class="text-[12px] font-bold text-slate-400 leading-none">away</span>
+                <!-- Row 4: ETA Provenance -->
+                <div class="flex flex-col gap-1" wire:loading.class="opacity-40 animate-pulse">
+                    <span class="text-[18px] font-black text-[#003F87] leading-tight tracking-tight">{{ $bus->eta_label }}</span>
+                    <span class="text-[10px] font-bold text-slate-400 leading-none">{{ $bus->eta_description }}</span>
                 </div>
 
                 <!-- Row 5: Passenger Progress Bar -->
@@ -76,3 +76,4 @@
         @endforelse
     </div>
 </div>
+

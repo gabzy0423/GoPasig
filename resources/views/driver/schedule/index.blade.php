@@ -110,7 +110,7 @@
             <i class="ti ti-barrier-block text-slate-350 text-5xl mb-3"></i>
             <h2 class="text-base font-black text-slate-850 leading-tight">Shift Blocked</h2>
             <p class="text-xs text-slate-450 font-semibold mt-1 px-4 text-center">
-                You do not have a route assigned for active shifts today. Contact dispatcher {{ $dispatcherName }} at fleet operations to assign a shift schedule.
+                You do not have a route assigned for active shifts today. Contact {{ $dispatcherRole ?? 'Fleet Operations Manager' }} {{ $dispatcherName }} at fleet operations to assign a shift schedule.
             </p>
         </div>
     @endif

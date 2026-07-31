@@ -22,8 +22,8 @@ class MaintenanceController extends Controller
                 ->where('status', 'completed')
                 ->orderBy('completed_at', 'desc')
                 ->first();
-            $bus->last_maintenance_date = $latestCompleted && $latestCompleted->completed_at 
-                ? $latestCompleted->completed_at->timezone(config('app.timezone', 'Asia/Manila'))->toDateString() 
+            $bus->last_maintenance_date = $latestCompleted && $latestCompleted->completed_at
+                ? $latestCompleted->completed_at->timezone(config('app.timezone', 'Asia/Manila'))->toDateString()
                 : null;
         });
         return view('admin.maintenance.create', compact('maintenanceTypes', 'buses'));
@@ -44,12 +44,12 @@ class MaintenanceController extends Controller
             $search = trim($request->input('search'));
             $query->where(function ($q) use ($search) {
                 $q->where('ticket_number', 'like', "%{$search}%")
-                  ->orWhere('type', 'like', "%{$search}%")
-                  ->orWhere('technician_name', 'like', "%{$search}%")
-                  ->orWhereHas('bus', function ($bq) use ($search) {
-                      $bq->where('plate_number', 'like', "%{$search}%")
-                        ->orWhere('fleet_number', 'like', "%{$search}%");
-                  });
+                    ->orWhere('type', 'like', "%{$search}%")
+                    ->orWhere('technician_name', 'like', "%{$search}%")
+                    ->orWhereHas('bus', function ($bq) use ($search) {
+                        $bq->where('plate_number', 'like', "%{$search}%")
+                            ->orWhere('fleet_number', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -116,7 +116,7 @@ class MaintenanceController extends Controller
             ], 422);
         }
 
-        $duration = $validated['expected_duration_minutes'] 
+        $duration = $validated['expected_duration_minutes']
             ?? (int) SystemSetting::get('default_maintenance_duration_minutes', 120);
 
         // Validate duration bounds
@@ -138,15 +138,15 @@ class MaintenanceController extends Controller
             ->where(function ($q) use ($scheduledDate, $scheduledAt, $expectedEndDate, $expectedEnd) {
                 if ($scheduledDate === $expectedEndDate) {
                     $q->whereDate('service_date', $scheduledDate)
-                      ->whereTime('departure_time', '>=', $scheduledAt->toTimeString())
-                      ->whereTime('departure_time', '<=', $expectedEnd->toTimeString());
+                        ->whereTime('departure_time', '>=', $scheduledAt->toTimeString())
+                        ->whereTime('departure_time', '<=', $expectedEnd->toTimeString());
                 } else {
                     $q->where(function ($sq) use ($scheduledDate, $scheduledAt) {
                         $sq->whereDate('service_date', $scheduledDate)
-                           ->whereTime('departure_time', '>=', $scheduledAt->toTimeString());
+                            ->whereTime('departure_time', '>=', $scheduledAt->toTimeString());
                     })->orWhere(function ($sq) use ($expectedEndDate, $expectedEnd) {
                         $sq->whereDate('service_date', $expectedEndDate)
-                           ->whereTime('departure_time', '<=', $expectedEnd->toTimeString());
+                            ->whereTime('departure_time', '<=', $expectedEnd->toTimeString());
                     });
                 }
             })
@@ -224,8 +224,8 @@ class MaintenanceController extends Controller
             ], 422);
         }
 
-        $duration = $validated['expected_duration_minutes'] 
-            ?? $record->expected_duration_minutes 
+        $duration = $validated['expected_duration_minutes']
+            ?? $record->expected_duration_minutes
             ?? (int) SystemSetting::get('default_maintenance_duration_minutes', 120);
 
         // Validate duration bounds
@@ -311,7 +311,7 @@ class MaintenanceController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => $passed 
+            'message' => $passed
                 ? '✅ Inspection PASSED - Bus ready to return to service.'
                 : '❌ Inspection FAILED',
             'inspection_passed' => $passed,
@@ -370,7 +370,7 @@ class MaintenanceController extends Controller
                 'message' => 'Maintenance record not found.'
             ], 404);
         }
-        
+
         if ($record->status === 'completed') {
             return response()->json([
                 'success' => false,
@@ -386,7 +386,7 @@ class MaintenanceController extends Controller
             if ($record->status !== 'completed') {
                 $bus = Bus::find($record->getRawOriginal('bus_id'));
                 if ($bus) {
-                    $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_ACTIVE;
+                    $restoreStatus = $bus->previous_status ?? \App\Models\Bus::STATUS_INACTIVE;
                     \App\Services\BusStateService::transition($bus, $restoreStatus, 'Maintenance record deleted');
                 }
             }
@@ -445,7 +445,7 @@ class MaintenanceController extends Controller
     public function showPage($id)
     {
         $record = MaintenanceRecord::with(['bus', 'inspectionAttempts'])->findOrFail($id);
-        
+
         $previousTickets = MaintenanceRecord::where('bus_id', $record->getRawOriginal('bus_id'))
             ->where('id', '!=', $record->id)
             ->latest('created_at')
@@ -461,7 +461,7 @@ class MaintenanceController extends Controller
     public function editPage($id)
     {
         $record = MaintenanceRecord::with('bus')->findOrFail($id);
-        
+
         if ($record->status !== 'scheduled') {
             return redirect()->route('admin.dashboard')->with('error', 'Only scheduled maintenance can be edited.');
         }

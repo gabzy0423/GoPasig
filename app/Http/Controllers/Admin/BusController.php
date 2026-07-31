@@ -233,6 +233,28 @@ class BusController extends Controller
                 }
 
                 $newStatus = $validated['status'];
+                $capacityChanged = (int) $validated['capacity'] !== (int) $bus->capacity;
+                if ($capacityChanged) {
+                    if ((int) $validated['capacity'] < (int) $bus->passengers) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'capacity' => "Capacity cannot be reduced below the current onboard passenger count ({$bus->passengers}).",
+                        ]);
+                    }
+
+                    $hasActiveTrip = Trip::where('bus_id', $bus->id)
+                        ->whereIn('status', ['ongoing', 'dispatched'])
+                        ->exists();
+
+                    $operationalStatuses = ['ready', 'operating'];
+                    $isOperationalCapacityEdit = in_array(strtolower((string) $bus->status), $operationalStatuses, true)
+                        || in_array(strtolower((string) $newStatus), $operationalStatuses, true);
+
+                    if ($isOperationalCapacityEdit || $hasActiveTrip) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'capacity' => 'Capacity cannot be edited while the bus is ready, operating, or assigned to an active dispatch.',
+                        ]);
+                    }
+                }
                 $newDriverName = $validated['driver_name'] ?? Bus::getDefaultDriverName();
                 $newRouteId = isset($validated['route_id']) ? $validated['route_id'] : null;
 

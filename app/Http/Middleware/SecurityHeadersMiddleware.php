@@ -92,6 +92,26 @@ class SecurityHeadersMiddleware
 
         $response->headers->set('Content-Security-Policy', $csp);
 
+        if ($this->shouldPreventBrowserCaching($request, $response)) {
+            $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+            $response->headers->set('Pragma', 'no-cache');
+            $response->headers->set('Expires', 'Fri, 01 Jan 1990 00:00:00 GMT');
+        }
+
         return $response;
     }
+    private function shouldPreventBrowserCaching(Request $request, Response $response): bool
+    {
+        $route = $request->route();
+        $routeName = $route?->getName();
+        $routeMiddleware = $route ? $route->gatherMiddleware() : [];
+        $contentType = $response->headers->get('Content-Type', '');
+
+        $isHtmlResponse = $contentType === '' || str_contains($contentType, 'text/html');
+        $isAuthRoute = in_array('auth', $routeMiddleware, true);
+        $isAuthEntryPoint = in_array($routeName, ['login', 'logout'], true);
+
+        return $isHtmlResponse && ($isAuthRoute || $isAuthEntryPoint);
+    }
 }
+

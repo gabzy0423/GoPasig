@@ -7,6 +7,7 @@ use Illuminate\Queue\SerializesModels;
 use App\Models\Bus;
 use App\Models\Trip;
 use App\Models\Stop;
+use App\Models\RouteVariantStop;
 use App\Models\VehiclePosition;
 use Carbon\Carbon;
 
@@ -17,7 +18,7 @@ class BusEnteredStop
     public function __construct(
         public Bus $bus,
         public ?Trip $trip,
-        public Stop $stop,
+        public Stop|RouteVariantStop $stop,
         public float $distance,
         public Carbon $timestamp,
         public VehiclePosition $position

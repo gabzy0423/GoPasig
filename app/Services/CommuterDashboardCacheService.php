@@ -18,17 +18,24 @@ class CommuterDashboardCacheService
     public static function getActiveBuses()
     {
         return Cache::remember('commuter_active_buses_list', 15, function () {
-            return Bus::with('route')->where('status', 'active')->get();
+            return Bus::with('route')
+                ->where('status', 'active')
+                ->whereHas('route', fn ($query) => $query->publicCommuterActiveService())
+                ->get();
         });
     }
 
     public function dashboardData(): array
     {
         return Cache::remember('commuter_dashboard_aggregate', now()->addSeconds(self::CACHE_TTL_SECONDS), function () {
-            $routes = Route::whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])->with('stops')->orderBy('id')->get();
-            $activeBuses = Bus::with('route')->where('status', 'active')->orderBy('eta')->get();
+            $routes = Route::publicCommuterVisible()->with('stops')->orderBy('id')->get();
+            $activeBuses = Bus::with('route')
+                ->where('status', 'active')
+                ->whereHas('route', fn ($query) => $query->publicCommuterActiveService())
+                ->orderBy('eta')
+                ->get();
             $schedules = Schedule::orderBy('departure_time')->get();
-            $activeAlerts = ServiceAlert::activeAlerts()->latest('created_at')->get();
+            $activeAlerts = ServiceAlert::activeAlerts()->publicCommuterVisible()->latest('created_at')->get();
 
             $activeBusesByRoute = $activeBuses->groupBy('route_id');
             $schedulesByRoute = $schedules->groupBy('route_id');
@@ -39,14 +46,19 @@ class CommuterDashboardCacheService
             $labelFull = SystemSetting::get('label_bus_status_full', 'Full');
             $labelDelayed = SystemSetting::get('label_bus_status_delayed', 'Delayed');
             $labelOnTime = SystemSetting::get('label_bus_status_on_time', 'On Time');
+            $etaProvenanceService = app(CommuterEtaProvenanceService::class);
+            $routeStatusService = app(RouteStatusService::class);
 
-            $activeRoutes = $routes->map(function ($route) use ($activeBusesByRoute, $schedulesByRoute, $nowTimeString, $activeAlerts, $defaultRouteColor, $defaultDelayThreshold) {
+            $activeRoutes = $routes->map(function ($route) use ($activeBusesByRoute, $schedulesByRoute, $nowTimeString, $activeAlerts, $defaultRouteColor, $defaultDelayThreshold, $etaProvenanceService, $routeStatusService) {
                 $routeBuses = $activeBusesByRoute->get($route->id, collect());
                 $routeSchedules = $schedulesByRoute->get($route->id, collect());
                 $nextEta = null;
+                $nextEtaProvenance = null;
 
                 if ($routeBuses->isNotEmpty()) {
-                    $nextEta = $routeBuses->min('eta');
+                    $nextBus = $routeBuses->sortBy('eta')->first();
+                    $nextEtaProvenance = $nextBus ? $etaProvenanceService->forBus($nextBus) : null;
+                    $nextEta = $nextEtaProvenance?->minutes;
                 } else {
                     $nextSched = $routeSchedules
                         ->where('departure_time', '>', $nowTimeString)
@@ -61,9 +73,11 @@ class CommuterDashboardCacheService
                 return (object) [
                     'route_name' => $route->name,
                     'route_color' => $route->color ?: $defaultRouteColor,
-                    'health_status' => $this->routeHealth($route, $routeBuses, $activeAlerts, $defaultDelayThreshold),
+                    'health_status' => $routeStatusService->getCommuterRouteHealth($route, $routeBuses, $activeAlerts, $defaultDelayThreshold),
                     'buses_on_route' => $routeBuses->count(),
                     'next_eta_minutes' => $nextEta,
+                    'next_eta_provenance_state' => $nextEtaProvenance?->state,
+                    'next_eta_label' => $nextEtaProvenance?->label ?: ($nextEta !== null ? $nextEta . 'm' : 'TBA'),
                     'completed_trips' => $routeSchedules->where('departure_time', '<=', $nowTimeString)->count(),
                     'scheduled_trips' => $routeSchedules->count(),
                 ];
@@ -103,7 +117,7 @@ class CommuterDashboardCacheService
                 ];
             });
 
-            $nearestBuses = $activeBuses->map(function ($bus) use ($unassignedRouteColor, $labelFull, $labelDelayed, $labelOnTime, $defaultDelayThreshold) {
+            $nearestBuses = $activeBuses->map(function ($bus) use ($unassignedRouteColor, $labelFull, $labelDelayed, $labelOnTime, $defaultDelayThreshold, $etaProvenanceService) {
                 $capacity = max(1, (int) $bus->capacity);
                 $fillRatio = $bus->passengers / $capacity;
                 $threshold = $bus->route?->delay_threshold_minutes ?: $defaultDelayThreshold;
@@ -116,6 +130,8 @@ class CommuterDashboardCacheService
                     $status = $labelOnTime;
                 }
 
+                $etaProvenance = $etaProvenanceService->forBus($bus);
+
                 return (object) [
                     'id' => $bus->id,
                     'plate' => $bus->plate_number,
@@ -123,7 +139,11 @@ class CommuterDashboardCacheService
                     'route_name' => $bus->route?->name ?? 'Unassigned',
                     'route_color' => $bus->route?->color ?: $unassignedRouteColor,
                     'next_stop' => $bus->next_stop ?: 'Terminal',
-                    'eta_minutes' => $bus->eta,
+                    'eta_minutes' => $etaProvenance->minutes,
+                    'eta_provenance_state' => $etaProvenance->state,
+                    'eta_label' => $etaProvenance->label,
+                    'eta_description' => $etaProvenance->description,
+                    'eta_is_authoritative' => $etaProvenance->is_authoritative,
                     'onboard' => $bus->passengers,
                     'capacity' => $capacity,
                 ];
@@ -133,7 +153,9 @@ class CommuterDashboardCacheService
                 'quickStats' => [
                     'active_buses' => $activeBuses->count(),
                     'delayed_buses' => $activeBuses->filter(fn($bus) => $bus->eta >= ($bus->route?->delay_threshold_minutes ?: $defaultDelayThreshold))->count(),
-                    'passengers_today' => Schedule::whereDate('service_date', Carbon::today('Asia/Manila'))->sum('passengers'),
+                    'passengers_today' => Schedule::whereHas('route', fn ($query) => $query->publicCommuterVisible())
+                        ->whereDate('service_date', Carbon::today('Asia/Manila'))
+                        ->sum('passengers'),
                     'open_alerts' => $activeAlerts->count(),
                 ],
                 'activeRoutes' => $activeRoutes,
@@ -164,30 +186,11 @@ class CommuterDashboardCacheService
                 'route.durations',
                 'route.buses' => fn($query) => $query->where('status', 'active'),
             ])
+                ->whereHas('route', fn ($query) => $query->publicCommuterVisible())
                 ->orderBy('route_id')
                 ->orderBy('sequence')
                 ->get();
         });
     }
 
-    private function routeHealth(Route $route, $routeBuses, $activeAlerts, int $defaultDelayThreshold): string
-    {
-        if ($route->status === 'Suspended') {
-            return 'Disrupted';
-        }
-
-        $routeAlerts = $activeAlerts->filter(function ($alert) use ($route) {
-            return (int) ($alert->route_id ?? 0) === (int) $route->id
-                || ($alert->affected_routes && stripos($alert->affected_routes, $route->name) !== false);
-        });
-
-        if ($routeAlerts->contains(fn($alert) => $alert->type === 'suspension')) {
-            return 'Disrupted';
-        }
-
-        $hasDelayAlert = $routeAlerts->contains(fn($alert) => in_array($alert->type, ['delay', 'maintenance'], true));
-        $hasDelayedBus = $routeBuses->contains(fn($bus) => $bus->eta >= ($bus->route?->delay_threshold_minutes ?: $defaultDelayThreshold));
-
-        return $hasDelayAlert || $hasDelayedBus ? 'Minor Delay' : 'On Track';
-    }
 }

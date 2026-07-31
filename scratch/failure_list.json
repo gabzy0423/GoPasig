@@ -1,0 +1,170 @@
+[
+    {
+        "class": "Tests\\Feature\\AdminMaintenanceCreateTest",
+        "method": "admin can store maintenance session via api"
+    },
+    {
+        "class": "Tests\\Feature\\AdminMaintenanceSchedulingTest",
+        "method": "schedule creation generates persisted ticket number and lo\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\AdminMaintenanceSchedulingTest",
+        "method": "edit schedule allowed only for scheduled records"
+    },
+    {
+        "class": "Tests\\Feature\\AdminScheduleConflictTest",
+        "method": "admin cannot create conflicting schedule"
+    },
+    {
+        "class": "Tests\\Feature\\AdminScheduleConflictTest",
+        "method": "driver bidirectional rest period check"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "outbound completed trip starts new inbound trip without redispatc\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "inbound completed trip starts new outbound trip"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "repeated start next trip request does not create duplicate trip"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "existing ongoing trip blocks start next trip"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "existing dispatched trip blocks start next trip"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "mismatched previous route variant is rejected"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "missing opposite direction is rejected"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "ambiguous opposite direction is rejected"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "pending opposite direction is rejected"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "asset and assignment safety states block start next trip"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "released assignment blocks start next trip"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "active major incident blocks start next trip"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "controlled phase2 uat next endpoint uses deterministic opposite v\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "scheduled completed outbound starts linked scheduled inbound trip"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "scheduled next trip preview shows scheduled return leg"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "scheduled next trip preview remains available as ad hoc when sche\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "scheduled previous trip without matching return schedule starts a\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "scheduled previous trip with ambiguous return schedules blocks ne\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "cancelled scheduled return leg is ignored and starts ad hoc next\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "already linked scheduled return leg is ignored and starts ad hoc\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "scheduled next trip duplicate request does not duplicate linked s\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "continuous scheduled then ad hoc next trip sequence after schedul\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "completed controlled uat page renders one next action and inactiv\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "active outbound trip renders authoritative outbound stop order"
+    },
+    {
+        "class": "Tests\\Feature\\DriverStartNextTripTest",
+        "method": "started inbound trip renders inbound stop order without completed\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\ExampleTest",
+        "method": "the application returns a successful response"
+    },
+    {
+        "class": "Tests\\Feature\\GoPasigScenariosTest",
+        "method": "maintenance lock and expected duration"
+    },
+    {
+        "class": "Tests\\Feature\\MaintenanceDurationTest",
+        "method": "store maintenance without duration uses dynamic default"
+    },
+    {
+        "class": "Tests\\Feature\\MaintenanceDurationTest",
+        "method": "store maintenance with explicit duration overrides default"
+    },
+    {
+        "class": "Tests\\Feature\\MaintenanceDurationTest",
+        "method": "changing system setting affects new records"
+    },
+    {
+        "class": "Tests\\Feature\\MaintenanceDurationTest",
+        "method": "store maintenance with minimum duration"
+    },
+    {
+        "class": "Tests\\Feature\\MaintenanceDurationTest",
+        "method": "store maintenance with large duration"
+    },
+    {
+        "class": "Tests\\Feature\\MaintenanceDurationTest",
+        "method": "multiple records with different durations           ErrorException"
+    },
+    {
+        "class": "Tests\\Feature\\Module6MaintenanceTest",
+        "method": "validation rule duration reads from settings"
+    },
+    {
+        "class": "Tests\\Feature\\Module6MaintenanceTest",
+        "method": "prior status restored when maintenance deleted"
+    },
+    {
+        "class": "Tests\\Feature\\OperationalDirectionIntegrationTest",
+        "method": "driver fallback start rejects ambiguous direction wit\u2026"
+    },
+    {
+        "class": "Tests\\Feature\\Phase3DataQualityTest",
+        "method": "invalid gps nan coordinates"
+    }
+]

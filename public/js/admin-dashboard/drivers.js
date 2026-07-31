@@ -970,7 +970,7 @@ async function toggleSuspendDriver(driverId) {
     if (!driver) return;
     const willSuspend = driver.status !== 'Suspended';
     const action = willSuspend ? 'suspend' : 'unsuspend';
-    if (!confirm(`Are you sure you want to ${action} driver ${driver.firstName} ${driver.lastName}?`)) return;
+    if (!(await GoPasigUI.confirm(`Are you sure you want to ${action} driver ${driver.firstName} ${driver.lastName}?`))) return;
 
     try {
         const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.driversBaseUrl) ? window.GoPasigConfig.driversBaseUrl : '/admin/api/drivers';
@@ -985,7 +985,7 @@ async function toggleSuspendDriver(driverId) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             await loadDatabaseDriversData();
 
             // Refresh Profile screen if currently opened
@@ -993,10 +993,10 @@ async function toggleSuspendDriver(driverId) {
                 openDriversShowScreen(driverId);
             }
         } else {
-            alert(data.message || 'Failed to toggle suspend status.');
+            GoPasigUI.alert(data.message || 'Failed to toggle suspend status.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to toggle suspend status.');
+        GoPasigUI.alert('Server connection error. Failed to toggle suspend status.');
         console.error('AJAX suspend toggle error:', error);
     }
 }
@@ -1124,18 +1124,18 @@ async function handleDriverCreateSubmit(event) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             switchScreen('drivers');
             await loadDatabaseDriversData();
         } else {
-            alert(data.message || 'Validation error. Please verify input data.');
+            GoPasigUI.alert(data.message || 'Validation error. Please verify input data.');
             if (submitBtn) {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Register Driver';
             }
         }
     } catch (error) {
-        alert('Server connection error. Failed to register driver.');
+        GoPasigUI.alert('Server connection error. Failed to register driver.');
         console.error('AJAX Driver submit error:', error);
         if (submitBtn) {
             submitBtn.disabled = false;
@@ -1268,18 +1268,18 @@ async function handleDriverEditSubmit(event) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             switchScreen('drivers');
             await loadDatabaseDriversData();
         } else {
-            alert(data.message || 'Validation error. Please verify input data.');
+            GoPasigUI.alert(data.message || 'Validation error. Please verify input data.');
             if (submitBtn) {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Save Changes';
             }
         }
     } catch (error) {
-        alert('Server connection error. Failed to save driver details.');
+        GoPasigUI.alert('Server connection error. Failed to save driver details.');
         console.error('AJAX Driver edit error:', error);
         if (submitBtn) {
             submitBtn.disabled = false;
@@ -1294,7 +1294,7 @@ async function handleEditDeleteDriver() {
     const driver = DRIVERS_DATA.find(d => d.id === parseInt(driverId));
     if (!driver) return;
 
-    if (!confirm(`Are you absolutely sure you want to delete driver record ${driver.firstName} ${driver.lastName}?\nThis action cannot be undone.`)) {
+    if (!(await GoPasigUI.confirm(`Are you absolutely sure you want to delete driver record ${driver.firstName} ${driver.lastName}?\nThis action cannot be undone.`))) {
         return;
     }
 
@@ -1311,14 +1311,14 @@ async function handleEditDeleteDriver() {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             switchScreen('drivers');
             await loadDatabaseDriversData();
         } else {
-            alert(data.message || 'Failed to delete driver.');
+            GoPasigUI.alert(data.message || 'Failed to delete driver.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to delete driver.');
+        GoPasigUI.alert('Server connection error. Failed to delete driver.');
         console.error('AJAX driver delete error:', error);
     }
 }
@@ -1327,7 +1327,7 @@ async function deleteDriverFromTable(driverId) {
     const driver = DRIVERS_DATA.find(d => d.id === driverId);
     if (!driver) return;
 
-    if (!confirm(`Are you absolutely sure you want to delete driver record ${driver.firstName} ${driver.lastName}?\nThis action cannot be undone.`)) {
+    if (!(await GoPasigUI.confirm(`Are you absolutely sure you want to delete driver record ${driver.firstName} ${driver.lastName}?\nThis action cannot be undone.`))) {
         return;
     }
 
@@ -1344,13 +1344,13 @@ async function deleteDriverFromTable(driverId) {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            alert(data.message);
+            GoPasigUI.alert(data.message);
             await loadDatabaseDriversData();
         } else {
-            alert(data.message || 'Failed to delete driver.');
+            GoPasigUI.alert(data.message || 'Failed to delete driver.');
         }
     } catch (error) {
-        alert('Server connection error. Failed to delete driver.');
+        GoPasigUI.alert('Server connection error. Failed to delete driver.');
         console.error('AJAX driver delete error:', error);
     }
 }
@@ -1560,3 +1560,6 @@ function closeDriverRowMenuOutside() {
         window.removeEventListener('click', closeDriverRowMenuOutside);
     }
 }
+
+
+

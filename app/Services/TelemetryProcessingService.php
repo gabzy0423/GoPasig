@@ -14,6 +14,7 @@ use App\Services\GpsQualityService;
 use App\Services\MovementClassificationService;
 use App\Services\Routing\FleetStatusService;
 use App\Services\Routing\GPSValidationService;
+use App\Services\Routing\AuthoritativeRouteResolver;
 use App\Services\ValueObjects\Coordinate;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -26,7 +27,8 @@ class TelemetryProcessingService
         protected FleetStatusService $fleetStatus,
         protected MovementClassificationService $movementClassifier,
         protected GpsQualityService $gpsQuality,
-        protected HeadingService $headingService
+        protected HeadingService $headingService,
+        protected AuthoritativeRouteResolver $routeResolver
     ) {}
 
     /**
@@ -54,7 +56,7 @@ class TelemetryProcessingService
             ];
         }
 
-        $trip = Trip::with(['bus', 'route.stops'])->find($log->trip_id);
+        $trip = Trip::with(['bus', 'route'])->find($log->trip_id);
         if (!$trip) {
             Log::warning('[GPS_TRACE] F-ABORT - Trip not found', [
                 'gps_log_id' => $gpsLogId,
@@ -214,6 +216,10 @@ class TelemetryProcessingService
                 ]);
                 $position->refresh();
 
+                $runtimeSpeedMps = $this->canonicalRuntimeSpeedMps($log, $position);
+                $position->update(['speed' => $runtimeSpeedMps]);
+                $position->refresh();
+
                 $heading = $this->headingService->resolve($log, $position);
                 $position->update([
                     'display_heading' => $heading['display_heading'],
@@ -230,9 +236,10 @@ class TelemetryProcessingService
                 $nextStop = $bus?->next_stop;
                 $eta      = $bus?->eta ?: 5;
                 $route    = $trip->route;
+                $routePlan = $this->routeResolver->resolveForTrip($trip);
 
-                if ($route && $route->stops->isNotEmpty()) {
-                    $stops = $route->stops;
+                if ($route && $routePlan->orderedStops->isNotEmpty()) {
+                    $stops = $routePlan->orderedStops->values();
 
                     $currentStop = $stops->first(function ($s) use ($nextStop) {
                         return stripos($s->name, (string) $nextStop) !== false
@@ -252,7 +259,7 @@ class TelemetryProcessingService
 
                     $autoAdvanceThreshold = (float) \App\Models\SystemSetting::get('stop_auto_advance_distance', 100);
                     if ($distanceToStop <= $autoAdvanceThreshold) {
-                        $currentIndex = $stops->search(fn ($stop) => $stop->is($currentStop));
+                        $currentIndex = $stops->search(fn ($stop) => (int) $stop->id === (int) $currentStop->id);
                         if ($currentIndex === false) {
                             $currentIndex = 0;
                         }
@@ -302,7 +309,7 @@ class TelemetryProcessingService
                     $bus->update([
                         'lat'       => $smoothed->getLatitude(),
                         'lng'       => $smoothed->getLongitude(),
-                        'speed'     => $log->speed,
+                        'speed'     => $runtimeSpeedMps,
                         'next_stop' => $nextStop,
                         'eta'       => $eta,
                     ]);
@@ -410,7 +417,17 @@ class TelemetryProcessingService
     {
         return (int) round((microtime(true) - $startedAt) * 1000);
     }
+
+    private function canonicalRuntimeSpeedMps(GPSLog $log, VehiclePosition $position): float
+    {
+        if ($position->movement_state === MovementClassificationService::STATE_STATIONARY) {
+            return 0.0;
+        }
+
+        return max(0.0, (float) ($log->speed ?? 0.0));
+    }
 }
+
 
 
 
