@@ -169,7 +169,7 @@
     <div id="map" class="h-[520px] w-full lg:h-full"></div>
 
     <!-- Floating toolbar -->
-    <div class="map-ui-enter map-ui-enter-down relative z-[1000] m-3 flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-2.5 shadow-[0_14px_34px_rgba(15,23,42,0.16)] ring-1 ring-white/70 backdrop-blur-md transition duration-150 lg:absolute lg:left-4 lg:right-[392px] lg:top-4 lg:m-0 xl:right-[408px]">
+    <div id="fleet-monitor-toolbar" class="map-ui-enter map-ui-enter-down relative z-[1000] m-3 flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-2.5 shadow-[0_14px_34px_rgba(15,23,42,0.16)] ring-1 ring-white/70 backdrop-blur-md transition duration-150 lg:absolute lg:left-4 lg:right-[392px] lg:top-4 lg:m-0 xl:right-[408px]">
         <div class="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <!-- Compact page identity -->
             <div class="min-w-[170px] shrink-0 select-none">
@@ -217,7 +217,7 @@
     </div>
 
     <!-- Map Controls Overlay -->
-    <div class="map-ui-enter map-ui-enter-down absolute left-4 top-[92px] z-[1000] flex flex-col gap-1.5 rounded-xl border border-slate-200/80 bg-white/90 p-1.5 shadow-[0_12px_28px_rgba(15,23,42,0.14)] ring-1 ring-white/60 backdrop-blur-md max-lg:top-[536px]">
+    <div id="fleet-monitor-map-controls" class="map-ui-enter map-ui-enter-down absolute left-4 top-[92px] z-[1000] flex flex-col gap-1.5 rounded-xl border border-slate-200/80 bg-white/90 p-1.5 shadow-[0_12px_28px_rgba(15,23,42,0.14)] ring-1 ring-white/60 backdrop-blur-md max-lg:top-[536px]">
         <button onclick="mapZoomIn()" class="flex h-8 w-8 items-center justify-center rounded-lg text-[#001F44] transition-colors hover:bg-[#E6F1FB]/70" aria-label="Zoom in" title="Zoom in">
             <i class="ti ti-plus text-[16px]"></i>
         </button>
@@ -380,22 +380,20 @@
         @endforeach
     ];
 
-    // Stops locations
-    const stops = [
-        @foreach($stops as $stop)
-        { name: '{{ $stop->name }}', lat: {{ $stop->lat }}, lng: {{ $stop->lng }} },
-        @endforeach
-    ];
 
-    const palette = ['#003F87', '#3B6D11', '#854F0B', '#E24B4A', '#378ADD', '#639922', '#BA7517'];
+    const routeVariantRouteLookup = new Map();
+    @foreach($routes as $route)
+        @foreach(($route['map_variant_geometries'] ?? []) as $variantGeometry)
+            routeVariantRouteLookup.set('{{ $variantGeometry['route_variant_id'] }}', '{{ $route['id'] }}');
+        @endforeach
+    @endforeach
+
     const MONITOR_DEFAULT_CENTER = [14.5670, 121.0600];
     const MONITOR_DEFAULT_ZOOM = 13.5;
-    const MONITOR_INITIAL_ROUTE_IDS = new Set(['1', '2', '3']);
+    const MONITOR_ROUTE_CONTROL_GAP = 12;
 
     let map;
     let markersMap = {}; // mapping plate -> Leaflet marker
-    let routesMap = {};  // mapping routeName -> Polyline
-    let stopMarkers = [];
     let currentRouteFilter = 'all';
     let currentStatusFilter = 'all';
     let searchQuery = '';
@@ -405,27 +403,54 @@
     // Map layer styles
     let lightTile, satelliteTile;
     let activeLayer = 'light';
+    let waitingForMonitorVisibility = false;
+    let monitorRouteControlResizeBound = false;
+
+    function alignFleetMonitorOfficialRoutesControl() {
+        const mapCanvas = document.getElementById('map');
+        const toolbar = document.getElementById('fleet-monitor-toolbar');
+        const mapControls = document.getElementById('fleet-monitor-map-controls');
+        const control = mapCanvas?.querySelector('.gopasig-route-map-ux');
+        if (!control) return;
+
+        const usesFloatingToolbar = window.matchMedia('(min-width: 1024px)').matches;
+        if (!usesFloatingToolbar) {
+            control.style.left = '12px';
+            control.style.top = '12px';
+            mapControls?.style.removeProperty('top');
+            return;
+        }
+
+        const controlTop = toolbar?.offsetHeight
+            ? toolbar.offsetTop + toolbar.offsetHeight + MONITOR_ROUTE_CONTROL_GAP
+            : MONITOR_ROUTE_CONTROL_GAP;
+
+        control.style.left = '16px';
+        control.style.top = `${controlTop}px`;
+        if (mapControls) {
+            mapControls.style.top = `${controlTop + control.offsetHeight + MONITOR_ROUTE_CONTROL_GAP}px`;
+        }
+    }
+
+    function bindFleetMonitorOfficialRoutesAlignment() {
+        if (monitorRouteControlResizeBound) return;
+        window.addEventListener('resize', alignFleetMonitorOfficialRoutesControl);
+        monitorRouteControlResizeBound = true;
+    }
+
+    // Real-time GPS Position Polling
+    // The Blade template populates `buses[]` once at page load from the database.
+    // Without polling, bus markers stay frozen at their page-load coordinates even
+    // while drivers are actively reporting GPS telemetry. This interval fetches
+    // fresh positions from the backend and moves markers without a full re-render.
+    const GPS_POLL_INTERVAL_MS = {{ (int) \App\Models\SystemSetting::get('map_gps_polling_interval_ms', 5000) }};
+    const GPS_POLL_URL = '{{ route("fleet.api.bus-gps-positions") }}';
 
     function applyInitialMonitorViewport() {
         if (!map) return;
 
-        const canonicalBounds = L.latLngBounds([]);
-        Object.entries(routesMap).forEach(([key, polyline]) => {
-            const routeId = key.split('-')[0];
-            if (!MONITOR_INITIAL_ROUTE_IDS.has(routeId)) return;
-
-            const bounds = typeof polyline.getBounds === 'function' ? polyline.getBounds() : null;
-            if (bounds && bounds.isValid()) {
-                canonicalBounds.extend(bounds);
-            }
-        });
-
-        if (canonicalBounds.isValid()) {
-            map.fitBounds(canonicalBounds, {
-                paddingTopLeft: [24, 96],
-                paddingBottomRight: [384, 32],
-                maxZoom: 14
-            });
+        const routeUxState = map.__goPasigRouteMapUx;
+        if (routeUxState && Array.isArray(routeUxState.lines) && routeUxState.lines.length > 0) {
             return;
         }
 
@@ -433,6 +458,8 @@
     }
 
     function initMonitorMap() {
+        if (map) return;
+
         // Initialize Map
         map = L.map('map', {
             zoomControl: false,
@@ -459,37 +486,11 @@
             });
         }
 
-        // Draw Route Polylines
-        @foreach($routes as $index => $route)
-            @if($route['map_geometry_source'] === 'route_variant')
-                @foreach($route['map_variant_geometries'] as $variantGeometry)
-                    @if($variantGeometry['polyline_coordinates'])
-                        routesMap['{{ $route['id'] }}-{{ $variantGeometry['route_variant_id'] }}'] = L.polyline({!! json_encode($variantGeometry['polyline_coordinates']) !!}, {
-                            color: palette[{{ $index }} % palette.length],
-                            weight: 3,
-                            opacity: 0.85
-                        }).addTo(map);
-                    @endif
-                @endforeach
-            @elseif($route['polyline_coordinates'])
-                routesMap['{{ $route['id'] }}'] = L.polyline({!! json_encode($route['polyline_coordinates']) !!}, {
-                    color: palette[{{ $index }} % palette.length],
-                    weight: 3,
-                    opacity: 0.85
-                }).addTo(map);
-            @endif
-        @endforeach        // Draw Stops
-        stops.forEach(stop => {
-            let m = L.circleMarker([stop.lat, stop.lng], {
-                radius: 4.5,
-                fillColor: '#FFFFFF',
-                fillOpacity: 1,
-                color: '#003F87',
-                weight: 1.5
-            }).addTo(map);
-            m.bindTooltip(stop.name, { direction: 'top', className: 'text-[11px] font-sans font-medium px-2 py-0.5 rounded border border-black/10' });
-            stopMarkers.push(m);
-        });
+        if (window.GoPasigRouteMapUX) {
+            window.GoPasigRouteMapUX.mount({ map: map, routes: @json($routes), compact: false, fitOnFirstRender: true });
+            alignFleetMonitorOfficialRoutesControl();
+            bindFleetMonitorOfficialRoutesAlignment();
+        }
 
         // Draw Bus Markers
         renderBusMarkers();
@@ -524,10 +525,47 @@
             });
         }, 5000);
     }
+    function monitorMapHasVisibleSize() {
+        const mapElement = document.getElementById('map');
+        return Boolean(mapElement && mapElement.offsetWidth > 0 && mapElement.offsetHeight > 0);
+    }
+
+    function startMonitorMapWhenVisible() {
+        if (map) {
+            map.invalidateSize();
+            alignFleetMonitorOfficialRoutesControl();
+            return;
+        }
+
+        if (monitorMapHasVisibleSize()) {
+            waitingForMonitorVisibility = false;
+            initMonitorMap();
+            requestAnimationFrame(() => map && map.invalidateSize());
+            return;
+        }
+
+        if (waitingForMonitorVisibility) return;
+
+        waitingForMonitorVisibility = true;
+        const handleMonitorScreenShown = (event) => {
+            if (event.detail?.screen !== 'monitor') return;
+
+            window.removeEventListener('screen-shown', handleMonitorScreenShown);
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    waitingForMonitorVisibility = false;
+                    startMonitorMapWhenVisible();
+                });
+            });
+        };
+
+        window.addEventListener('screen-shown', handleMonitorScreenShown);
+    }
+
     if (document.readyState === 'loading') {
-        document.addEventListener("DOMContentLoaded", initMonitorMap);
+        document.addEventListener("DOMContentLoaded", startMonitorMapWhenVisible);
     } else {
-        initMonitorMap();
+        startMonitorMapWhenVisible();
     }
 
     function formatTimeSince(isoString) {
@@ -958,17 +996,11 @@
             activeBtn.className = activeBtn.className.replace('text-slate-500 hover:bg-white/80 hover:text-[#001F44]', 'bg-white text-[#001F44] border border-slate-200/80 shadow-sm');
         }
 
-        // Highlight map route polyline
-        for (let rKey in routesMap) {
-            if (route === 'all') {
-                routesMap[rKey].setStyle({ opacity: 0.85, weight: 3 });
-            } else if (rKey === route) {
-                routesMap[rKey].setStyle({ opacity: 1, weight: 5 });
-            } else {
-                routesMap[rKey].setStyle({ opacity: 0.15, weight: 2 });
-            }
+        if (window.GoPasigRouteMapUX && map) {
+            window.GoPasigRouteMapUX.setRouteFilter(map, route);
         }
 
+        updateCorridorVisibility();
         renderBusMarkers();
         renderVehicleList();
     }
@@ -1009,23 +1041,12 @@
             satelliteTile.addTo(map);
             activeLayer = 'satellite';
             
-            // Adjust stop markers for satellite
-            stopMarkers.forEach(m => m.setStyle({ color: '#378ADD' }));
         } else {
             map.removeLayer(satelliteTile);
             lightTile.addTo(map);
             activeLayer = 'light';
-            stopMarkers.forEach(m => m.setStyle({ color: '#003F87' }));
         }
     }
-    // ─── Real-time GPS Position Polling ─────────────────────────────────────
-    // The Blade template populates `buses[]` once at page load from the database.
-    // Without polling, bus markers stay frozen at their page-load coordinates even
-    // while drivers are actively reporting GPS telemetry. This interval fetches
-    // fresh positions from the backend and moves markers without a full re-render.
-    const GPS_POLL_INTERVAL_MS = {{ (int) \App\Models\SystemSetting::get('map_gps_polling_interval_ms', 5000) }};
-    const GPS_POLL_URL = '{{ route("fleet.api.bus-gps-positions") }}';
-
     // Animate smoothly to new position using Ease in-out interpolation
     function animateMarker(marker, newLat, newLng, duration) {
         const startLat = marker.getLatLng().lat;
@@ -1058,15 +1079,15 @@
     let corridorLayers = [];
     let overlaysLoaded = false;
 
-    function loadSpatialOverlays(geofences, corridors) {
+    function loadSpatialOverlays(geofences, variantCorridors) {
         if (!map) return;
         if (overlaysLoaded) return;
-        if (!geofences || !corridors) return;
+        if (!geofences || !variantCorridors) return;
         overlaysLoaded = true;
 
         geofenceLayers.forEach(l => map.removeLayer(l));
         geofenceLayers = [];
-        corridorLayers.forEach(l => map.removeLayer(l));
+        corridorLayers.forEach(item => item.layers.forEach(l => map.removeLayer(l)));
         corridorLayers = [];
 
         // 1. Draw Geofences
@@ -1094,29 +1115,48 @@
             geofenceLayers.push(layer);
         });
 
-        // 2. Draw Corridors
-        corridors.forEach(corr => {
+        // 2. Draw RouteVariant Corridors
+        variantCorridors.forEach(corr => {
             if (corr.geometry && corr.geometry.type === 'LineString') {
-                let latLngs = corr.geometry.coordinates.map(coord => [coord[1], coord[0]]);
-                
+                const coordinateOrder = corr.geometry.coordinate_order || 'lat_lng';
+                let latLngs = corr.geometry.coordinates.map(coord => coordinateOrder === 'lng_lat' ? [coord[1], coord[0]] : [coord[0], coord[1]]);
+                const bufferWidth = corr.buffer_width || 25;
+                const routeId = routeVariantRouteLookup.get(String(corr.route_variant_id));
+
                 let bufferLayer = L.polyline(latLngs, {
                     color: '#00cc88',
-                    weight: corr.buffer_width * 2,
+                    weight: bufferWidth * 2,
                     opacity: 0.12,
                     lineCap: 'round',
                     lineJoin: 'round'
-                }).addTo(map);
+                });
 
                 let centerLayer = L.polyline(latLngs, {
                     color: '#00cc88',
                     weight: 1.5,
                     opacity: 0.6,
                     dashArray: '5, 5'
-                }).addTo(map);
+                });
 
-                corridorLayers.push(bufferLayer);
-                corridorLayers.push(centerLayer);
+                corridorLayers.push({ routeId, layers: [bufferLayer, centerLayer] });
             }
+        });
+
+        updateCorridorVisibility();
+    }
+
+    function updateCorridorVisibility() {
+        if (!map) return;
+
+        corridorLayers.forEach(item => {
+            const visible = currentRouteFilter === 'all' || item.routeId === String(currentRouteFilter);
+            item.layers.forEach(layer => {
+                if (visible && !map.hasLayer(layer)) {
+                    layer.addTo(map);
+                } else if (!visible && map.hasLayer(layer)) {
+                    map.removeLayer(layer);
+                }
+            });
         });
     }
 
@@ -1128,8 +1168,8 @@
             const data = await response.json();
             
             // Draw overlays once
-            if (data.geofences && data.corridors) {
-                loadSpatialOverlays(data.geofences, data.corridors);
+            if (data.geofences && data.variant_corridors) {
+                loadSpatialOverlays(data.geofences, data.variant_corridors);
             }
 
             if (!data.buses || !Array.isArray(data.buses)) return;
@@ -1217,7 +1257,6 @@
         }
     }
 
-    // ────────────────────────────────────────────────────────────────────────
 </script>
 </section>
 

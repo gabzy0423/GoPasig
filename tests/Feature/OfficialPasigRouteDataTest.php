@@ -5,8 +5,10 @@ namespace Tests\Feature;
 use App\Models\Bus;
 use App\Models\Driver;
 use App\Models\Route;
+use App\Models\RouteServiceSchedule;
 use App\Models\RouteVariant;
 use App\Models\RouteVariantStop;
+use App\Models\Stop;
 use App\Models\Trip;
 use App\Models\User;
 use App\Models\VehiclePosition;
@@ -26,11 +28,81 @@ class OfficialPasigRouteDataTest extends TestCase
     {
         $this->seedOfficialRoutes();
 
-        foreach (['Route 1', 'Route 2', 'Route 3'] as $routeName) {
+        foreach (Route::canonicalProductionNames() as $routeName) {
             $route = Route::where('name', $routeName)->firstOrFail();
             $this->assertTrue($route->variants()->where('direction', 'outbound')->exists(), $routeName . ' outbound missing');
             $this->assertTrue($route->variants()->where('direction', 'inbound')->exists(), $routeName . ' inbound missing');
         }
+    }
+
+    public function test_official_routes_seed_split_service_schedule_windows_idempotently(): void
+    {
+        $this->seedOfficialRoutes();
+        $this->seed(OfficialPasigRouteSeeder::class);
+
+        $routeIds = Route::whereIn('name', ['Route 2', 'Route 3', 'Route 4'])->pluck('id');
+        $this->assertSame(12, RouteServiceSchedule::whereIn('route_id', $routeIds)->count());
+
+        foreach (['Route 2', 'Route 3', 'Route 4'] as $routeName) {
+            $route = Route::where('name', $routeName)->firstOrFail();
+            $outbound = $route->variants()->where('direction', 'outbound')->firstOrFail();
+            $inbound = $route->variants()->where('direction', 'inbound')->firstOrFail();
+
+            $this->assertSame([
+                ['05:30:00', '09:00:00'],
+                ['15:00:00', '17:00:00'],
+            ], $this->serviceWindowsFor($outbound));
+
+            $this->assertSame([
+                ['06:00:00', '09:00:00'],
+                ['15:00:00', '18:00:00'],
+            ], $this->serviceWindowsFor($inbound));
+
+            RouteServiceSchedule::where('route_id', $route->id)->each(function (RouteServiceSchedule $schedule) use ($route) {
+                $this->assertSame($route->id, $schedule->routeVariant->route_id);
+                $this->assertSame('with_designated_stops', $schedule->service_configuration);
+                $this->assertSame(RouteServiceSchedule::SOURCE_BENEFICIARY_OFFICIAL, $schedule->source);
+                $this->assertSame(['mon', 'tue', 'wed', 'thu', 'fri'], $schedule->service_days);
+                $this->assertTrue($schedule->is_active);
+            });
+        }
+    }
+
+    public function test_official_route_service_schedules_group_for_admin_and_commuter_displays(): void
+    {
+        $this->seedOfficialRoutes();
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $this->actingAs($admin)
+            ->getJson('/admin/api/route-service-schedules')
+            ->assertOk()
+            ->assertJsonPath('routes.0.name', 'Route 2')
+            ->assertJsonPath('routes.0.variants.0.direction', 'inbound')
+            ->assertJsonPath('routes.0.variants.0.serviceSchedule.firstTripTime', '6:00 AM')
+            ->assertJsonPath('routes.0.variants.0.serviceSchedule.lastTripTime', '6:00 PM')
+            ->assertJsonPath('routes.0.variants.0.serviceSchedule.windowCount', 2)
+            ->assertJsonPath('routes.0.variants.0.serviceSchedules.0.firstTripTime', '6:00 AM')
+            ->assertJsonPath('routes.0.variants.0.serviceSchedules.0.lastTripTime', '9:00 AM')
+            ->assertJsonPath('routes.0.variants.0.serviceSchedules.1.firstTripTime', '3:00 PM')
+            ->assertJsonPath('routes.0.variants.0.serviceSchedules.1.lastTripTime', '6:00 PM')
+            ->assertJsonPath('routes.0.variants.1.direction', 'outbound')
+            ->assertJsonPath('routes.0.variants.1.serviceSchedule.firstTripTime', '5:30 AM')
+            ->assertJsonPath('routes.0.variants.1.serviceSchedule.lastTripTime', '5:00 PM')
+            ->assertJsonPath('routes.0.variants.1.serviceSchedule.windowCount', 2)
+            ->assertJsonPath('routes.0.variants.1.serviceSchedules.0.firstTripTime', '5:30 AM')
+            ->assertJsonPath('routes.0.variants.1.serviceSchedules.0.lastTripTime', '9:00 AM')
+            ->assertJsonPath('routes.0.variants.1.serviceSchedules.1.firstTripTime', '3:00 PM')
+            ->assertJsonPath('routes.0.variants.1.serviceSchedules.1.lastTripTime', '5:00 PM');
+
+        $this->get('/commuter/schedule')
+            ->assertOk()
+            ->assertSee('Route 2')
+            ->assertSee('Operating Windows')
+            ->assertSee('5:30 AM - 9:00 AM')
+            ->assertSee('3:00 PM - 5:00 PM')
+            ->assertSee('6:00 AM - 9:00 AM')
+            ->assertSee('3:00 PM - 6:00 PM')
+            ->assertSee('With Designated Stops');
     }
 
     public function test_official_directional_stop_sequences_are_independent(): void
@@ -38,9 +110,9 @@ class OfficialPasigRouteDataTest extends TestCase
         $this->seedOfficialRoutes();
 
         $expectations = [
-            'Route 1' => ['outbound_first' => 'SPED (Caruncho Ave.)', 'outbound_last' => 'Ligaya (Puregold)', 'inbound_first' => 'Ligaya (Puregold)', 'inbound_last' => 'SPED (Caruncho Ave.)'],
-            'Route 2' => ['outbound_first' => 'SPED (Caruncho Ave.)', 'outbound_last' => 'Kenneth Road', 'inbound_first' => 'Kenneth Road', 'inbound_last' => 'SPED (Caruncho Ave.)'],
+            'Route 2' => ['outbound_first' => 'SPED (Caruncho Ave.)', 'outbound_last' => 'Ligaya (Puregold)', 'inbound_first' => 'Ligaya (Puregold)', 'inbound_last' => 'SPED (Caruncho Ave.)'],
             'Route 3' => ['outbound_first' => 'SPED (Caruncho Ave.)', 'outbound_last' => 'One San Miguel', 'inbound_first' => 'One San Miguel', 'inbound_last' => 'SPED (Caruncho Ave.)'],
+            'Route 4' => ['outbound_first' => 'SPED (Caruncho Ave.)', 'outbound_last' => 'Kenneth Road', 'inbound_first' => 'Kenneth Road', 'inbound_last' => 'SPED (Caruncho Ave.)'],
         ];
 
         foreach ($expectations as $routeName => $expected) {
@@ -60,9 +132,9 @@ class OfficialPasigRouteDataTest extends TestCase
     {
         $this->seedOfficialRoutes();
 
-        $route1 = Route::where('name', 'Route 1')->firstOrFail();
-        $outbound = $route1->variants()->where('direction', 'outbound')->with('stops')->firstOrFail();
-        $inbound = $route1->variants()->where('direction', 'inbound')->with('stops')->firstOrFail();
+        $route2 = Route::where('name', 'Route 2')->firstOrFail();
+        $outbound = $route2->variants()->where('direction', 'outbound')->with('stops')->firstOrFail();
+        $inbound = $route2->variants()->where('direction', 'inbound')->with('stops')->firstOrFail();
 
         $this->assertSame('pickup_point', $outbound->stops->firstWhere('name', 'SPED (Caruncho Ave.)')->stop_type);
         $this->assertSame('designated_stop', $outbound->stops->firstWhere('name', 'Ligaya (Puregold)')->stop_type);
@@ -82,6 +154,29 @@ class OfficialPasigRouteDataTest extends TestCase
         $this->assertContains('designated_stop', $variant->stops->pluck('stop_type')->all());
     }
 
+    public function test_default_official_variant_projects_coordinates_to_legacy_commuter_stops(): void
+    {
+        $this->seedOfficialRoutes();
+
+        $route = Route::where('name', 'Route 2')->firstOrFail();
+        $variant = $route->variants()->where('is_default', true)->with('stops')->firstOrFail();
+        $firstVariantStop = $variant->stops->firstOrFail();
+        $firstVariantStop->update([
+            'lat' => 14.5602934,
+            'lng' => 121.0797616,
+        ]);
+
+        $this->seed(OfficialPasigRouteSeeder::class);
+
+        $legacyStop = Stop::where('route_id', $route->id)
+            ->where('sequence', $firstVariantStop->sequence)
+            ->first();
+
+        $this->assertNotNull($legacyStop);
+        $this->assertSame($firstVariantStop->name, $legacyStop->name);
+        $this->assertSame($legacyStop->id, $firstVariantStop->fresh()->canonical_stop_id);
+    }
+
     public function test_route_2_inbound_pending_geometry_cannot_dispatch(): void
     {
         $this->seedOfficialRoutes();
@@ -99,8 +194,9 @@ class OfficialPasigRouteDataTest extends TestCase
     {
         $this->seedOfficialRoutes();
 
-        $officialRoute = Route::where('name', 'Route 1')->firstOrFail();
+        $officialRoute = Route::where('name', 'Route 2')->firstOrFail();
         $variant = $officialRoute->variants()->where('direction', 'outbound')->firstOrFail();
+        $variant->update(['polyline_coordinates' => [[14.5, 121.0], [14.51, 121.01]], 'geometry_status' => 'schematic']);
         $variantTrip = Trip::factory()->create([
             'route_id' => $officialRoute->id,
             'route_variant_id' => $variant->id,
@@ -159,6 +255,19 @@ class OfficialPasigRouteDataTest extends TestCase
         $this->assertEquals(121.123456, $busPayload['lng']);
     }
 
+    public function test_admin_fleet_api_serializes_canonical_routes_as_json_array(): void
+    {
+        $this->seedOfficialRoutes();
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $response = $this->actingAs($admin)->getJson('/admin/api/fleet-data');
+
+        $response->assertOk();
+        $this->assertTrue(array_is_list($response->json('routes')));
+        $this->assertSame([5, 6, 7], collect($response->json('routes'))->pluck('id')->all());
+        $this->assertStringContainsString('"routes":[', $response->getContent());
+        $this->assertStringNotContainsString('"routes":{"4"', $response->getContent());
+    }
     public function test_official_route_identity_migration_preserves_legacy_route_references(): void
     {
         $this->seedOfficialRoutes();
@@ -168,13 +277,26 @@ class OfficialPasigRouteDataTest extends TestCase
 
         $this->assertSame('Route A', $legacyRoute->name);
         $this->assertSame($legacyRoute->id, $trip->fresh()->route_id);
-        $this->assertNotNull(Route::where('name', 'Route 1')->first());
-        $this->assertNotSame(Route::where('name', 'Route 1')->first()->id, $legacyRoute->id);
+        $this->assertNull(Route::where('name', 'Route 1')->first());
+        $this->assertSame(['Route 2', 'Route 3', 'Route 4'], Route::getCanonicalProductionCached()->pluck('name')->values()->all());
     }
 
     private function seedOfficialRoutes(): void
     {
         $this->seed(RouteSeeder::class);
         $this->seed(OfficialPasigRouteSeeder::class);
+    }
+
+    private function serviceWindowsFor(RouteVariant $variant): array
+    {
+        return RouteServiceSchedule::where('route_variant_id', $variant->id)
+            ->orderBy('first_trip_time')
+            ->get()
+            ->map(fn (RouteServiceSchedule $schedule) => [
+                substr($schedule->first_trip_time, 0, 8),
+                substr($schedule->last_trip_time, 0, 8),
+            ])
+            ->values()
+            ->all();
     }
 }

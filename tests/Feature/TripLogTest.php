@@ -8,6 +8,7 @@ use App\Models\Trip;
 use App\Models\Bus;
 use App\Models\Route;
 use App\Models\TripLog;
+use App\Models\TripPassengerEvent;
 use App\Services\TripLogService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Carbon\Carbon;
@@ -190,6 +191,63 @@ class TripLogTest extends TestCase
         $this->assertEquals(44, $stats['avg_passengers_per_trip']); // 220/5
         $this->assertEquals(5, $stats['total_trips']);
         $this->assertEquals(55, $stats['peak_passengers']);
+    }
+
+    public function test_log_trip_recomputes_passenger_summary_from_events_without_duplicates(): void
+    {
+        $driver = Driver::factory()->create();
+        $bus = Bus::factory()->create();
+        $route = Route::factory()->create();
+        $trip = Trip::factory()->create([
+            'driver_id' => $driver->id,
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'status' => 'completed',
+            'started_at' => now()->subHour(),
+            'ended_at' => now(),
+            'peak_passengers' => 14,
+        ]);
+
+        TripPassengerEvent::create([
+            'trip_id' => $trip->id,
+            'driver_id' => $driver->id,
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'event_type' => TripPassengerEvent::TYPE_BOARDED,
+            'passenger_delta' => 6,
+            'onboard_after' => 6,
+            'recorded_at' => now()->subMinutes(40),
+        ]);
+        TripPassengerEvent::create([
+            'trip_id' => $trip->id,
+            'driver_id' => $driver->id,
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'event_type' => TripPassengerEvent::TYPE_BOARDED,
+            'passenger_delta' => 4,
+            'onboard_after' => 10,
+            'recorded_at' => now()->subMinutes(25),
+        ]);
+        TripPassengerEvent::create([
+            'trip_id' => $trip->id,
+            'driver_id' => $driver->id,
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'event_type' => TripPassengerEvent::TYPE_ALIGHTED,
+            'passenger_delta' => 3,
+            'onboard_after' => 7,
+            'recorded_at' => now()->subMinutes(10),
+        ]);
+
+        TripLogService::logTrip($trip);
+        TripLogService::logTrip($trip->fresh());
+
+        $tripLog = TripLog::where('trip_id', $trip->id)->first();
+
+        $this->assertSame(1, TripLog::where('trip_id', $trip->id)->count());
+        $this->assertSame(10, $tripLog->passengers);
+        $this->assertSame(3, $tripLog->alighted_passengers);
+        $this->assertSame(14, $tripLog->peak_passengers);
     }
 
     public function test_get_daily_performance()

@@ -3,7 +3,7 @@
 // Globals with fallback placeholders (populated dynamically from MySQL)
 const fleetData = [];
 const tripsData = [];
-const dispatchQueueData = [];
+let overviewOperationsData = null;
 const SPEED_DISPLAY_DEADBAND_KMH = 0.5;
 
 function normalizeDisplaySpeedKmh(speedKmh, movementState = null) {
@@ -17,6 +17,8 @@ function normalizeDisplaySpeedKmh(speedKmh, movementState = null) {
 
 const statusColors = {
     Active: '#003F87',
+    Operating: '#003F87',
+    Ready: '#639922',
     Moving: '#003F87',
     Stopped: '#888780',
     Delayed: '#BA7517',
@@ -27,6 +29,8 @@ const statusColors = {
 
 const statusBadgeColors = {
     Active: 'bg-[#E8F4E0] text-[#639922]',
+    Operating: 'bg-[#E8F4E0] text-[#639922]',
+    Ready: 'bg-[#E8F4E0] text-[#639922]',
     Moving: 'bg-[#E8F4E0] text-[#639922]',
     Stopped: 'bg-slate-50 border border-slate-200 text-slate-500',
     Delayed: 'bg-[#FEF7ED] text-[#BA7517]',
@@ -55,6 +59,7 @@ async function loadDatabaseFleetData(options = {}) {
         const url = (window.GoPasigConfig && window.GoPasigConfig.fleetDataUrl) ? window.GoPasigConfig.fleetDataUrl : '/admin/api/fleet-data';
         const response = await fetch(url);
         const data = await response.json();
+        overviewOperationsData = data.overview || null;
 
         console.log("API RAW RESPONSE routes:", data.routes ? data.routes.length : 'undefined');
         console.log("API RAW RESPONSE buses:", data.buses ? data.buses.length : 'undefined');
@@ -139,19 +144,22 @@ async function loadDatabaseFleetData(options = {}) {
         tripsData.length = 0;
         if (data.trips) {
             data.trips.forEach(trip => {
-                const logTime = new Date(trip.created_at || trip.started_at);
+                const eventTime = trip.ended_at || trip.started_at || trip.dispatched_at || trip.updated_at || trip.created_at;
+                const logTime = new Date(eventTime);
                 const timeString = logTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-                const routeShort = trip.route ? trip.route.name : 'Route 1';
+                const routeShort = trip.route ? trip.route.name : 'Official route';
 
                 let driverShort = 'Unassigned';
                 if (trip.driver) {
-                    driverShort = `${trip.driver.first_name.charAt(0)}. ${trip.driver.last_name}`;
+                    driverShort = trip.driver.name
+                        || [trip.driver.first_name, trip.driver.last_name].filter(Boolean).join(' ')
+                        || 'Unassigned';
                 }
 
-                let statusLabel = 'Ongoing';
+                let statusLabel = 'Awaiting Start';
                 if (trip.status === 'completed') statusLabel = 'Completed';
                 else if (trip.status === 'cancelled') statusLabel = 'Cancelled';
-                else if (trip.status === 'ongoing') statusLabel = 'Active';
+                else if (trip.status === 'ongoing') statusLabel = 'Ongoing';
 
                 tripsData.push({
                     time: timeString,
@@ -163,8 +171,6 @@ async function loadDatabaseFleetData(options = {}) {
                 });
             });
         }
-
-        await loadTodayDispatchQueue();
 
         isDatabaseDataLoaded = true;
         console.log("MySQL Database fleet records loaded dynamically!");
@@ -228,23 +234,8 @@ async function loadDatabaseFleetData(options = {}) {
     }
 }
 
-async function loadTodayDispatchQueue() {
-    const url = window.GoPasigConfig && window.GoPasigConfig.dispatchQueueTodayUrl
-        ? window.GoPasigConfig.dispatchQueueTodayUrl
-        : '/admin/api/schedules/dispatch-queue/today';
-
-    const response = await fetch(url);
-    const data = await response.json();
-
-    dispatchQueueData.length = 0;
-    if (response.ok && data.success) {
-        data.dispatches.forEach(dispatch => dispatchQueueData.push(dispatch));
-    }
-}
-
 // Fetch database records immediately on load
 loadDatabaseFleetData();
-
 
 
 

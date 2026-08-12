@@ -3,6 +3,7 @@
 namespace App\Services\Commuter;
 
 use App\Data\StopGeofenceEvaluation;
+use App\Models\RouteVariantStop;
 use App\Models\Stop;
 use App\Services\Contracts\GeospatialServiceInterface;
 use App\Services\Spatial\GeofenceEngine;
@@ -24,7 +25,11 @@ class StopGeofenceEvaluator
         $distances = [];
 
         foreach ($stops as $stop) {
-            if (! $stop instanceof Stop || $stop->lat === null || $stop->lng === null) {
+            if (! $stop instanceof Stop && ! $stop instanceof RouteVariantStop) {
+                continue;
+            }
+
+            if ($stop->lat === null || $stop->lng === null) {
                 continue;
             }
 

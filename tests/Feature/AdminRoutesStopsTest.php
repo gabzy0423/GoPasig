@@ -147,7 +147,7 @@ class AdminRoutesStopsTest extends TestCase
         $this->actingAsAdmin();
 
         $route = Route::create([
-            'name' => 'Route 1',
+            'name' => 'Route 2',
             'description' => 'Pasig Route',
             'polyline_coordinates' => [[14.5593, 121.0805], [14.5620, 121.0820]],
             'status' => 'Active',

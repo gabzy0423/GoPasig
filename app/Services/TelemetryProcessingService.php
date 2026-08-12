@@ -8,6 +8,7 @@ use App\Events\PositionUpdated;
 use App\Models\Bus;
 use App\Models\GPSLog;
 use App\Models\Trip;
+use App\Models\TripProgress;
 use App\Models\VehiclePosition;
 use App\Services\GPS\GPSSmoothingService;
 use App\Services\GpsQualityService;
@@ -320,6 +321,7 @@ class TelemetryProcessingService
 
             event(new GPSValidated($log->fresh()));
             event(new PositionUpdated($position));
+            $this->syncBusRuntimeFromTripProgress($trip);
 
             $processingMs = $this->elapsedMs($startedAt);
 
@@ -411,6 +413,40 @@ class TelemetryProcessingService
                 'error' => $e->getMessage(),
             ];
         }
+    }
+
+    private function syncBusRuntimeFromTripProgress(Trip $trip): void
+    {
+        $bus = $trip->bus ?: Bus::find($trip->bus_id);
+        if (!$bus) {
+            return;
+        }
+
+        $progress = TripProgress::where('trip_id', $trip->id)
+            ->with(['nextStop', 'nextRouteVariantStop'])
+            ->first();
+
+        if (!$progress) {
+            return;
+        }
+
+        $nextStop = $progress->nextRouteVariantStop ?: $progress->nextStop;
+        $etaMinutes = null;
+        $etas = $progress->upcoming_etas ?? [];
+        if (!empty($etas) && is_array($etas[0] ?? null) && !empty($etas[0]['eta_timestamp'])) {
+            try {
+                $etaMinutes = max(0, (int) ceil(now()->diffInSeconds(\Carbon\Carbon::parse($etas[0]['eta_timestamp']), false) / 60));
+            } catch (\Throwable) {
+                $etaMinutes = null;
+            }
+        }
+
+        $updates = ['next_stop' => $nextStop?->name];
+        if ($etaMinutes !== null) {
+            $updates['eta'] = $etaMinutes;
+        }
+
+        $bus->update($updates);
     }
 
     private function elapsedMs(float $startedAt): int

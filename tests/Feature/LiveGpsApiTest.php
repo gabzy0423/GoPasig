@@ -129,7 +129,7 @@ class LiveGpsApiTest extends TestCase
                     ]
                 ],
                 'geofences',
-                'corridors'
+                'variant_corridors'
             ]);
 
         // Assert exact values are returned directly from DB state

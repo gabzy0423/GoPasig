@@ -246,7 +246,7 @@ class Phase5UnfixedIssuesTest extends TestCase
     /** @test */
     public function test_admin_updating_bus_to_inactive_syncs_driver_and_clears_assignments_via_controller()
     {
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $driver = Driver::factory()->create([
             'status' => 'active',
             'assigned_bus' => 'PLATE777',

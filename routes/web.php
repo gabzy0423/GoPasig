@@ -76,7 +76,7 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::put('/api/profile/password', [AdminProfileController::class, 'updatePassword'])->name('api.profile.password.update');
 });
 
-// Admin API Routes (Protected by Auth, role checks done inside controllers)
+// Admin API routes. Sensitive resource groups add their role boundary here.
 Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/api/analytics', [AdminAnalyticsController::class, 'index'])->name('api.analytics');
     Route::get('/api/fleet-data', [AdminDashboardController::class, 'getFleetData'])->name('api.fleet-data');
@@ -89,11 +89,13 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::delete('/api/buses/{bus}', [AdminBusController::class, 'destroy'])->name('api.buses.destroy');
     Route::put('/api/buses/{bus}/assign-route', [AdminBusController::class, 'assignRoute'])->name('api.buses.assign-route');
 
-    Route::get('/api/drivers', [AdminDriverController::class, 'index'])->name('api.drivers.index');
-    Route::post('/api/drivers', [AdminDriverController::class, 'store'])->name('api.drivers.store');
-    Route::put('/api/drivers/{driver}', [AdminDriverController::class, 'update'])->name('api.drivers.update');
-    Route::delete('/api/drivers/{driver}', [AdminDriverController::class, 'destroy'])->name('api.drivers.destroy');
-    Route::post('/api/drivers/{driver}/suspend', [AdminDriverController::class, 'toggleSuspend'])->name('api.drivers.suspend');
+    Route::middleware('role:admin')->group(function () {
+        Route::get('/api/drivers', [AdminDriverController::class, 'index'])->name('api.drivers.index');
+        Route::post('/api/drivers', [AdminDriverController::class, 'store'])->name('api.drivers.store');
+        Route::put('/api/drivers/{driver}', [AdminDriverController::class, 'update'])->name('api.drivers.update');
+        Route::delete('/api/drivers/{driver}', [AdminDriverController::class, 'destroy'])->name('api.drivers.destroy');
+        Route::post('/api/drivers/{driver}/suspend', [AdminDriverController::class, 'toggleSuspend'])->name('api.drivers.suspend');
+    });
 
     Route::get('/api/route-service-schedules', [AdminRouteServiceScheduleController::class, 'index'])->name('api.route-service-schedules.index');
     Route::get('/api/route-service-schedules/{routeServiceSchedule}', [AdminRouteServiceScheduleController::class, 'show'])->name('api.route-service-schedules.show');
@@ -242,9 +244,10 @@ Route::middleware(['auth', 'role:driver'])->prefix('driver')->name('driver.')->g
     Route::post('/trip/toggle', [DriverController::class, 'toggleTrip'])->name('trip.toggle');
     Route::post('/trip/next', [DriverController::class, 'startNextTrip'])->name('trip.next');
     Route::post('/trip/incident', [DriverController::class, 'reportIncident'])->name('trip.incident');
-    Route::post('/trip/pax', [DriverController::class, 'updatePassengers'])->name('trip.pax');
-    Route::post('/trip/stop', [DriverController::class, 'updateStop'])->name('trip.stop');
-    Route::post('/trip/gps', [DriverController::class, 'updateGPS'])->middleware('throttle:15,1')->name('trip.gps');
+  Route::post('/trip/pax', [DriverController::class, 'updatePassengers'])->name('trip.pax');
+  Route::post('/trip/stop', [DriverController::class, 'updateStop'])->name('trip.stop');
+  Route::post('/trip/developer-gps', [DriverController::class, 'updateDeveloperGPS'])->name('trip.developer-gps');
+  Route::post('/trip/gps', [DriverController::class, 'updateGPS'])->middleware('throttle:15,1')->name('trip.gps');
 });
 
 

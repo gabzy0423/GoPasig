@@ -11,9 +11,9 @@ class Route extends Model
     use HasFactory, SoftDeletes;
 
     private const CANONICAL_PRODUCTION_ROUTE_NAMES = [
-        'Route 1',
         'Route 2',
         'Route 3',
+        'Route 4',
     ];
 
     protected $fillable = ['name', 'color', 'description', 'polyline_coordinates', 'geometry_version', 'status', 'travel_time_minutes', 'delay_threshold_minutes', 'min_speed', 'max_speed', 'target_on_time_rate', 'target_headway_minutes', 'min_buses_required'];
@@ -53,16 +53,32 @@ class Route extends Model
         return self::CANONICAL_PRODUCTION_ROUTE_NAMES;
     }
 
+    public function isCanonicalProduction(): bool
+    {
+        return in_array($this->name, self::canonicalProductionNames(), true);
+    }
+
     public static function getCanonicalProductionCached()
     {
+        $order = array_flip(self::canonicalProductionNames());
+
         return self::getAllCached()
             ->whereIn('name', self::canonicalProductionNames())
-            ->whereNotIn('status', ['inactive', 'Inactive']);
+            ->whereNotIn('status', ['inactive', 'Inactive'])
+            ->sortBy(fn (Route $route) => $order[$route->name] ?? PHP_INT_MAX)
+            ->values();
     }
 
     public function scopeCanonicalProduction($query)
     {
-        return $query->whereIn('name', self::canonicalProductionNames());
+        $names = self::canonicalProductionNames();
+        $case = 'case ' . collect($names)
+            ->map(fn ($name, $index) => 'when name = ? then ' . $index)
+            ->implode(' ') . ' else 999 end';
+
+        return $query
+            ->whereIn('name', $names)
+            ->orderByRaw($case, $names);
     }
 
     public function scopePublicCommuterVisible($query)
@@ -121,4 +137,3 @@ class Route extends Model
         return $this->hasMany(RouteDuration::class);
     }
 }
-

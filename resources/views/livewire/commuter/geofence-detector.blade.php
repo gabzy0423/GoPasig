@@ -119,7 +119,9 @@
                         </h2>
                         <div class="flex items-center gap-1.5 mt-1.5">
                             <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background-color: {{ $activeTrip['route_color'] }}; box-shadow: 0 0 6px {{ $activeTrip['route_color'] }};"></span>
-                            <span class="text-[11px] font-bold text-indigo-100">{{ $activeTrip['route_name'] }}</span>
+                            <span class="text-[11px] font-bold text-indigo-100">
+                                {{ $activeTrip['route_name'] }}{{ !empty($activeTrip['direction']) ? ' - ' . ucfirst($activeTrip['direction']) : '' }}
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -189,6 +191,10 @@
                         @endif
                     </div>
                 </div>
+
+                @if($tripStatus === 'ARRIVED')
+                    <div wire:poll.5s="resetCompletedJourney" class="sr-only" aria-hidden="true"></div>
+                @endif
 
                 @if(in_array($tripStatus, ['WAITING', 'ON_BUS'], true))
                     <!-- Cancel Button -->
@@ -352,7 +358,9 @@
                             <select wire:model.live="selectedDestinationId" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-[#003F87] cursor-pointer">
                                 <option value="">Pumili ng destinasyon...</option>
                                 @foreach(collect($destinationStops) as $ds)
-                                    <option value="{{ $ds->id }}">{{ $ds->name }}</option>
+                                    <option value="{{ $ds->id }}">
+                                        {{ $ds->route_name }} - {{ ucfirst($ds->direction) }}: {{ $ds->name }}{{ $ds->is_terminal ? ' - Terminal' : ' - Stop ' . $ds->sequence }}
+                                    </option>
                                 @endforeach
                             </select>
                             @error('destination')

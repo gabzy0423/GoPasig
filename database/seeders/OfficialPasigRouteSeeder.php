@@ -3,8 +3,10 @@
 namespace Database\Seeders;
 
 use App\Models\Route;
+use App\Models\RouteServiceSchedule;
 use App\Models\RouteVariant;
 use App\Models\RouteVariantStop;
+use App\Models\Stop;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Schema;
 
@@ -58,16 +60,18 @@ class OfficialPasigRouteSeeder extends Seeder
                     ]);
                     $variantStop->fill([
                         'name' => $stopDefinition['name'],
+                        'lat' => $stopDefinition['lat'] ?? $variantStop->lat,
+                        'lng' => $stopDefinition['lng'] ?? $variantStop->lng,
                         'radius_meters' => self::RADIUS_METERS,
                         'stop_type' => $stopDefinition['stop_type'],
                     ]);
-                    if (!$variantStop->exists) {
+                    if (! $variantStop->exists) {
                         $variantStop->fill([
                             'canonical_stop_id' => null,
-                            'lat' => null,
-                            'lng' => null,
-                            'coordinate_status' => 'pending',
-                            'coordinate_source' => null,
+                            'lat' => $stopDefinition['lat'] ?? null,
+                            'lng' => $stopDefinition['lng'] ?? null,
+                            'coordinate_status' => isset($stopDefinition['lat'], $stopDefinition['lng']) ? 'verified' : 'pending',
+                            'coordinate_source' => isset($stopDefinition['lat'], $stopDefinition['lng']) ? 'official beneficiary data' : null,
                             'coordinates_verified_at' => null,
                             'coordinates_verified_by_user_id' => null,
                             'coordinate_notes' => null,
@@ -75,17 +79,93 @@ class OfficialPasigRouteSeeder extends Seeder
                     }
                     $variantStop->save();
                 }
+
+                // Keep the default projection for legacy stop consumers.
+                // Variant-aware commuter journeys retain both directions
+                // without merging their independent stop sequences.
+                if ((bool) $variant->is_default) {
+                    $this->syncLegacyCommuterStops($route, $variant);
+                }
+
+                $this->seedServiceSchedules($route, $variant);
             }
+        }
+    }
+
+    private function syncLegacyCommuterStops(Route $route, RouteVariant $variant): void
+    {
+        if (! Schema::hasTable('stops')) {
+            return;
+        }
+
+        $variant->loadMissing(['stops' => fn ($query) => $query->orderBy('sequence')]);
+
+        foreach ($variant->stops as $variantStop) {
+            if ($variantStop->lat === null || $variantStop->lng === null) {
+                continue;
+            }
+
+            $stop = Stop::firstOrCreate(
+                [
+                    'route_id' => $route->id,
+                    'sequence' => $variantStop->sequence,
+                ],
+                [
+                    'name' => $variantStop->name,
+                    'lat' => $variantStop->lat,
+                    'lng' => $variantStop->lng,
+                    'radius_meters' => $variantStop->radius_meters ?: self::RADIUS_METERS,
+                ]
+            );
+
+            if ((int) $variantStop->canonical_stop_id !== (int) $stop->id) {
+                $variantStop->forceFill(['canonical_stop_id' => $stop->id])->save();
+            }
+        }
+    }
+
+    private function seedServiceSchedules(Route $route, RouteVariant $variant): void
+    {
+        if (! Schema::hasTable('route_service_schedules')) {
+            return;
+        }
+
+        $windows = $variant->direction === 'inbound'
+            ? [
+                ['first_trip_time' => '06:00:00', 'last_trip_time' => '09:00:00'],
+                ['first_trip_time' => '15:00:00', 'last_trip_time' => '18:00:00'],
+            ]
+            : [
+                ['first_trip_time' => '05:30:00', 'last_trip_time' => '09:00:00'],
+                ['first_trip_time' => '15:00:00', 'last_trip_time' => '17:00:00'],
+            ];
+
+        foreach ($windows as $window) {
+            RouteServiceSchedule::updateOrCreate(
+                [
+                    'route_id' => $route->id,
+                    'route_variant_id' => $variant->id,
+                    'first_trip_time' => $window['first_trip_time'],
+                    'last_trip_time' => $window['last_trip_time'],
+                ],
+                [
+                    'service_configuration' => 'with_designated_stops',
+                    'service_days' => ['mon', 'tue', 'wed', 'thu', 'fri'],
+                    'is_active' => true,
+                    'source' => RouteServiceSchedule::SOURCE_BENEFICIARY_OFFICIAL,
+                    'effective_from' => null,
+                    'effective_until' => null,
+                ]
+            );
         }
     }
 
     private function officialRoutes(): array
     {
-
         return [
             [
-                'name' => 'Route 1',
-                'color' => '#003F87',
+                'name' => 'Route 2',
+                'color' => '#BA7517',
                 'description' => 'SPED (Caruncho Ave.) to Ligaya',
                 'travel_time_minutes' => 35,
                 'delay_threshold_minutes' => 10,
@@ -153,54 +233,6 @@ class OfficialPasigRouteSeeder extends Seeder
                 ],
             ],
             [
-                'name' => 'Route 2',
-                'color' => '#BA7517',
-                'description' => 'SPED (Caruncho Ave.) to Nagpayong',
-                'travel_time_minutes' => 30,
-                'delay_threshold_minutes' => 8,
-                'min_speed' => 18,
-                'max_speed' => 45,
-                'target_on_time_rate' => 85,
-                'target_headway_minutes' => 12,
-                'variants' => [
-                    [
-                        'direction' => 'outbound',
-                        'origin_name' => 'SPED',
-                        'destination_name' => 'Nagpayong',
-                        'polyline_coordinates' => [],
-                        'geometry_status' => 'pending',
-                        'is_default' => true,
-                        'stops' => $this->typedStops(['SPED (Caruncho Ave.)'], 'pickup_point', [
-                            'Pasig Market (Gulayan)',
-                            'Pinagbuhatan High School',
-                            'Isla Home - Pag Ibig Home',
-                            'Ilugin',
-                            'Arezzo',
-                            'Centennial II',
-                            'Kenneth Road',
-                        ], 'designated_stop'),
-                    ],
-                    [
-                        'direction' => 'inbound',
-                        'origin_name' => 'Nagpayong',
-                        'destination_name' => 'SPED',
-                        'polyline_coordinates' => [],
-                        'geometry_status' => 'pending',
-                        'is_default' => false,
-                        'stops' => $this->typedStops([
-                            'Kenneth Road',
-                            'Centennial II',
-                            'Arezzo',
-                            'Ilugin',
-                            'Isla Home',
-                            'Pinagbuhatan High School',
-                            'Pasig Market (Novo)',
-                            'Pasig Market (Beside Mang Inasal)',
-                        ], 'pickup_point', ['SPED (Caruncho Ave.)'], 'designated_stop'),
-                    ],
-                ],
-            ],
-            [
                 'name' => 'Route 3',
                 'color' => '#639922',
                 'description' => 'SPED (Caruncho Ave.) to One San Miguel Ave.',
@@ -254,6 +286,54 @@ class OfficialPasigRouteSeeder extends Seeder
                             'Caruncho (Cemetery)',
                             'Caruncho (Chowking)',
                             'Pasig Market (Revolving)',
+                        ], 'pickup_point', ['SPED (Caruncho Ave.)'], 'designated_stop'),
+                    ],
+                ],
+            ],
+            [
+                'name' => 'Route 4',
+                'color' => '#E24B4A',
+                'description' => 'SPED (Caruncho Ave.) to Nagpayong',
+                'travel_time_minutes' => 30,
+                'delay_threshold_minutes' => 8,
+                'min_speed' => 18,
+                'max_speed' => 45,
+                'target_on_time_rate' => 85,
+                'target_headway_minutes' => 12,
+                'variants' => [
+                    [
+                        'direction' => 'outbound',
+                        'origin_name' => 'SPED',
+                        'destination_name' => 'Nagpayong',
+                        'polyline_coordinates' => [],
+                        'geometry_status' => 'pending',
+                        'is_default' => true,
+                        'stops' => $this->typedStops(['SPED (Caruncho Ave.)'], 'pickup_point', [
+                            'Pasig Market (Gulayan)',
+                            'Pinagbuhatan High School',
+                            'Isla Home - Pag Ibig Home',
+                            'Ilugin',
+                            'Arezzo',
+                            'Centennial II',
+                            'Kenneth Road',
+                        ], 'designated_stop'),
+                    ],
+                    [
+                        'direction' => 'inbound',
+                        'origin_name' => 'Nagpayong',
+                        'destination_name' => 'SPED',
+                        'polyline_coordinates' => [],
+                        'geometry_status' => 'pending',
+                        'is_default' => false,
+                        'stops' => $this->typedStops([
+                            'Kenneth Road',
+                            'Centennial II',
+                            'Arezzo',
+                            'Ilugin',
+                            'Isla Home',
+                            'Pinagbuhatan High School',
+                            'Pasig Market (Novo)',
+                            'Pasig Market (Beside Mang Inasal)',
                         ], 'pickup_point', ['SPED (Caruncho Ave.)'], 'designated_stop'),
                     ],
                 ],

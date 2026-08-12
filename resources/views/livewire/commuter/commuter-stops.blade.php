@@ -205,7 +205,7 @@
                             <div class="bg-slate-50 border border-slate-150 rounded-2xl p-5 text-center flex flex-col items-center justify-center gap-1.5 h-[130px]">
                                 <i class="ti ti-bus-off text-slate-350 text-3xl"></i>
                                 <span class="text-xs font-bold text-slate-700">No active bus on this route</span>
-                                <span class="text-[10px] text-slate-400 font-bold uppercase">Check back during service hours</span>
+                                <span class="text-[10px] text-slate-400 font-bold uppercase">Check the Schedule page for official operating windows.</span>
                             </div>
                         @endif
                     </div>

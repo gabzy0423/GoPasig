@@ -68,7 +68,7 @@ class Tracker extends Component
             ->where('status', '!=', 'maintenance')
             ->where(function($q) use ($activeBusIds) {
                 $q->where(function($sub) use ($activeBusIds) {
-                    $sub->where('status', 'active')
+                    $sub->whereIn('status', Bus::commuterServiceStatuses())
                         ->whereIn('id', $activeBusIds);
                 })->orWhere('status', 'breakdown');
             });

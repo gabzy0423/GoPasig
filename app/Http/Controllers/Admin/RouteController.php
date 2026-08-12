@@ -138,7 +138,7 @@ class RouteController extends Controller
         }
 
         if ($this->isOfficialReferenceRoute($route) && $request->hasAny(['name', 'description', 'polyline_coordinates'])) {
-            return response()->json(['success' => false, 'message' => 'Official Route 1/2/3 definitions and geometry are fixed reference data.'], 422);
+            return response()->json(['success' => false, 'message' => 'Official production route definitions and geometry are fixed reference data.'], 422);
         }
 
         $allowedStatuses = explode(',', SystemSetting::get('allowed_route_statuses', 'Active,Suspended'));
@@ -398,6 +398,8 @@ class RouteController extends Controller
      */
     public function generatePreview(Request $request, Route $route, \App\Services\Routing\IntelligentRoutingEngine $routingEngine)
     {
+        $this->abortUnlessRouteGenerationMaintenanceEnabled();
+
         if ($blocked = $this->officialRouteMutationResponse($route)) {
             return $blocked;
         }
@@ -438,6 +440,8 @@ class RouteController extends Controller
      */
     public function acceptPreview(Request $request, Route $route, \App\Services\Routing\IntelligentRoutingEngine $routingEngine)
     {
+        $this->abortUnlessRouteGenerationMaintenanceEnabled();
+
         if ($blocked = $this->officialRouteMutationResponse($route)) {
             return $blocked;
         }
@@ -484,6 +488,8 @@ class RouteController extends Controller
      */
     public function rejectPreview(Request $request, Route $route, \App\Services\Routing\IntelligentRoutingEngine $routingEngine)
     {
+        $this->abortUnlessRouteGenerationMaintenanceEnabled();
+
         if ($blocked = $this->officialRouteMutationResponse($route)) {
             return $blocked;
         }
@@ -511,6 +517,8 @@ class RouteController extends Controller
      */
     public function runAdvancedAnalysis(Request $request, Route $route, \App\Services\Routing\IntelligentRoutingEngine $routingEngine)
     {
+        $this->abortUnlessRouteGenerationMaintenanceEnabled();
+
         if ($blocked = $this->officialRouteMutationResponse($route)) {
             return $blocked;
         }
@@ -542,6 +550,8 @@ class RouteController extends Controller
      */
     public function getTelemetry(\App\Services\Routing\ProviderHealthService $healthSvc, \App\Services\Routing\ProviderQuotaService $quotaSvc)
     {
+        $this->abortUnlessRouteGenerationMaintenanceEnabled();
+
         if (auth()->user()->role !== 'admin') {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
@@ -569,13 +579,18 @@ class RouteController extends Controller
     }
     private function isOfficialReferenceRoute(Route $route): bool
     {
-        return in_array($route->name, ['Route 1', 'Route 2', 'Route 3'], true);
+        return $route->isCanonicalProduction();
     }
 
     private function officialRouteMutationResponse(Route $route)
     {
         return $this->isOfficialReferenceRoute($route)
-            ? response()->json(['success' => false, 'message' => 'Official Route 1/2/3 definitions and geometry are fixed reference data.'], 422)
+            ? response()->json(['success' => false, 'message' => 'Official production route definitions and geometry are fixed reference data.'], 422)
             : null;
+    }
+
+    private function abortUnlessRouteGenerationMaintenanceEnabled(): void
+    {
+        abort_unless((bool) config('routing.route_generation_maintenance_enabled', false), 404);
     }
 }

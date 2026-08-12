@@ -143,7 +143,7 @@
                         </span>
                         <select id="df-edit-status" name="status" required
                                 class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87] appearance-none cursor-pointer">
-                            <option value="active">Active (On Duty / Standby)</option>
+                            <option value="active">Active employment</option>
                             <option value="inactive">Inactive (Off duty)</option>
                             <option value="suspended">Suspended (disciplinary hold)</option>
                         </select>
@@ -151,6 +151,9 @@
                             <i class="ti ti-chevron-down text-sm"></i>
                         </span>
                     </div>
+                    <p id="df-edit-active-trip-guard" class="hidden text-[10px] font-semibold text-amber-700">
+                        Employment status is locked until the dispatched or ongoing trip is ended or cancelled.
+                    </p>
                 </div>
 
                 <!-- Emergency Contact -->

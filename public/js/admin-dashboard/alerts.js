@@ -1,9 +1,9 @@
 /* ============================================================
-   GoPasig Admin — Service Alert Management
+   GoPasig Admin â€” Service Alert Management
    alerts.js
    ============================================================ */
 
-// ── MOCK DATABASE ─────────────────────────────────────────────
+// â”€â”€ MOCK DATABASE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let activeAlerts = [];
 let resolvedAlerts = [];
 let scheduledAlerts = [];
@@ -13,7 +13,7 @@ let broadcastRefreshPromise = null;
 let broadcastRefreshFailed = false;
 let lastBroadcastAlertId = null;
 
-// ── COMPOSER STATE ───────────────────────────────────────────
+// â”€â”€ COMPOSER STATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // ISSUE-045 FIX: Available routes are loaded dynamically from the DB.
 // 'Route A/B/C' hardcoding is removed throughout this file.
 const ALL_OFFICIAL_ROUTES = 'All official routes';
@@ -125,7 +125,7 @@ function getRoutePillClass(route) {
     return colors[idx % colors.length] || 'selected-a';
 }
 
-// ── FILTER FEED STATE ─────────────────────────────────────────
+// â”€â”€ FILTER FEED STATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let currentFeedStatusTab = 'All'; // 'All', 'Active', 'Resolved', 'Scheduled'
 let currentFeedTypeFilter = 'All';
 let currentFeedSearchQuery = '';
@@ -136,14 +136,14 @@ let databaseStats = {
     total_commuters: 1000,
     total_drivers: 8,
     route_stats: {
-        'Route A': { commuters: 335, drivers: 5 },
-        'Route B': { commuters: 268, drivers: 1 },
-        'Route C': { commuters: 253, drivers: 1 },
+        'Route 1': { commuters: 335, drivers: 5 },
+        'Route 2': { commuters: 268, drivers: 1 },
+        'Route 3': { commuters: 253, drivers: 1 },
         [ALL_OFFICIAL_ROUTES]: { commuters: 1000, drivers: 8 }
     }
 };
 
-// ── HISTORY FILTER STATE ──────────────────────────────────────
+// â”€â”€ HISTORY FILTER STATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let historyFilterSeverity = 'All';
 let historyFilterType = 'All';
 let historyFilterRoute = 'All';
@@ -186,7 +186,7 @@ function formatHistoryDate(value) {
     const dateObj = new Date(value);
     if (Number.isNaN(dateObj.getTime())) return '-';
     const options = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
-    return dateObj.toLocaleDateString('en-US', options).replace(',', ' �');
+    return dateObj.toLocaleDateString('en-US', options).replace(',', ' ï¿½');
 }
 
 function normalizeComposerAlertType(type) {
@@ -293,11 +293,11 @@ async function loadDatabaseAlertsData() {
                     timeStr = `${diffMin} min ago`;
                 } else {
                     const options = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
-                    timeStr = createdTime.toLocaleDateString('en-US', options).replace(',', ' ·');
+                    timeStr = createdTime.toLocaleDateString('en-US', options).replace(',', ' Â·');
                 }
 
                 const optionsDate = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
-                const formattedDate = createdTime.toLocaleDateString('en-US', optionsDate).replace(',', ' ·');
+                const formattedDate = createdTime.toLocaleDateString('en-US', optionsDate).replace(',', ' Â·');
 
                 // Map reached commuters count
                 const reachedCnt = alert.reads_count || 0;
@@ -353,7 +353,7 @@ async function loadDatabaseAlertsData() {
     }
 }
 
-// ── INITIALIZER ──────────────────────────────────────────────
+// â”€â”€ INITIALIZER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadHistoryAlertsData() {
     try {
         const response = await fetch(getAlertsHistoryUrl());
@@ -449,7 +449,7 @@ function updateDashboardHeaderStats() {
     }
 }
 
-// ── COMPOSER ACTIONS & EVENTS ─────────────────────────────────
+// â”€â”€ COMPOSER ACTIONS & EVENTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function selectComposerType(type) {
     composerState.type = type;
     composerState.severity = getDefaultSeverityForType(type);
@@ -658,7 +658,7 @@ function syncComposerUI() {
         }
     }
 
-    // 4. Affected routes pills — highlight using index-based color cycling
+    // 4. Affected routes pills â€” highlight using index-based color cycling
     // (selected-a/b/c/all are cycle colors, not tied to specific route names)
     const routePills = document.querySelectorAll('.am-route-pill');
     routePills.forEach(pill => {
@@ -695,7 +695,7 @@ function syncComposerUI() {
             if (composerState.scheduleTime) {
                 const dateObj = new Date(composerState.scheduleTime);
                 const options = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
-                previewChip.textContent = `Scheduled for ${dateObj.toLocaleDateString('en-US', options).replace(',', ' ·')}`;
+                previewChip.textContent = `Scheduled for ${dateObj.toLocaleDateString('en-US', options).replace(',', ' Â·')}`;
                 previewChip.classList.remove('hidden');
             } else {
                 previewChip.classList.add('hidden');
@@ -747,7 +747,7 @@ function syncComposerUI() {
     }
 }
 
-// --- ALERTS FEED FILTERING & RENDER ─────────────────────────────
+// --- ALERTS FEED FILTERING & RENDER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function setFeedStatusTab(tab) {
     currentFeedStatusTab = tab;
     
@@ -861,7 +861,7 @@ function renderAlertsFeed() {
                                     <i class="ti ${sevIcon}"></i> ${alert.severity}
                                 </span>
                                 <span class="am-card-type-label">${alert.type}</span>
-                                <span class="am-dot-sep">·</span>
+                                <span class="am-dot-sep">Â·</span>
                                 <span class="am-card-time">${alert.time}</span>
                             </div>
                             
@@ -926,7 +926,7 @@ function renderAlertsFeed() {
     }
 }
 
-// ── EXPAND/COLLAPSE & RENDER RESOLVED SECTION ──────────────────
+// â”€â”€ EXPAND/COLLAPSE & RENDER RESOLVED SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let resolvedExpanded = false;
 function toggleResolvedSection() {
     resolvedExpanded = !resolvedExpanded;
@@ -969,7 +969,7 @@ function renderResolvedList() {
             <span class="am-resolved-type">${alert.type}</span>
             <span class="am-resolved-title">${alert.title}</span>
             <div class="am-resolved-right">
-                <span class="am-resolved-meta">Resolved by ${alert.resolvedBy} · ${alert.resolvedTime}</span>
+                <span class="am-resolved-meta">Resolved by ${alert.resolvedBy} Â· ${alert.resolvedTime}</span>
                 <button class="am-resolved-delete" data-archive-alert-id="${alert.id}" onclick="deleteAlert(${alert.id})" title="Archive resolved alert"><i class="ti ti-archive"></i></button>
                 <i class="ti ti-circle-check"></i>
             </div>
@@ -977,7 +977,7 @@ function renderResolvedList() {
     `).join('');
 }
 
-// ── EXPAND/COLLAPSE & RENDER SCHEDULED SECTION ─────────────────
+// â”€â”€ EXPAND/COLLAPSE & RENDER SCHEDULED SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let scheduledExpanded = false;
 function toggleScheduledSection() {
     scheduledExpanded = !scheduledExpanded;
@@ -1045,7 +1045,7 @@ function renderScheduledList() {
     }).join('');
 }
 
-// ── ACTIVE ALERTS CARD MENUS ──────────────────────────────────
+// â”€â”€ ACTIVE ALERTS CARD MENUS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let activeOpenCardMenuId = null;
 function toggleCardMenu(id, event) {
     event.stopPropagation();
@@ -1090,7 +1090,7 @@ function toggleCardBodyText(id) {
     }
 }
 
-// ── BROADCAST CONFIRMATION OVERLAYS ───────────────────────────
+// â”€â”€ BROADCAST CONFIRMATION OVERLAYS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function triggerComposerBroadcast() {
     if (!composerState.title.trim()) {
         GoPasigUI.alert('Please specify an alert title.');
@@ -1160,7 +1160,7 @@ function showBroadcastConfirmation() {
         headerTitle.textContent = 'Schedule this alert?';
         const dateObj = new Date(composerState.scheduleTime);
         const options = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
-        const timeFormatted = dateObj.toLocaleDateString('en-US', options).replace(',', ' ·');
+        const timeFormatted = dateObj.toLocaleDateString('en-US', options).replace(',', ' Â·');
         headerSub.textContent = `This will queue the alert to broadcast automatically on ${timeFormatted}.`;
         confirmBtn.innerHTML = `<i class="ti ti-calendar-time"></i> Confirm scheduling`;
     } else {
@@ -1212,7 +1212,7 @@ function showBroadcastConfirmation() {
         if (composerState.suspendRoute) {
             let affectedText = composerState.affects.join(' and ');
             if (composerState.affects.includes(ALL_OFFICIAL_ROUTES)) affectedText = ALL_OFFICIAL_ROUTES;
-            sumSuspension.innerHTML = `<span class="font-red">Yes — ${affectedText} will be suspended</span>`;
+            sumSuspension.innerHTML = `<span class="font-red">Yes â€” ${affectedText} will be suspended</span>`;
         } else {
             sumSuspension.textContent = 'No';
         }
@@ -1402,12 +1402,12 @@ function showBroadcastReceipt() {
     if (composerState.timing === 'later') {
         title.textContent = 'Alert scheduled successfully';
         title.style.color = '#003F87';
-        timeLabel.textContent = `Scheduled on ${dateStr} · ${timeStr}`;
+        timeLabel.textContent = `Scheduled on ${dateStr} Â· ${timeStr}`;
         statsRow.style.display = 'none';
     } else {
         title.textContent = 'Alert broadcast successfully';
         title.style.color = '#3B6D11';
-        timeLabel.textContent = `${dateStr} · ${timeStr}`;
+        timeLabel.textContent = `${dateStr} Â· ${timeStr}`;
 
         statsRow.style.display = 'flex';
         const statsCommuters = document.getElementById('receipt-stat-commuters');
@@ -1457,7 +1457,7 @@ function closeBroadcastReceipt() {
     clearComposerForm();
 }
 
-// ── ACTION BUTTON WORKFLOWS ───────────────────────────────────
+// â”€â”€ ACTION BUTTON WORKFLOWS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function isAlertHistoryVaultVisible() {
     const historyScreen = document.getElementById('screen-alerts-history');
     return Boolean(historyScreen && !historyScreen.classList.contains('hidden'));
@@ -1629,7 +1629,7 @@ function broadcastAgain(id) {
         severity: alert.severity || 'Medium',
         title: alert.title.replace(' (Broadcasted)', ''),
         message: alert.body || alert.title,
-        affects: alert.affects ? [...alert.affects] : ['Route A'],
+        affects: alert.affects ? [...alert.affects] : [availableRoutes[0] || ALL_OFFICIAL_ROUTES],
         notifyCommuters: true,
         notifyDrivers: true,
         notifyAdminOnly: false,
@@ -1678,7 +1678,7 @@ async function deleteAlert(id) {
         setArchiveButtonLoading(id, false);
     }
 }
-// ── SCHEDULED ALERTS ACTIONS ──────────────────────────────────
+// â”€â”€ SCHEDULED ALERTS ACTIONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function editScheduledAlert(id) {
     const alert = scheduledAlerts.find(s => s.id === id);
     if (!alert) return;
@@ -1736,7 +1736,7 @@ async function cancelScheduledAlert(id) {
     }
 }
 
-// ── MARK ALL RESOLVED LINK ───────────────────────────────────
+// â”€â”€ MARK ALL RESOLVED LINK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function markAllAlertsResolved(event) {
     if (event) event.preventDefault();
     if (activeAlerts.length === 0) return;
@@ -1766,7 +1766,7 @@ async function markAllAlertsResolved(event) {
     }
 }
 
-// ── ALERT HISTORY FULL VIEW MODAL ──────────────────────────────
+// â”€â”€ ALERT HISTORY FULL VIEW MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function toggleHistoryView(show) {
     const historyView = document.getElementById('history-full-view');
     if (!historyView) return;
@@ -1842,7 +1842,7 @@ function renderHistoryTable() {
         if (totalAlerts === 0) {
             showingCount.textContent = 'Showing 0 of 0 alerts';
         } else {
-            showingCount.textContent = `Showing ${startIdx + 1}–${endIdx} of ${totalAlerts} alerts`;
+            showingCount.textContent = `Showing ${startIdx + 1}â€“${endIdx} of ${totalAlerts} alerts`;
         }
     }
 
@@ -1908,12 +1908,12 @@ function renderHistoryTable() {
         
         paginationRow.innerHTML = `
             <span class="am-count-label" style="font-size:12px; color:var(--color-text-secondary);">
-                ${startIdx + 1}–${endIdx} of ${totalAlerts} alerts
+                ${startIdx + 1}â€“${endIdx} of ${totalAlerts} alerts
             </span>
             <div class="am-page-btns">
-                <button class="am-page-btn" ${historyCurrentPage === 1 ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} onclick="setHistoryPage(${historyCurrentPage - 1})">‹</button>
+                <button class="am-page-btn" ${historyCurrentPage === 1 ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} onclick="setHistoryPage(${historyCurrentPage - 1})">â€¹</button>
                 ${pagButtonsHtml}
-                <button class="am-page-btn" ${historyCurrentPage === totalPages ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} onclick="setHistoryPage(${historyCurrentPage + 1})">›</button>
+                <button class="am-page-btn" ${historyCurrentPage === totalPages ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} onclick="setHistoryPage(${historyCurrentPage + 1})">â€º</button>
             </div>
         `;
     }
@@ -1950,7 +1950,7 @@ function exportHistoryCSV() {
     URL.revokeObjectURL(url);
 }
 
-// ── UTILS ─────────────────────────────────────────────────────
+// â”€â”€ UTILS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function format12Hour(time24) {
     if (!time24) return '';
     const parts = time24.split(':');

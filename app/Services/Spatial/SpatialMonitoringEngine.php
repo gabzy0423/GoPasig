@@ -36,7 +36,7 @@ class SpatialMonitoringEngine
         }
 
         // 3. Route Corridor Adherence
-        if ($context->trip) {
+        if ($context->trip && $context->corridorSource !== 'missing_variant_corridor') {
             $this->corridorEngine->check($position, $coord, $context->corridor, $context->trip);
         }
     }

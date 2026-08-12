@@ -5,6 +5,7 @@ namespace App\Data;
 use App\Models\CommuterSession;
 use App\Models\CommuterTrip;
 use App\Models\Route;
+use App\Models\RouteVariantStop;
 use App\Models\Stop;
 use Carbon\CarbonImmutable;
 
@@ -13,8 +14,8 @@ final class WaitingRuntimeContext
     public function __construct(
         public readonly ?CommuterTrip $journey,
         public readonly ?CommuterSession $session,
-        public readonly ?Stop $originStop,
-        public readonly ?Stop $destinationStop,
+        public readonly Stop|RouteVariantStop|null $originStop,
+        public readonly Stop|RouteVariantStop|null $destinationStop,
         public readonly ?Route $route,
         public readonly ?Stop $nearestStop,
         public readonly ?int $waitingDurationSeconds,
@@ -29,8 +30,8 @@ final class WaitingRuntimeContext
         return new self(
             journey: $journey,
             session: $context->session,
-            originStop: $journey?->originStop,
-            destinationStop: $journey?->destinationStop,
+            originStop: $journey?->resolvedOriginStop(),
+            destinationStop: $journey?->resolvedDestinationStop(),
             route: $journey?->route,
             nearestStop: $context->nearestStop(),
             waitingDurationSeconds: $journey?->created_at ? max(0, $journey->created_at->diffInSeconds($recoveredAt)) : null,

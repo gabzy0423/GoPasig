@@ -2,14 +2,15 @@
 
 namespace App\Data;
 
+use App\Models\RouteVariantStop;
 use App\Models\Stop;
 
 final class StopGeofenceEvaluation
 {
     public function __construct(
-        public readonly ?Stop $nearestStop,
+        public readonly Stop|RouteVariantStop|null $nearestStop,
         public readonly ?float $distanceToNearestMeters,
-        public readonly ?Stop $activeStop,
+        public readonly Stop|RouteVariantStop|null $activeStop,
         public readonly array $stopDistances = [],
     ) {}
 

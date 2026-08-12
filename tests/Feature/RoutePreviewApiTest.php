@@ -19,6 +19,7 @@ class RoutePreviewApiTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['routing.route_generation_maintenance_enabled' => true]);
         $this->adminUser = User::factory()->create(['role' => 'admin']);
     }
 

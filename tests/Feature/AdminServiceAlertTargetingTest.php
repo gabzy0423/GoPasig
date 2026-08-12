@@ -36,9 +36,9 @@ class AdminServiceAlertTargetingTest extends TestCase
         $this->admin = User::factory()->create(['role' => 'admin']);
         $this->actingAs($this->admin);
 
-        $this->route1 = $this->makeRoute('Route 1');
-        $this->route2 = $this->makeRoute('Route 2');
-        $this->route3 = $this->makeRoute('Route 3');
+        $this->route1 = $this->makeRoute('Route 2');
+        $this->route2 = $this->makeRoute('Route 3');
+        $this->route3 = $this->makeRoute('Route 4');
         foreach (['Route A', 'Route B', 'Route C', 'Route D'] as $routeName) {
             $this->makeRoute($routeName);
         }
@@ -57,8 +57,8 @@ class AdminServiceAlertTargetingTest extends TestCase
 
         $routeNames = collect($response->json('routes'))->pluck('name')->all();
 
-        $this->assertSame(['Route 1', 'Route 2', 'Route 3'], $routeNames);
-        $this->assertContains('Route 1', $routeNames);
+        $this->assertSame(['Route 2', 'Route 3', 'Route 4'], $routeNames);
+        $this->assertContains('Route 2', $routeNames);
         $this->assertNotContains('Route A', $routeNames);
         $this->assertNotContains('Route B', $routeNames);
         $this->assertNotContains('Route C', $routeNames);
@@ -69,14 +69,14 @@ class AdminServiceAlertTargetingTest extends TestCase
     public function test_single_route_alert_stores_structured_canonical_route_targeting(): void
     {
         $response = $this->postJson(route('admin.api.alerts.store'), $this->payload([
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
         ]));
 
         $response->assertCreated();
 
         $alert = ServiceAlert::firstOrFail();
         $this->assertSame($this->route1->id, $alert->route_id);
-        $this->assertSame('Route 1', $alert->affected_routes);
+        $this->assertSame('Route 2', $alert->affected_routes);
     }
 
     public function test_route_one_suspension_suspends_only_route_one(): void
@@ -84,7 +84,7 @@ class AdminServiceAlertTargetingTest extends TestCase
         $response = $this->postJson(route('admin.api.alerts.store'), $this->payload([
             'type' => 'Suspension',
             'severity' => 'High',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'suspend_route' => true,
         ]));
 
@@ -102,7 +102,7 @@ class AdminServiceAlertTargetingTest extends TestCase
         $response = $this->postJson(route('admin.api.alerts.store'), $this->payload([
             'type' => 'Suspension',
             'severity' => 'High',
-            'affects' => ['Route 1', 'Route 2'],
+            'affects' => ['Route 2', 'Route 3'],
             'suspend_route' => true,
         ]));
 
@@ -110,7 +110,7 @@ class AdminServiceAlertTargetingTest extends TestCase
 
         $alert = ServiceAlert::firstOrFail();
         $this->assertNull($alert->route_id);
-        $this->assertSame('Route 1,Route 2', $alert->affected_routes);
+        $this->assertSame('Route 2,Route 3', $alert->affected_routes);
         $this->assertSame('Suspended', $this->route1->fresh()->status);
         $this->assertSame('Suspended', $this->route2->fresh()->status);
         $this->assertSame('Active', $this->route3->fresh()->status);
@@ -228,7 +228,7 @@ class AdminServiceAlertTargetingTest extends TestCase
         $this->assertStringContainsString('showArchiveStatusModal(\'Archive Blocked\'', $composerScript);
 
         $deleteStart = strpos($composerScript, 'async function deleteAlert(id)');
-        $deleteEnd = strpos($composerScript, '// ── SCHEDULED ALERTS ACTIONS', $deleteStart);
+        $deleteEnd = strpos($composerScript, 'function editScheduledAlert', $deleteStart);
         $deleteBody = substr($composerScript, $deleteStart, $deleteEnd - $deleteStart);
 
         $this->assertStringNotContainsString('alert(', $deleteBody);
@@ -246,7 +246,7 @@ class AdminServiceAlertTargetingTest extends TestCase
             'message' => 'Public service alert for official routes.',
             'severity' => 'Medium',
             'type' => 'Delay',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => false,
         ], $overrides);

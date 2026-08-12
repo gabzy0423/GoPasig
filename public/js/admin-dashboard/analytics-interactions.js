@@ -17,24 +17,25 @@
     }
 
     // 3A: Real CSV exporter from tripData array
-    function exportCSVDataMock() {
-        if (!window.tripData || window.tripData.length === 0) {
-            GoPasigUI.alert("No trip data available to export today.");
+function exportCSVDataMock() {
+        const exportRows = (typeof tripData !== 'undefined' ? tripData : window.tripData) || [];
+        if (exportRows.length === 0) {
+            GoPasigUI.alert("No trip load records available to export for the selected period.");
             return;
         }
 
-        const headers = ["Trip #", "Bus Plate", "Driver", "Route", "Departure", "Arrival", "Pax Boarded", "Pax Alighted", "Peak Load", "Capacity %"];
-        const rows = window.tripData.map(t => [
+        const headers = ["Trip", "Driver", "Bus", "Route", "Status", "Started", "Ended", "Recorded boarded", "Recorded alighted", "Peak load"];
+        const rows = exportRows.map(t => [
             t.tripNo || '',
-            t.plate || '',
             t.driver || '',
+            t.plate || '',
             t.route || '',
-            t.depTime || '',
-            t.arrTime || '',
-            t.boarded ?? 0,
-            t.alighted ?? 0,
-            t.peakLoad ?? 0,
-            (t.capacity ?? 0) + "%"
+            t.status || '',
+            t.startedAt || '',
+            t.endedAt || '',
+            t.recordedBoarded ?? 0,
+            t.recordedAlighted ?? 0,
+            t.peakLoad ?? 0
         ]);
 
         const csvContent = "\uFEFF" + [
@@ -47,7 +48,7 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.setAttribute("href", url);
-            link.setAttribute("download", `passenger_trips_data_${new Date().toISOString().slice(0, 10)}.csv`);
+            link.setAttribute("download", `trip_load_records_${new Date().toISOString().slice(0, 10)}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -58,7 +59,7 @@
     }
 
     // 4B: Route prediction switch tabs
-    function switchPredictionRoute(routeName) {
+function switchPredictionRoute(routeName) {
         const tabBtns = document.querySelectorAll('[data-pred-route-tab]');
         tabBtns.forEach(btn => {
             btn.className = "bg-slate-100 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-200 transition uppercase cursor-pointer";
@@ -105,9 +106,17 @@
             recEl.textContent = 'N/A';
             busiestEl.textContent = 'No prediction data available';
         }
-    }
+}
 
-    // 5A & 5B: interactive forms handlers & log history update
+function formatAnalyticsDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+}
+
+// 5A & 5B: interactive forms handlers & log history update
     function handleGenerateReport(event) {
         event.preventDefault();
 
@@ -214,23 +223,23 @@
                     const today = new Date();
                     
                     if (buttonText === 'Today') {
-                        startDate = today.toISOString().split('T')[0];
-                        endDate = today.toISOString().split('T')[0];
+                        startDate = formatAnalyticsDate(today);
+                        endDate = formatAnalyticsDate(today);
                     } else if (buttonText === 'Yesterday') {
                         const yesterday = new Date(today);
                         yesterday.setDate(yesterday.getDate() - 1);
-                        startDate = yesterday.toISOString().split('T')[0];
-                        endDate = yesterday.toISOString().split('T')[0];
+                        startDate = formatAnalyticsDate(yesterday);
+                        endDate = formatAnalyticsDate(yesterday);
                     } else if (buttonText === 'Weekly') {
                         const weekAgo = new Date(today);
                         weekAgo.setDate(weekAgo.getDate() - 7);
-                        startDate = weekAgo.toISOString().split('T')[0];
-                        endDate = today.toISOString().split('T')[0];
+                        startDate = formatAnalyticsDate(weekAgo);
+                        endDate = formatAnalyticsDate(today);
                     } else if (buttonText === 'Monthly') {
                         const monthAgo = new Date(today);
                         monthAgo.setDate(monthAgo.getDate() - 30);
-                        startDate = monthAgo.toISOString().split('T')[0];
-                        endDate = today.toISOString().split('T')[0];
+                        startDate = formatAnalyticsDate(monthAgo);
+                        endDate = formatAnalyticsDate(today);
                     }
                     
                     // Send AJAX request to fetch filtered analytics data
@@ -239,21 +248,10 @@
                             .then(response => response.json())
                             .then(data => {
                                 if (data.success) {
-                                    // Update global window variables with new data
-                                    window.kpisData = data.kpis;
-                                    window.hourlyRidershipData = data.hourlyRidership;
-                                    window.routeComparisonData = data.routeComparison;
-                                    window.heatmapData = data.heatmap;
-                                    window.stopBoardingData = data.stopBoarding;
-                                    window.tripData = data.tripPaxTable || [];
-                                    window.busSummaryCardsData = data.busSummaryCards;
-                                    window.forecastData = data.forecastTable;
-                                    window.driverPerformanceData = data.driverPerformance;
-                                    window.historicalTrendData = data.historicalTrend;
-                                    window.busCapacityLimit = data.busCapacityLimit || 45;
-                                    
-                                    // Re-initialize all charts with new data
-                                    initAnalyticsDashboard();
+                                    if (typeof applyAnalyticsPayload === 'function' && applyAnalyticsPayload(data)) {
+                                        // Re-initialize all charts with the refreshed shared state.
+                                        initAnalyticsDashboard();
+                                    }
                                 }
                             })
                             .catch(error => console.error('Analytics data fetch error:', error));

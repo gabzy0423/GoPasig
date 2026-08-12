@@ -139,9 +139,13 @@ class AppServiceProvider extends ServiceProvider
         );
         \Illuminate\Support\Facades\Event::listen(
             \App\Events\PositionUpdated::class,
+            \App\Listeners\TripProgressListener::class
+        );
+        \Illuminate\Support\Facades\Event::listen(
+            \App\Events\PositionUpdated::class,
             \App\Listeners\ETAListener::class
         );
-        // ─────────────────────────────────────────────────────────────
+        // ------------------------------------------------------------
         // Reverse-proxy / ngrok support
         // When the app is accessed through ngrok or any other HTTPS
         // proxy, the forwarded headers must be trusted so that
@@ -149,7 +153,7 @@ class AppServiceProvider extends ServiceProvider
         // the correct public URL instead of the local http://localhost
         // one. Without this, Vite manifest paths and CSRF cookies will
         // mismatch the ngrok origin, causing broken assets and 419s.
-        // ─────────────────────────────────────────────────────────────
+        // ------------------------------------------------------------
         $request = app('request');
 
         if ($request->hasHeader('X-Forwarded-Host') ||
@@ -160,6 +164,7 @@ class AppServiceProvider extends ServiceProvider
             \Illuminate\Support\Facades\URL::forceScheme('https');
         }
 
+
         \Illuminate\Support\Facades\View::composer('fleet.monitor.index', function ($view) {
             $activeBusIds = \App\Models\Trip::where('status', 'ongoing')->pluck('bus_id')->toArray();
             $buses = \App\Models\Bus::with(['route', 'vehiclePosition'])
@@ -168,7 +173,9 @@ class AppServiceProvider extends ServiceProvider
                       ->orWhere('status', 'breakdown');
                 })
                 ->get();
-            $routes = \App\Models\Route::getAllCached();
+            $routes = $view->offsetExists('routes')
+                ? $view->offsetGet('routes')
+                : \App\Models\Route::getCanonicalProductionCached()->values()->toArray();
             $stops = \App\Models\Stop::getAllCached();
             
             // Find active incidents to map them to buses
@@ -248,7 +255,7 @@ class AppServiceProvider extends ServiceProvider
                 }
 
                 // Get last active time from last schedule
-                $lastActive = '—';
+                $lastActive = 'Ã¢â‚¬â€';
                 $lastSchedule = \App\Models\Schedule::where('bus_id', $bus->id)->orderBy('arrival_time', 'desc')->first();
                 if ($lastSchedule) {
                     $lastActive = \Carbon\Carbon::parse($lastSchedule->arrival_time)->format('g:i A');
@@ -336,7 +343,8 @@ class AppServiceProvider extends ServiceProvider
             if (!$view->offsetExists('selectedPhase')) {
                 $selectedPhase = (int) \App\Models\SystemSetting::get('dispatch_default_phase', 1);
                 $simulatedDay = \App\Models\SystemSetting::get('default_simulated_day', \Carbon\Carbon::now()->englishDayOfWeek);
-                $selectedRouteId = (int) \App\Models\SystemSetting::get('default_route_id', \App\Models\Route::orderBy('id')->first()?->id ?? 1);
+                $activePublicRouteIds = \App\Models\Route::publicCommuterActiveService()->pluck('id')->map(fn ($id) => (int) $id)->all();
+                $selectedRouteId = (int) \App\Models\SystemSetting::get('default_route_id', $activePublicRouteIds[0] ?? 0);
 
                 $timeSlotConfig = \App\Models\TimeSlotConfiguration::getTimeSlotByHour();
                 $simulatedTimeSlot = $timeSlotConfig
@@ -353,6 +361,7 @@ class AppServiceProvider extends ServiceProvider
                 $customThreshold = $threshold ? $threshold->threshold_count : \App\Models\SystemSetting::get('default_demand_threshold', 20);
 
                 $historicalPatterns = \App\Models\DemandHistory::with('route')
+                    ->whereIn('route_id', $activePublicRouteIds)
                     ->orderBy('total_commuters', 'desc')
                     ->take(8)
                     ->get();
@@ -513,5 +522,5 @@ class AppServiceProvider extends ServiceProvider
             }
         });
     }
-}
 
+}

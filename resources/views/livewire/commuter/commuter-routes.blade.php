@@ -118,7 +118,7 @@
                             <span class="text-[11px] font-medium text-[#0F6E56]">Live</span>
                         @else
                             <span class="h-2 w-2 rounded-full bg-slate-300"></span>
-                            <span class="text-[11px] text-slate-400 font-medium">No service</span>
+                            <span class="text-[11px] text-slate-400 font-medium">No active bus</span>
                         @endif
                     </div>
                 </div>

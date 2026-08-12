@@ -22,31 +22,31 @@ function syncVariantGeometrySelection() {
     const select = document.getElementById('route-variant-select');
     const meta = document.getElementById('route-variant-geometry-meta');
     const editor = document.getElementById('route-variant-stop-coordinate-editor');
-    const providerSelect = document.getElementById('route-provider-select');
     if (!route || !select) return;
     const variants = route.variants || [];
     const directionAware = variants.some(v => v.direction === 'inbound');
-    const fixedOfficialRoute = ['Route 1', 'Route 2', 'Route 3'].includes(route.name);
+    const fixedOfficialRoute = directionAware;
     const routeLevelControls = ['btn-edit-geometry', 'btn-route-geometry-history', 'btn-route-geometry-import', 'btn-route-edit-details'];
     routeLevelControls.forEach(id => document.getElementById(id)?.classList.toggle('hidden', fixedOfficialRoute));
     const generateButton = document.getElementById('btn-generate-route');
     if (generateButton) generateButton.setAttribute('onclick', fixedOfficialRoute ? 'generateVariantRoutePreview()' : 'generateRoutePreview()');
     if (!directionAware) {
         selectedRouteVariantId = null;
-        if (providerSelect) providerSelect.disabled = false;
-        select.innerHTML = '<option value="">Legacy Route Geometry</option>';
+        select.innerHTML = '<option value="">No RouteVariant available</option>';
         meta?.classList.add('hidden');
+        if (meta) meta.innerHTML = '';
         editor?.classList.add('hidden');
         return;
     }
-    if (providerSelect) { providerSelect.value = 'google'; providerSelect.disabled = true; }
-    select.innerHTML = '<option value="">Legacy Route Geometry</option>' + variants.map(v =>
-        '<option value="' + v.id + '">' + escapeVariantText(v.label || (v.direction + ': ' + v.origin_name + ' -> ' + v.destination_name)) + '</option>'
+    const requestedVariantId = select.value || selectedRouteVariantId;
+    select.innerHTML = variants.map(v =>
+        '<option value="' + v.id + '">' + escapeVariantText((v.direction || '').toUpperCase() + ': ' + v.origin_name + ' -> ' + v.destination_name) + '</option>'
     ).join('');
-    if (selectedRouteVariantId && variants.some(v => String(v.id) === String(selectedRouteVariantId))) {
-        select.value = String(selectedRouteVariantId);
+    if (requestedVariantId && variants.some(v => String(v.id) === String(requestedVariantId))) {
+        selectedRouteVariantId = requestedVariantId;
+        select.value = String(requestedVariantId);
     } else {
-        selectedRouteVariantId = variants.find(v => v.is_default)?.id || null;
+        selectedRouteVariantId = defaultOutboundVariant(route)?.id || null;
         select.value = selectedRouteVariantId ? String(selectedRouteVariantId) : '';
     }
     const variant = variants.find(v => String(v.id) === String(select.value));
@@ -54,16 +54,13 @@ function syncVariantGeometrySelection() {
     if (!meta) return;
     if (!variant) {
         meta.classList.add('hidden');
+        meta.innerHTML = '';
         if (editor) editor.classList.add('hidden');
         return;
     }
     const stops = (variant.stops || []).slice().sort((a, b) => a.sequence - b.sequence);
-    const incomplete = stops.filter(s => !Number.isFinite(Number(s.lat)) || !Number.isFinite(Number(s.lng)) || s.coordinate_status !== 'verified');
-    meta.classList.remove('hidden');
-    meta.innerHTML = '<strong>' + escapeVariantText(variant.direction + ': ' + variant.origin_name + ' -> ' + variant.destination_name) + '</strong>' +
-        '<div>Status: ' + escapeVariantText(variant.geometry_status || 'pending') + ' | Version: ' + (variant.geometry_version || 0) + ' | Provider: Google Directions</div>' +
-        '<div>Stops: ' + stops.length + ' | Verified coordinates: ' + (stops.length - incomplete.length) + '/' + stops.length + '</div>' +
-        '<div>' + stops.map(s => s.sequence + '. ' + escapeVariantText(s.name) + ' [' + escapeVariantText(s.stop_type || 'designated_stop') + '] ' + escapeVariantText(s.coordinate_status || 'pending')).join('<br>') + '</div>';
+    meta.classList.add('hidden');
+    meta.innerHTML = '';
     if (editor) {
         editor.classList.remove('hidden');
         editor.innerHTML = '<div class="flex flex-wrap items-end gap-2">' +
@@ -102,7 +99,8 @@ function escapeVariantText(value) {
 
 function selectedVariantForGeometry() {
     const route = routesDataDb.find(r => r.id.toString() === selectedRouteId.toString());
-    return (route?.variants || []).find(v => String(v.id) === String(selectedRouteVariantId)) || null;
+    return (route?.variants || []).find(v => String(v.id) === String(selectedRouteVariantId))
+        || (typeof defaultOutboundVariant === 'function' ? defaultOutboundVariant(route) : null);
 }
 
 function selectedVariantStopForCoordinate() {
@@ -1029,8 +1027,6 @@ async function generateRoutePreview() {
 
             // Start countdown timer
             startProposalExpiryTimer();
-            // Fetch updated provider telemetry status
-            fetchProvidersTelemetry();
         } else {
             GoPasigUI.alert("Failed to generate route preview: " + (data.message || "Unknown error"));
         }
@@ -1248,10 +1244,3 @@ function cleanupProposalUI() {
         proposalCard.classList.add('hidden');
     }
 }
-
-// Initial fetch on script load
-setTimeout(fetchProvidersTelemetry, 1000);
-setInterval(fetchProvidersTelemetry, 45000);
-
-
-

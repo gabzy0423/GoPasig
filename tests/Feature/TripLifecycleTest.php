@@ -13,6 +13,8 @@ use App\Models\RouteVariant;
 use App\Models\RouteVariantStop;
 use App\Models\Schedule;
 use App\Models\Stop;
+use App\Models\TripLog;
+use App\Models\TripPassengerEvent;
 use App\Enums\TripStatus;
 use App\Enums\GpsSessionStatus;
 use App\Services\TripLifecycleService;
@@ -33,13 +35,14 @@ class TripLifecycleTest extends TestCase
         // 1. Initial State: Standby/free resources
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
-        $route = Route::factory()->create();
+        $route = $this->officialRoute();
+        $variant = $this->variantFor($route, 'outbound');
 
         $this->assertEquals('inactive', $bus->status);
         $this->assertEquals('available', $driver->operational_status);
 
         // 2. Dispatch Assignment
-        $trip = SimulationDispatchService::dispatch($bus, $driver, $route);
+        $trip = SimulationDispatchService::dispatch($bus, $driver, $route, null, '', $variant);
 
         $bus->refresh();
         $driver->refresh();
@@ -91,10 +94,11 @@ class TripLifecycleTest extends TestCase
     {
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
-        $route = Route::factory()->create();
+        $route = $this->officialRoute();
+        $variant = $this->variantFor($route, 'outbound');
 
         // Dispatch first
-        $trip = SimulationDispatchService::dispatch($bus, $driver, $route);
+        $trip = SimulationDispatchService::dispatch($bus, $driver, $route, null, '', $variant);
         $lifecycleService = app(TripLifecycleService::class);
 
         // A. Dispatched trip cannot be ended directly
@@ -106,10 +110,11 @@ class TripLifecycleTest extends TestCase
     {
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
-        $route = Route::factory()->create();
+        $route = $this->officialRoute();
+        $variant = $this->variantFor($route, 'outbound');
 
         // Dispatch
-        $trip = SimulationDispatchService::dispatch($bus, $driver, $route);
+        $trip = SimulationDispatchService::dispatch($bus, $driver, $route, null, '', $variant);
         $lifecycleService = app(TripLifecycleService::class);
 
         // Start and then complete
@@ -125,10 +130,11 @@ class TripLifecycleTest extends TestCase
     {
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
-        $route = Route::factory()->create();
+        $route = $this->officialRoute();
+        $variant = $this->variantFor($route, 'outbound');
 
         // Dispatch (GPS Session = OFF, status = dispatched)
-        $trip = SimulationDispatchService::dispatch($bus, $driver, $route);
+        $trip = SimulationDispatchService::dispatch($bus, $driver, $route, null, '', $variant);
 
         // Simulate API route location update when GPS Session is OFF
         $response = $this->postJson(route('api.driver.location', $trip->id), [
@@ -193,7 +199,7 @@ class TripLifecycleTest extends TestCase
     {
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
-        $route = Route::factory()->create();
+        $route = $this->officialRoute();
         $variant = $this->variantFor($route, 'outbound');
 
         $trip = SimulationDispatchService::dispatch($bus, $driver, $route, null, 'Directional dispatch.', $variant);
@@ -248,9 +254,10 @@ class TripLifecycleTest extends TestCase
     {
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
-        $route = Route::factory()->create();
+        $route = $this->officialRoute();
+        $variant = $this->variantFor($route, 'outbound');
 
-        $trip = SimulationDispatchService::dispatch($bus, $driver, $route);
+        $trip = SimulationDispatchService::dispatch($bus, $driver, $route, null, '', $variant);
         app(TripLifecycleService::class)->startTrip($trip);
 
         $accepted = $this->postJson(route('api.driver.location', $trip->id), [
@@ -284,7 +291,7 @@ class TripLifecycleTest extends TestCase
     {
         $bus = Bus::factory()->create(['status' => 'ready']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'assigned']);
-        $route = Route::factory()->create();
+        $route = $this->officialRoute();
         $variant = $this->variantFor($route, 'outbound');
 
         $linkedSchedule = Schedule::factory()->create([
@@ -341,7 +348,7 @@ class TripLifecycleTest extends TestCase
     {
         $bus = Bus::factory()->create(['status' => 'ready']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'assigned']);
-        $route = Route::factory()->create();
+        $route = $this->officialRoute();
         $variant = $this->variantFor($route, 'outbound');
         $schedule = Schedule::factory()->create([
             'route_id' => $route->id,
@@ -375,7 +382,7 @@ class TripLifecycleTest extends TestCase
     {
         $bus = Bus::factory()->create(['status' => 'operating']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'driving']);
-        $route = Route::factory()->create();
+        $route = $this->officialRoute();
         $variant = $this->variantFor($route, 'outbound');
 
         $linkedSchedule = Schedule::factory()->create([
@@ -428,7 +435,7 @@ class TripLifecycleTest extends TestCase
     {
         $bus = Bus::factory()->create(['status' => 'operating']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'driving']);
-        $route = Route::factory()->create();
+        $route = $this->officialRoute();
         $variant = $this->variantFor($route, 'outbound');
 
         $firstSchedule = Schedule::factory()->create([
@@ -473,6 +480,203 @@ class TripLifecycleTest extends TestCase
         $this->assertNull($secondSchedule->actual_departure_time);
         $this->assertNull($secondSchedule->actual_arrival_time);
     }
+
+    public function test_completing_trip_creates_one_trip_log_summary(): void
+    {
+        $bus = Bus::factory()->create(['status' => 'operating']);
+        $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'driving']);
+        $route = $this->officialRoute();
+        $variant = $this->variantFor($route, 'outbound');
+        $startedAt = now()->subMinutes(35);
+
+        $trip = Trip::factory()->create([
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $route->id,
+            'route_variant_id' => $variant->id,
+            'status' => TripStatus::ONGOING->value,
+            'gps_session' => GpsSessionStatus::ACTIVE->value,
+            'started_at' => $startedAt,
+            'peak_passengers' => 23,
+        ]);
+        TripPassengerEvent::create([
+            'trip_id' => $trip->id,
+            'driver_id' => $driver->id,
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'event_type' => TripPassengerEvent::TYPE_BOARDED,
+            'passenger_delta' => 10,
+            'onboard_after' => 10,
+            'recorded_at' => now()->subMinutes(20),
+        ]);
+        TripPassengerEvent::create([
+            'trip_id' => $trip->id,
+            'driver_id' => $driver->id,
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'event_type' => TripPassengerEvent::TYPE_BOARDED,
+            'passenger_delta' => 5,
+            'onboard_after' => 15,
+            'recorded_at' => now()->subMinutes(10),
+        ]);
+        TripPassengerEvent::create([
+            'trip_id' => $trip->id,
+            'driver_id' => $driver->id,
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'event_type' => TripPassengerEvent::TYPE_ALIGHTED,
+            'passenger_delta' => 4,
+            'onboard_after' => 11,
+            'recorded_at' => now()->subMinutes(5),
+        ]);
+
+        app(TripLifecycleService::class)->completeTrip($trip);
+
+        $trip->refresh();
+        $tripLog = TripLog::where('trip_id', $trip->id)->first();
+
+        $this->assertNotNull($tripLog);
+        $this->assertSame(1, TripLog::where('trip_id', $trip->id)->count());
+        $this->assertSame($trip->driver_id, $tripLog->driver_id);
+        $this->assertSame($trip->bus_id, $tripLog->bus_id);
+        $this->assertSame($trip->route_id, $tripLog->route_id);
+        $this->assertEquals($trip->started_at, $tripLog->started_at);
+        $this->assertEquals($trip->ended_at, $tripLog->completed_at);
+        $this->assertSame('completed', $tripLog->status);
+        $this->assertSame(23, $tripLog->peak_passengers);
+        $this->assertSame(15, $tripLog->passengers);
+        $this->assertSame(4, $tripLog->alighted_passengers);
+    }
+
+    public function test_cancelling_trip_creates_one_trip_log_summary(): void
+    {
+        $bus = Bus::factory()->create(['status' => 'operating']);
+        $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'driving']);
+        $route = $this->officialRoute();
+        $variant = $this->variantFor($route, 'outbound');
+
+        $trip = Trip::factory()->create([
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $route->id,
+            'route_variant_id' => $variant->id,
+            'status' => TripStatus::ONGOING->value,
+            'gps_session' => GpsSessionStatus::ACTIVE->value,
+            'started_at' => now()->subMinutes(15),
+            'peak_passengers' => 12,
+        ]);
+        TripPassengerEvent::create([
+            'trip_id' => $trip->id,
+            'driver_id' => $driver->id,
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'event_type' => TripPassengerEvent::TYPE_BOARDED,
+            'passenger_delta' => 8,
+            'onboard_after' => 8,
+            'recorded_at' => now()->subMinutes(10),
+        ]);
+        TripPassengerEvent::create([
+            'trip_id' => $trip->id,
+            'driver_id' => $driver->id,
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'event_type' => TripPassengerEvent::TYPE_ALIGHTED,
+            'passenger_delta' => 3,
+            'onboard_after' => 5,
+            'recorded_at' => now()->subMinutes(5),
+        ]);
+
+        app(TripLifecycleService::class)->cancelTrip($trip);
+
+        $trip->refresh();
+        $tripLog = TripLog::where('trip_id', $trip->id)->first();
+
+        $this->assertNotNull($tripLog);
+        $this->assertSame(1, TripLog::where('trip_id', $trip->id)->count());
+        $this->assertSame($trip->driver_id, $tripLog->driver_id);
+        $this->assertSame($trip->bus_id, $tripLog->bus_id);
+        $this->assertSame($trip->route_id, $tripLog->route_id);
+        $this->assertEquals($trip->started_at, $tripLog->started_at);
+        $this->assertEquals($trip->ended_at, $tripLog->completed_at);
+        $this->assertSame('cancelled', $tripLog->status);
+        $this->assertSame(12, $tripLog->peak_passengers);
+        $this->assertSame(8, $tripLog->passengers);
+        $this->assertSame(3, $tripLog->alighted_passengers);
+    }
+
+    public function test_trip_log_finalization_updates_existing_summary_without_duplicates(): void
+    {
+        $bus = Bus::factory()->create(['status' => 'operating']);
+        $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'driving']);
+        $route = $this->officialRoute();
+        $variant = $this->variantFor($route, 'outbound');
+
+        $trip = Trip::factory()->create([
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $route->id,
+            'route_variant_id' => $variant->id,
+            'status' => TripStatus::ONGOING->value,
+            'gps_session' => GpsSessionStatus::ACTIVE->value,
+            'started_at' => now()->subMinutes(20),
+            'peak_passengers' => 17,
+        ]);
+
+        TripLog::create([
+            'driver_id' => $driver->id,
+            'trip_id' => $trip->id,
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'started_at' => $trip->started_at,
+            'completed_at' => now()->subHour(),
+            'passengers' => 1,
+            'alighted_passengers' => 0,
+            'peak_passengers' => 1,
+            'status' => 'stale',
+        ]);
+        TripPassengerEvent::create([
+            'trip_id' => $trip->id,
+            'driver_id' => $driver->id,
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'event_type' => TripPassengerEvent::TYPE_BOARDED,
+            'passenger_delta' => 9,
+            'onboard_after' => 9,
+            'recorded_at' => now()->subMinutes(10),
+        ]);
+        TripPassengerEvent::create([
+            'trip_id' => $trip->id,
+            'driver_id' => $driver->id,
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'event_type' => TripPassengerEvent::TYPE_ALIGHTED,
+            'passenger_delta' => 2,
+            'onboard_after' => 7,
+            'recorded_at' => now()->subMinutes(5),
+        ]);
+
+        app(TripLifecycleService::class)->completeTrip($trip);
+
+        $trip->refresh();
+        $tripLog = TripLog::where('trip_id', $trip->id)->first();
+
+        $this->assertSame(1, TripLog::where('trip_id', $trip->id)->count());
+        $this->assertSame('completed', $tripLog->status);
+        $this->assertEquals($trip->ended_at, $tripLog->completed_at);
+        $this->assertSame(17, $tripLog->peak_passengers);
+        $this->assertSame(9, $tripLog->passengers);
+        $this->assertSame(2, $tripLog->alighted_passengers);
+    }
+
+    private function officialRoute(string $name = 'Route 2'): Route
+    {
+        return Route::factory()->create([
+            'name' => $name,
+            'status' => 'Active',
+            'polyline_coordinates' => [[14.5000, 121.0000], [14.5100, 121.0100]],
+        ]);
+    }
+
     private function variantFor(Route $route, string $direction): RouteVariant
     {
         Stop::create(['route_id' => $route->id, 'name' => 'SPED', 'lat' => 14.5000, 'lng' => 121.0000, 'sequence' => 1]);

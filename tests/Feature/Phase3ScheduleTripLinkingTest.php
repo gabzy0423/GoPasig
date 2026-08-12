@@ -32,7 +32,7 @@ class Phase3ScheduleTripLinkingTest extends TestCase
 
     public function test_manual_dispatch_creates_unscheduled_trip(): void
     {
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $variant = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
@@ -71,8 +71,8 @@ class Phase3ScheduleTripLinkingTest extends TestCase
 
     public function test_schedule_variant_from_another_route_is_rejected_for_scheduled_dispatch(): void
     {
-        $route = Route::factory()->create();
-        $otherRoute = Route::factory()->create();
+        $route = Route::factory()->official()->create();
+        $otherRoute = Route::factory()->official('Route 3')->create();
         $otherVariant = $this->variantFor($otherRoute, 'outbound', 'Other A', 'Other B');
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
@@ -90,7 +90,7 @@ class Phase3ScheduleTripLinkingTest extends TestCase
 
     public function test_pending_unusable_schedule_variant_is_rejected_for_scheduled_dispatch(): void
     {
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $variant = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya', 'pending');
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
@@ -106,9 +106,9 @@ class Phase3ScheduleTripLinkingTest extends TestCase
         SimulationDispatchService::dispatchFromSchedule($schedule);
     }
 
-    public function test_legacy_schedule_with_null_variant_can_still_create_linked_legacy_trip(): void
+    public function test_official_schedule_with_null_variant_cannot_create_a_trip(): void
     {
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
         $schedule = Schedule::factory()->create([
@@ -118,10 +118,12 @@ class Phase3ScheduleTripLinkingTest extends TestCase
             'driver_id' => $driver->id,
         ]);
 
-        $trip = SimulationDispatchService::dispatchFromSchedule($schedule);
-
-        $this->assertSame($schedule->id, $trip->schedule_id);
-        $this->assertNull($trip->route_variant_id);
+        try {
+            SimulationDispatchService::dispatchFromSchedule($schedule);
+            $this->fail('Official schedules without a direction must not dispatch.');
+        } catch (ValidationException) {
+            $this->assertDatabaseMissing('trips', ['schedule_id' => $schedule->id]);
+        }
     }
 
     public function test_admin_can_dispatch_eligible_schedule_through_runtime_endpoint(): void
@@ -159,7 +161,7 @@ class Phase3ScheduleTripLinkingTest extends TestCase
             ->assertJsonPath('dispatches.0.id', $schedule->id)
             ->assertJsonPath('dispatches.0.isDispatched', false)
             ->assertJsonPath('dispatches.0.canDispatch', true)
-            ->assertJsonPath('dispatches.0.dispatchState', 'eligible');
+            ->assertJsonPath('dispatches.0.dispatchState', 'ready');
 
         $trip = SimulationDispatchService::dispatchFromSchedule($schedule);
 
@@ -196,7 +198,7 @@ class Phase3ScheduleTripLinkingTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('success', false);
 
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $variant = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya', 'pending');
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
@@ -217,7 +219,7 @@ class Phase3ScheduleTripLinkingTest extends TestCase
 
     public function test_manual_dispatch_remains_independent_after_scheduled_dispatch_endpoint(): void
     {
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $variant = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
@@ -239,7 +241,7 @@ class Phase3ScheduleTripLinkingTest extends TestCase
      */
     private function scheduledDirectionalLeg(array $overrides = []): array
     {
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $variant = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);

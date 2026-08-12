@@ -240,6 +240,14 @@
                 }, 50);
             }
 
+            if (parentScreenName === 'drivers' || parentScreenName === 'drivers-show') {
+                setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('request-driver-management-refresh', {
+                        detail: { screen: parentScreenName }
+                    }));
+                }, 0);
+            }
+
             // If target is routes, render schedules/routes
             if (parentScreenName === 'routes') {
                 setTimeout(() => {
@@ -337,6 +345,22 @@
         }
     }
 
+    let pendingDriverShowId = null;
+
+    function openDriverShowHashRoute(driverId) {
+        if (typeof openDriversShowScreen !== 'function') return false;
+
+        openDriversShowScreen(driverId);
+        pendingDriverShowId = null;
+
+        return true;
+    }
+
+    function resolvePendingDriverShowRoute() {
+        if (pendingDriverShowId === null) return;
+        openDriverShowHashRoute(pendingDriverShowId);
+    }
+
     let hashRouteCheckedOnLoad = false;
     // Auto-activate tab from hash immediately and on load to prevent page flashing
     function checkHashRoute(event) {
@@ -364,8 +388,9 @@
                     openDriversEditScreen(parseInt(param));
                 }
             } else if (hash === 'drivers-show' && param) {
-                if (typeof openDriversShowScreen === 'function') {
-                    openDriversShowScreen(parseInt(param));
+                const driverId = Number.parseInt(param, 10);
+                if (Number.isInteger(driverId) && driverId > 0 && !openDriverShowHashRoute(driverId)) {
+                    pendingDriverShowId = driverId;
                 }
             } else if (hash === 'schedules-edit' && param) {
                 if (typeof openEditScheduleForm === 'function') {
@@ -393,7 +418,15 @@
     }
 
     if (window.location.pathname.includes('/admin/dashboard')) {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', resolvePendingDriverShowRoute, { once: true });
+        } else {
+            setTimeout(resolvePendingDriverShowRoute, 0);
+        }
+
         checkHashRoute();
+        window.addEventListener('driver-management-module-ready', resolvePendingDriverShowRoute);
+        window.addEventListener('load', resolvePendingDriverShowRoute);
         window.addEventListener('load', checkHashRoute);
         window.addEventListener('hashchange', checkHashRoute);
     }

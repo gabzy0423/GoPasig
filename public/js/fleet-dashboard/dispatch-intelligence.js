@@ -21,6 +21,7 @@ let simulatedDay = 'Monday';
 let simulatedTimeSlot = '06:00-08:00';
 let selectedRouteId = 1;
 let notifiedRoutes = {};
+const dispatchVariantSelections = new Map();
 
 async function fetchDispatchData() {
     selectedPhase = document.querySelector('[data-active-phase]')?.getAttribute('data-active-phase') || 1;
@@ -102,7 +103,7 @@ function updateAlertsFeedDOM(alerts) {
                 </div>
                 <p class="text-[12.5px] text-slate-700 font-semibold leading-relaxed">${alert.message}</p>
                 <div class="pt-2">
-                    <button onclick="dispatchNowAction(${alert.route_id})" class="h-7 px-3 text-[10px] font-black text-white bg-[#003F87] hover:bg-[#002D62] rounded-lg transition uppercase tracking-wider">
+                    <button onclick="dispatchNowAction(${alert.route_id}, ${alert.route_variant_id || 'null'})" class="h-7 px-3 text-[10px] font-black text-white bg-[#003F87] hover:bg-[#002D62] rounded-lg transition uppercase tracking-wider">
                         Dispatch Bus Now
                     </button>
                 </div>
@@ -116,22 +117,74 @@ function dispatchVariantSelectMarkup(route) {
     const variants = Array.isArray(route.variants) ? route.variants : [];
     if (variants.length === 0) return '';
 
+    const selectedVariantId = dispatchVariantSelections.get(String(route.id)) || '';
     const usableCount = variants.filter(v => v.usable_for_dispatch).length;
     const options = [`<option value="">${usableCount > 1 ? 'Choose direction...' : 'Use default direction'}</option>`]
-        .concat(variants.map(v => `<option value="${v.id}" ${v.usable_for_dispatch ? '' : 'disabled'}>${v.label}${v.usable_for_dispatch ? '' : ' (' + v.geometry_status + ')'}</option>`));
+        .concat(variants.map(v => {
+            const selected = String(v.id) === String(selectedVariantId) ? 'selected' : '';
+            const disabled = v.usable_for_dispatch ? '' : 'disabled';
 
-    return `<select id="dispatch-variant-${route.id}" class="w-full h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-[#003F87]">${options.join('')}</select>`;
+            return `<option value="${v.id}" ${selected} ${disabled}>${v.label} - ${v.waiting_count || 0} waiting${v.usable_for_dispatch ? '' : ' (' + v.geometry_status + ')'}</option>`;
+        }));
+
+    return `<select id="dispatch-variant-${route.id}" data-dispatch-variant-route="${route.id}" class="w-full h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-[#003F87]">${options.join('')}</select>`;
+}
+
+function directionDemandMarkup(route) {
+    const variants = Array.isArray(route.variants) ? route.variants : [];
+    const directionCells = variants.map(variant => `
+        <div class="min-w-0">
+            <span class="text-[9px] text-slate-400 font-bold block uppercase tracking-wider truncate">${variant.direction}</span>
+            <span class="text-sm font-bold text-slate-800 font-mono">${variant.waiting_count || 0}</span>
+        </div>
+    `).join('');
+    const unresolved = Number(route.unresolved_waiting_count || 0);
+    const unresolvedMarkup = unresolved > 0 ? `
+        <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-bold text-amber-800">
+            ${unresolved} legacy waiting ${unresolved === 1 ? 'journey is' : 'journeys are'} unresolved and excluded.
+        </div>
+    ` : '';
+
+    return `
+        <div class="bg-slate-50 border border-slate-100 p-2 rounded-xl">
+            <div class="grid gap-2 text-center" style="grid-template-columns: repeat(${Math.max(1, variants.length)}, minmax(0, 1fr));">
+                ${directionCells || '<span class="text-[10px] text-slate-400 font-bold">No route directions configured</span>'}
+            </div>
+            <div class="mt-2 pt-2 border-t border-slate-200 flex justify-between text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                <span>Resolved total: ${route.total || 0}</span>
+                <span>Simulator: ${route.manual_count || 0}</span>
+            </div>
+            ${unresolvedMarkup}
+        </div>
+    `;
 }
 
 function selectedDispatchVariantId(routeId, explicitVariantId = null) {
     if (explicitVariantId) return explicitVariantId;
     const select = document.getElementById(`dispatch-variant-${routeId}`);
-    return select && select.value ? select.value : null;
+    const selectedVariantId = select && select.value
+        ? select.value
+        : dispatchVariantSelections.get(String(routeId));
+
+    return selectedVariantId || null;
+}
+
+function captureDispatchVariantSelections(container) {
+    container.querySelectorAll('[data-dispatch-variant-route], select[id^="dispatch-variant-"]').forEach(select => {
+        const routeId = select.dataset.dispatchVariantRoute || select.id.replace('dispatch-variant-', '');
+
+        if (select.value) {
+            dispatchVariantSelections.set(String(routeId), select.value);
+        } else {
+            dispatchVariantSelections.delete(String(routeId));
+        }
+    });
 }
 function updateDemandBoardDOM(routesData) {
     const container = document.getElementById('demand-board-grid');
     if (!container) return;
 
+    captureDispatchVariantSelections(container);
     container.innerHTML = '';
     routesData.forEach(r => {
         let borderClass = 'border-slate-200 border-t-[4px] border-t-[#003F87]';
@@ -147,7 +200,8 @@ function updateDemandBoardDOM(routesData) {
 
             // Trigger push notification once
             if ('Notification' in window && Notification.permission === 'granted' && !notifiedRoutes[r.id]) {
-                let msg = `URGENT: ${r.total} commuters waiting sa ${r.name}.`;
+                const criticalVariant = r.critical_variant || {};
+                let msg = `URGENT: ${criticalVariant.waiting_count || 0} commuters waiting sa ${r.name} ${criticalVariant.direction || ''}.`;
                 if (r.suggested_bus) {
                     msg += ` Suggested Bus: ${r.suggested_bus.plate_number} (${r.suggested_bus.distance_km} km away).`;
                 }
@@ -166,7 +220,7 @@ function updateDemandBoardDOM(routesData) {
             delete notifiedRoutes[r.id];
         }
 
-        const loadPercent = r.threshold > 0 ? Math.min(100, Math.round((r.total / r.threshold) * 100)) : 0;
+        const loadPercent = r.threshold > 0 ? Math.min(100, Math.round(((r.max_direction_waiting_count || 0) / r.threshold) * 100)) : 0;
         
         let predictionMarkup = '';
         if (selectedPhase >= 2) {
@@ -180,6 +234,7 @@ function updateDemandBoardDOM(routesData) {
 
         let suggestedBusMarkup = '';
         const variantSelectMarkup = dispatchVariantSelectMarkup(r);
+        const demandMarkup = directionDemandMarkup(r);
         if (r.suggested_bus) {
             suggestedBusMarkup = `
                 <div class="p-2 bg-[#FAEEDA] border border-[#BA7517]/20 rounded-xl text-[11px] text-[#854F0B] font-semibold flex flex-col gap-1">
@@ -197,26 +252,13 @@ function updateDemandBoardDOM(routesData) {
         card.innerHTML = `
             <div class="space-y-1">
                 <div class="flex justify-between items-start">
-                    <h4 class="text-sm font-extrabold text-[#001F44]">Route ${r.id}</h4>
+                    <h4 class="text-sm font-extrabold text-[#001F44]">${r.name || `Route ${r.id}`}</h4>
                     <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${badgeClass}">${badgeText}</span>
                 </div>
                 <p class="text-[11px] text-slate-400 font-semibold leading-tight line-clamp-2 h-[32px]">${r.description}</p>
             </div>
 
-            <div class="grid grid-cols-3 gap-1 bg-slate-50 border border-slate-100 p-2 rounded-xl text-center">
-                <div>
-                    <span class="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">App</span>
-                    <span class="text-sm font-bold text-slate-800 font-mono">${r.auto_count}</span>
-                </div>
-                <div>
-                    <span class="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Manual</span>
-                    <span class="text-sm font-bold text-slate-800 font-mono">${r.manual_count}</span>
-                </div>
-                <div>
-                    <span class="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Total</span>
-                    <span class="text-sm font-bold text-slate-800 font-mono">${r.total}</span>
-                </div>
-            </div>
+            ${demandMarkup}
 
             <div class="space-y-1">
                 <div class="flex justify-between text-[11px] font-semibold text-slate-500">
@@ -441,8 +483,13 @@ async function saveThresholdAction(event) {
 async function dispatchNowAction(routeId, routeVariantId = null) {
     try {
         const selectedRouteVariantId = selectedDispatchVariantId(routeId, routeVariantId);
+        if (!selectedRouteVariantId) {
+            showDispatchNotification('Select a direction for this route before dispatching.', true);
+            return;
+        }
+
         const payload = { route_id: routeId, phase: selectedPhase };
-        if (selectedRouteVariantId) payload.route_variant_id = selectedRouteVariantId;
+        payload.route_variant_id = selectedRouteVariantId;
 
         const response = await fetch(window.FleetDispatchConfig.dispatchUrl, {
             method: 'POST',
@@ -455,6 +502,7 @@ async function dispatchNowAction(routeId, routeVariantId = null) {
 
         const data = await response.json();
         if (response.ok && data.success) {
+            dispatchVariantSelections.delete(String(routeId));
             showDispatchNotification(data.message);
             fetchDispatchData();
         } else {
@@ -493,6 +541,18 @@ function initFleetDispatchModule() {
     if (fleetDispatchModuleInitialized || !document.getElementById('demand-board-grid')) return;
     fleetDispatchModuleInitialized = true;
 
+
+        document.getElementById('demand-board-grid')?.addEventListener('change', event => {
+            const select = event.target.closest('[data-dispatch-variant-route], select[id^="dispatch-variant-"]');
+            if (!select) return;
+
+            const routeId = select.dataset.dispatchVariantRoute || select.id.replace('dispatch-variant-', '');
+            if (select.value) {
+                dispatchVariantSelections.set(String(routeId), select.value);
+            } else {
+                dispatchVariantSelections.delete(String(routeId));
+            }
+        });
 
         // Phase selectors clicks
         document.querySelectorAll('.flex.items-center.bg-slate-100 button').forEach((btn, idx) => {

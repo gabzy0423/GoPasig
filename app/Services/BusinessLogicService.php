@@ -12,6 +12,26 @@ use Illuminate\Support\Collection;
 class BusinessLogicService
 {
     /**
+     * Validate a maintenance duration against the configured bounds.
+     *
+     * @return array{valid: bool, error?: string}
+     */
+    public static function validateMaintenanceDuration(int $durationMinutes): array
+    {
+        $minimum = (int) SystemSetting::get('maintenance_duration_min_minutes', 15);
+        $maximum = (int) SystemSetting::get('maintenance_duration_max_minutes', 480);
+
+        if ($durationMinutes < $minimum || $durationMinutes > $maximum) {
+            return [
+                'valid' => false,
+                'error' => "Maintenance duration must be between {$minimum} and {$maximum} minutes.",
+            ];
+        }
+
+        return ['valid' => true];
+    }
+
+    /**
      * Check if driver has exceeded daily hour limits
      * Issue 3.1.1: No daily hours limit enforcement
      */

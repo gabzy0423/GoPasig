@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CommuterTrip;
 use App\Models\Stop;
 use App\Models\TripLog;
+use App\Models\TripPassengerEvent;
 use App\Models\Trip;
 use App\Models\Driver;
 use Carbon\Carbon;
@@ -17,28 +18,49 @@ class TripLogService
     public static function logTrip(Trip $trip, array $data = []): ?TripLog
     {
         try {
-            $tripLog = TripLog::create([
-                'driver_id' => $trip->driver_id,
+            if (!$trip->id) {
+                return null;
+            }
+
+            $peakPassengers = (int) ($data['peak_passengers'] ?? $trip->peak_passengers ?? 0);
+            $status = $data['status'] ?? (is_object($trip->status) ? $trip->status->value : $trip->status);
+            $eventSummary = self::passengerEventSummary($trip->id);
+
+            $tripLog = TripLog::updateOrCreate([
                 'trip_id' => $trip->id,
+            ], [
+                'driver_id' => $trip->driver_id,
                 'bus_id' => $trip->bus_id,
                 'route_id' => $trip->route_id,
                 'started_at' => $data['started_at'] ?? $trip->started_at,
-                'completed_at' => $data['completed_at'] ?? now(),
-                'passengers' => $data['passengers'] ?? $trip->peak_passengers ?? 0,
-                'alighted_passengers' => $data['alighted_passengers'] ?? 0,
-                'peak_passengers' => $data['peak_passengers'] ?? $trip->peak_passengers ?? 0,
-                'status' => $data['status'] ?? 'completed',
+                'completed_at' => $data['completed_at'] ?? $trip->ended_at ?? now(),
+                'passengers' => $data['passengers'] ?? $eventSummary['boarded'],
+                'alighted_passengers' => $data['alighted_passengers'] ?? $eventSummary['alighted'],
+                'peak_passengers' => $peakPassengers,
+                'status' => $status,
                 'is_on_time' => $data['is_on_time'] ?? true,
                 'delay_minutes' => $data['delay_minutes'] ?? 0,
                 'notes' => $data['notes'] ?? null,
             ]);
 
             return $tripLog;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             // Log error but don't break trip completion
             \Log::error('Failed to log trip: ' . $e->getMessage());
             return null;
         }
+    }
+
+    private static function passengerEventSummary(int $tripId): array
+    {
+        return [
+            'boarded' => (int) TripPassengerEvent::where('trip_id', $tripId)
+                ->where('event_type', TripPassengerEvent::TYPE_BOARDED)
+                ->sum('passenger_delta'),
+            'alighted' => (int) TripPassengerEvent::where('trip_id', $tripId)
+                ->where('event_type', TripPassengerEvent::TYPE_ALIGHTED)
+                ->sum('passenger_delta'),
+        ];
     }
 
     /**

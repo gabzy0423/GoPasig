@@ -10,7 +10,6 @@ use App\Models\Stop;
 use App\Models\SystemSetting;
 use App\Models\DemandHistory;
 use App\Models\Trip;
-use App\Models\TripLog;
 use App\Models\User;
 use App\Models\TimeSlotConfiguration;
 use Carbon\Carbon;
@@ -54,8 +53,8 @@ class Module8AnalyticsTest extends TestCase
 
         // Create a route
         $this->route = Route::create([
-            'name' => 'Route Emerald',
-            'color' => '#50C878',
+            'name' => 'Route 2',
+            'color' => '#BA7517',
             'status' => 'Active',
         ]);
 
@@ -79,9 +78,9 @@ class Module8AnalyticsTest extends TestCase
     }
 
     /**
-     * Test date range filters use service_date instead of created_at.
+     * Test Passengers Handled uses boarded events while other passenger totals remain deferred.
      */
-    public function test_analytics_date_filters_use_service_date()
+    public function test_passengers_handled_is_zero_without_events_and_not_schedule_backed()
     {
         // Schedule created today for yesterday
         Schedule::create([
@@ -114,27 +113,27 @@ class Module8AnalyticsTest extends TestCase
         ]));
 
         $response->assertStatus(200);
-        // Should only count today's passenger count (40), not yesterday's (25)
-        $this->assertEquals(40, (int) str_replace(',', '', $response->json('kpis.total_pax_today')));
+        $this->assertEquals(0, $response->json('kpis.total_pax_today'));
+        $this->assertEquals(0, $response->json('kpis.avg_pax_trip'));
     }
 
     /**
-     * Test alighted, boarded, and peak load come from trip_logs separately.
+     * Test trip load records keep peak load on Trip while passenger movement starts at zero without events.
      */
-    public function test_trip_passenger_flow_disparity()
+    public function test_trip_load_table_uses_trip_peak_load()
     {
-        $schedule = Schedule::create([
+        Schedule::create([
             'route_id' => $this->route->id,
             'service_date' => Carbon::today()->toDateString(),
             'bus_id' => $this->bus->id,
             'driver_id' => $this->driver->id,
             'departure_time' => '08:00:00',
             'arrival_time' => '09:00:00',
-            'passengers' => 30,
+            'passengers' => 99,
             'status' => 'On time',
         ]);
 
-        $trip = Trip::create([
+        Trip::create([
             'bus_id' => $this->bus->id,
             'driver_id' => $this->driver->id,
             'route_id' => $this->route->id,
@@ -142,18 +141,6 @@ class Module8AnalyticsTest extends TestCase
             'peak_passengers' => 35,
             'started_at' => Carbon::today()->setTime(8, 0),
             'ended_at' => Carbon::today()->setTime(9, 0),
-        ]);
-
-        TripLog::create([
-            'driver_id' => $this->driver->id,
-            'trip_id' => $trip->id,
-            'bus_id' => $this->bus->id,
-            'route_id' => $this->route->id,
-            'passengers' => 30,
-            'alighted_passengers' => 22,
-            'peak_passengers' => 35,
-            'completed_at' => Carbon::today()->setTime(9, 0),
-            'status' => 'completed',
         ]);
 
         $response = $this->getJson(route('admin.api.analytics', [
@@ -164,17 +151,20 @@ class Module8AnalyticsTest extends TestCase
         $response->assertStatus(200);
         $tripRow = $response->json('tripPaxTable.0');
         $this->assertNotNull($tripRow);
-        $this->assertEquals(30, $tripRow['boarded']);
-        $this->assertEquals(22, $tripRow['alighted']);
+        $this->assertEquals('Completed', $tripRow['status']);
         $this->assertEquals(35, $tripRow['peakLoad']);
-        $this->assertNotEquals($tripRow['boarded'], $tripRow['alighted']);
-        $this->assertNotEquals($tripRow['boarded'], $tripRow['peakLoad']);
+        $this->assertEquals(0, $tripRow['recordedBoarded']);
+        $this->assertEquals(0, $tripRow['recordedAlighted']);
+        $this->assertArrayNotHasKey('boarded', $tripRow);
+        $this->assertArrayNotHasKey('alighted', $tripRow);
+        $this->assertArrayNotHasKey('capacity', $tripRow);
+        $this->assertNotEquals(99, $tripRow['peakLoad']);
     }
 
     /**
-     * Test prevention of double counting on weekly passenger totals.
+     * Test weekly passenger totals use boarded events instead of DemandHistory and schedules.
      */
-    public function test_weekly_passenger_double_counting_prevention()
+    public function test_weekly_passenger_totals_are_zero_without_events_and_not_mixed_sources()
     {
         $todayStr = Carbon::today()->toDateString();
 
@@ -206,13 +196,12 @@ class Module8AnalyticsTest extends TestCase
         ]));
 
         $response->assertStatus(200);
-        // Pax this week should exclude the 100 historical commuters from today
-        // to avoid double counting it with today's live schedule (20).
-        $this->assertEquals(20, (int) str_replace(',', '', $response->json('kpis.pax_this_week')));
+        $this->assertEquals(0, $response->json('kpis.pax_this_week'));
+        $this->assertEquals('Recorded boarded events in selected period', $response->json('kpis.pax_change_last_week'));
     }
 
     /**
-     * Test driver performance metrics are calculated dynamically.
+     * Test driver performance metrics are calculated dynamically from actual trips.
      */
     public function test_driver_performance_calculated_dynamically()
     {
@@ -227,13 +216,38 @@ class Module8AnalyticsTest extends TestCase
             'status' => 'On time',
         ]);
 
+        Trip::create([
+            'route_id' => $this->route->id,
+            'bus_id' => $this->bus->id,
+            'driver_id' => $this->driver->id,
+            'status' => 'completed',
+            'gps_session' => 'CLOSED',
+            'started_at' => Carbon::today()->setTime(8, 0),
+            'ended_at' => Carbon::today()->setTime(9, 0),
+            'peak_passengers' => 28,
+        ]);
+
+        Trip::create([
+            'route_id' => $this->route->id,
+            'bus_id' => $this->bus->id,
+            'driver_id' => $this->driver->id,
+            'status' => 'ongoing',
+            'gps_session' => 'ACTIVE',
+            'started_at' => Carbon::today()->setTime(10, 0),
+            'ended_at' => null,
+            'peak_passengers' => 34,
+        ]);
+
         $response = $this->getJson(route('admin.api.analytics'));
         $response->assertStatus(200);
 
         $driverPerf = collect($response->json('driverPerformance'))->firstWhere('name', 'John Doe');
         $this->assertNotNull($driverPerf);
-        $this->assertEquals(1, $driverPerf['trips']);
-        $this->assertEquals(35, $driverPerf['pax']);
+        $this->assertEquals(2, $driverPerf['tripsRun']);
+        $this->assertEquals(1, $driverPerf['completedTrips']);
+        $this->assertEquals(1, $driverPerf['ongoingTrips']);
+        $this->assertEquals(34, $driverPerf['peakLoad']);
+        $this->assertEquals(0, $driverPerf['pax']);
     }
 
     /**

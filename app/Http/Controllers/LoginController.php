@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Log;
 use App\Http\Requests\LoginRequest;
 use App\Models\User;
+use App\Services\DriverLogoutReleaseService;
 
 class LoginController extends Controller
 {
@@ -64,8 +65,31 @@ class LoginController extends Controller
         return 'Fleet Operations Manager user not found';
     }
 
-    public function logout(Request $request)
+    public function logout(Request $request, DriverLogoutReleaseService $driverLogoutRelease)
     {
+        $user = Auth::user();
+
+        if ($user?->role === 'driver') {
+            try {
+                $release = $driverLogoutRelease->release($user);
+            } catch (\Throwable $exception) {
+                Log::error('Driver logout assignment release failed', [
+                    'user_id' => $user->id,
+                    'exception' => $exception,
+                ]);
+
+                return redirect()->route('driver.dashboard')->withErrors([
+                    'logout' => 'Unable to safely release your assignment. Please try again or contact dispatch.',
+                ])->withHeaders($this->noStoreHeaders());
+            }
+
+            if (! $release['logout_allowed']) {
+                return redirect()->route('driver.trip')->withErrors([
+                    'logout' => $release['message'],
+                ])->withHeaders($this->noStoreHeaders());
+            }
+        }
+
         Auth::logout();
 
         $request->session()->invalidate();

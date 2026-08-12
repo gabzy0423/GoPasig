@@ -29,10 +29,10 @@
 
   <!-- Primary Status Cards (4 Columns) -->
   <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
-      <!-- Card 1: On Duty -->
-      <div onclick="toggleDriverCardFilter('on-duty', this)" class="relative bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-[92px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-pointer border-l-[3px] border-l-[#639922]" data-driver-card-filter="on-duty">
+      <!-- Card 1: Driving -->
+      <div onclick="toggleDriverCardFilter('driving', this)" class="relative bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-[92px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-pointer border-l-[3px] border-l-[#639922]" data-driver-card-filter="driving">
           <div class="flex justify-between items-start">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest truncate">On Duty</span>
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest truncate">Driving</span>
               <div class="h-6 w-6 rounded bg-emerald-50 flex items-center justify-center text-[#639922]">
                   <i class="ti ti-steering-wheel text-sm"></i>
               </div>
@@ -43,10 +43,10 @@
           </div>
       </div>
 
-      <!-- Card 2: Standby Drivers -->
-      <div onclick="toggleDriverCardFilter('standby', this)" class="relative bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-[92px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-pointer border-l-[3px] border-l-[#003F87]" data-driver-card-filter="standby">
+      <!-- Card 2: Available Drivers -->
+      <div onclick="toggleDriverCardFilter('available', this)" class="relative bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-[92px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 cursor-pointer border-l-[3px] border-l-[#003F87]" data-driver-card-filter="available">
           <div class="flex justify-between items-start">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest truncate">Standby Drivers</span>
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest truncate">Available Drivers</span>
               <div class="h-6 w-6 rounded bg-blue-50 flex items-center justify-center text-[#003F87]">
                   <i class="ti ti-user text-sm"></i>
               </div>
@@ -104,17 +104,17 @@
               </div>
           </div>
 
-          <!-- High Performers -->
+          <!-- Completed Trips Today -->
           <div class="relative bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between h-[72px] shadow-sm border-l-[3px] border-l-[#003F87]">
               <div class="flex justify-between items-center">
-                  <span class="text-[9px] text-slate-450 font-bold uppercase tracking-wider truncate">High Performers</span>
+                  <span class="text-[9px] text-slate-450 font-bold uppercase tracking-wider truncate">Completed Trips Today</span>
                   <div class="h-5 w-5 rounded bg-blue-50 flex items-center justify-center text-[#003F87]">
                       <i class="ti ti-trophy text-xs"></i>
                   </div>
               </div>
               <div class="flex items-baseline gap-1.5">
-                  <span class="text-[16px] font-black text-slate-800 leading-none" id="dm-health-high-performers">0</span>
-                  <span class="text-[9px] text-slate-450 font-medium truncate">Rating &ge; 85%</span>
+                  <span class="text-[16px] font-black text-slate-800 leading-none" id="dm-health-completed-today">0</span>
+                  <span class="text-[9px] text-slate-450 font-medium truncate">Actual completed Trips</span>
               </div>
           </div>
 
@@ -142,7 +142,7 @@
               </div>
               <div class="flex items-baseline gap-1.5">
                   <span class="text-[16px] font-black text-slate-800 leading-none" id="dm-health-no-trips">0</span>
-                  <span class="text-[9px] text-slate-450 font-medium truncate">Off Duty &amp; 0 trips today</span>
+                  <span class="text-[9px] text-slate-450 font-medium truncate">No dispatched / ongoing Trip</span>
               </div>
           </div>
       </div>
@@ -164,9 +164,12 @@
           <select id="driver-status-filter" onchange="filterDriversTable()"
               class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white cursor-pointer">
               <option value="">All Statuses</option>
-              <option value="On Duty">On Duty</option>
-              <option value="Off Duty">Off Duty</option>
-              <option value="Suspended">Suspended</option>
+              <option value="driving">Driving</option>
+              <option value="assigned">Assigned</option>
+              <option value="available">Available</option>
+              <option value="unavailable">Unavailable</option>
+              <option value="off-duty">Off Duty</option>
+              <option value="suspended">Suspended</option>
           </select>
 
           <select id="driver-license-filter" onchange="filterDriversTable()"
@@ -206,26 +209,20 @@
     <div class="overflow-x-auto w-full">
       <table class="dm-table">
         <colgroup>
-          <col style="width:25%">
-          <col style="width:10%">
-          <col style="width:15%">
-          <col style="width:10%">
-          <col style="width:8%">
-          <col style="width:9%">
-          <col style="width:8%">
-          <col style="width:8%">
+          <col style="width:22%">
+          <col style="width:21%">
+          <col style="width:21%">
+          <col style="width:13%">
+          <col style="width:16%">
           <col style="width:7%">
         </colgroup>
         <thead>
           <tr class="dm-thead-row">
             <th class="dm-th">Driver</th>
-            <th class="dm-th">License no.</th>
-            <th class="dm-th">License expiry</th>
-            <th class="dm-th">Assigned bus</th>
-            <th class="dm-th">Route</th>
+            <th class="dm-th">License</th>
+            <th class="dm-th">Current assignment</th>
             <th class="dm-th">Status</th>
-            <th class="dm-th" style="text-align:center;">Trips today</th>
-            <th class="dm-th">Pax today</th>
+            <th class="dm-th">Today's operations</th>
             <th class="dm-th" style="text-align: right; padding-right: 16px;">Actions</th>
           </tr>
         </thead>
@@ -543,6 +540,64 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .dm-license-cell,
+  .dm-assignment-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .dm-license-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-width: 0;
+    font-size: 10px;
+    color: #64748B;
+  }
+
+  .dm-assignment-cell {
+    gap: 5px;
+  }
+
+  .dm-assignment-empty {
+    color: #94A3B8;
+    font-size: 12px;
+    font-style: italic;
+  }
+
+  .dm-operations-cell {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    max-width: 150px;
+  }
+
+  .dm-operation-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .dm-operation-value {
+    color: #0F172A;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .dm-operation-label {
+    color: #94A3B8;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-transform: uppercase;
   }
 
   .dm-driver-empid {

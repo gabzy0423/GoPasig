@@ -128,6 +128,38 @@
         <div>Watch ID: <span id="gps-debug-watchid" class="text-slate-450 font-bold">None</span></div>
     </div>
 
+    @if(config('app.env') === 'local' && $activeTrip?->status === 'ongoing' && !empty($developerGpsPresets))
+        <!-- Local-only developer GPS controls for commuter boarding/arrival UAT. -->
+        <div id="developer-gps-panel" class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex flex-col gap-3">
+            <div class="flex items-start justify-between gap-3">
+                <div class="flex flex-col gap-0.5">
+                    <span class="text-[10px] font-extrabold text-indigo-700 uppercase tracking-widest">Developer GPS</span>
+                    <span class="text-[11px] text-indigo-900/70 font-semibold">Local UAT only. Applies a bus coordinate without creating GPS history.</span>
+                </div>
+                <span class="shrink-0 text-[9px] font-black uppercase tracking-widest rounded-full bg-indigo-600 px-2 py-1 text-white">Local only</span>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label for="developer-gps-preset" class="text-[10px] font-extrabold text-indigo-900 uppercase tracking-wider">Route stop preset</label>
+                <select id="developer-gps-preset" class="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500">
+                    @foreach($developerGpsPresets as $preset)
+                        <option value="{{ $loop->index }}" data-lat="{{ $preset['lat'] }}" data-lng="{{ $preset['lng'] }}" data-name="{{ $preset['name'] }}">
+                            {{ $preset['label'] }}
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <button id="developer-gps-apply" type="button" onclick="applyDeveloperGpsPreset()" class="h-10 rounded-xl bg-indigo-600 text-white text-xs font-extrabold active:scale-[0.98] transition-all">
+                    <i class="ti ti-map-pin mr-1"></i> Apply location
+                </button>
+                <button type="button" onclick="resumeRealDriverGps()" class="h-10 rounded-xl border border-indigo-200 bg-white text-indigo-700 text-xs font-extrabold active:scale-[0.98] transition-all">
+                    <i class="ti ti-current-location mr-1"></i> Use real GPS
+                </button>
+            </div>
+            <span id="developer-gps-status" class="text-[10px] font-bold text-indigo-800">Ready. Start with the origin preset.</span>
+        </div>
+    @endif
+
     @if($driver && $driver->assigned_bus && $bus)
         @php
             $activeTripStatus = $activeTrip?->status;
@@ -217,11 +249,12 @@
                     </div>
                 @endif
 
-                @if($nextTripPreview['available'])
-                    <div class="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
-                        <span class="block text-[9px] font-black uppercase tracking-widest text-emerald-700">Next Trip</span>
-                        <span class="block text-sm font-black text-slate-800 mt-0.5">{{ $nextTripPreview['label'] }}</span>
-                    </div>
+                  @if($nextTripPreview['available'])
+                      <div class="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
+                          <span class="block text-[9px] font-black uppercase tracking-widest text-emerald-700">Next Trip</span>
+                          <span class="block text-sm font-black text-slate-800 mt-0.5">{{ $nextTripPreview['label'] }}</span>
+                          <span class="block text-[10px] font-bold text-emerald-700 mt-1">{{ $nextTripPreview['message'] }}</span>
+                      </div>
                 @else
                     <div class="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-[11px] font-bold text-amber-700 leading-snug">
                         {{ $nextTripPreview['message'] }}
@@ -841,6 +874,83 @@
         })
         .catch(err => console.error("Error updating next stop:", err));
     }
+
+    @if(config('app.env') === 'local' && $activeTrip?->status === 'ongoing' && !empty($developerGpsPresets))
+        async function applyDeveloperGpsPreset() {
+            const select = document.getElementById('developer-gps-preset');
+            const status = document.getElementById('developer-gps-status');
+            const button = document.getElementById('developer-gps-apply');
+            const option = select?.selectedOptions?.[0];
+
+            if (!option) return;
+
+            const lat = Number(option.dataset.lat);
+            const lng = Number(option.dataset.lng);
+            const nextStop = option.dataset.name || null;
+
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                if (status) status.innerText = 'Invalid developer GPS preset.';
+                return;
+            }
+
+            // Stop the browser watcher so real GPS cannot overwrite the UAT coordinate.
+            if (typeof stopTelemetry === 'function') {
+                stopTelemetry();
+            }
+
+            if (button) {
+                button.disabled = true;
+                button.setAttribute('aria-busy', 'true');
+            }
+            if (status) status.innerText = 'Applying ' + nextStop + '...';
+
+            try {
+                const response = await fetch("{{ route('driver.trip.developer-gps') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    },
+                    body: JSON.stringify({
+                        lat,
+                        lng,
+                        speed: 0,
+                        accuracy: 5,
+                        next_stop: nextStop,
+                        eta: 1
+                    })
+                });
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.message || 'Developer GPS request failed.');
+                }
+
+                const coordsEl = document.getElementById('gps-debug-coords');
+                const postStatusEl = document.getElementById('gps-debug-post-status');
+                if (coordsEl) coordsEl.innerText = lat.toFixed(6) + ', ' + lng.toFixed(6) + ' (Developer UAT)';
+                if (postStatusEl) postStatusEl.innerText = 'Developer location applied';
+                if (status) status.innerText = 'Applied: ' + nextStop + '. Commuter geofence may need two confirmations.';
+            } catch (error) {
+                if (status) status.innerText = error.message || 'Developer GPS request failed.';
+            } finally {
+                if (button) {
+                    button.disabled = false;
+                    button.removeAttribute('aria-busy');
+                }
+            }
+        }
+
+        function resumeRealDriverGps() {
+            const status = document.getElementById('developer-gps-status');
+            if (typeof startTelemetry === 'function' && isTrackingActive) {
+                startTelemetry();
+                if (status) status.innerText = 'Real browser GPS resumed.';
+            } else if (status) {
+                status.innerText = 'Start an ongoing trip before resuming real GPS.';
+            }
+        }
+    @endif
 
     function calculateDistanceInMeters(lat1, lon1, lat2, lon2) {
         const R = 6371e3; // Earth's radius in meters
@@ -1533,10 +1643,6 @@
     });
 </script>
 @endsection
-
-
-
-
 
 
 

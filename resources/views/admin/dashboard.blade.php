@@ -84,8 +84,6 @@
             driversBaseUrl: "{{ url('admin/api/drivers') }}",
             schedulesBaseUrl: "{{ url('admin/api/schedules') }}",
             routeServiceSchedulesUrl: "{{ route('admin.api.route-service-schedules.index') }}",
-            dispatchQueueTodayUrl: "{{ route('admin.api.schedules.dispatch-queue.today') }}",
-            scheduleDispatchUrlTemplate: "{{ route('admin.api.schedules.dispatch', ['schedule' => ':id']) }}",
             routesBaseUrl: "{{ url('admin/api/routes') }}",
             stopsBaseUrl: "{{ url('admin/api/stops') }}",
             maintenanceBaseUrl: "{{ url('admin/api/maintenance') }}",
@@ -101,4 +99,3 @@
         };
     </script>
 @endsection
-

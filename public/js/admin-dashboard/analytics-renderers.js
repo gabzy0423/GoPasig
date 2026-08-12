@@ -114,11 +114,21 @@
         `;
     }
 
-    // 3A: trip logs table population
+    // 3A: trip load records table population
     function renderTripTable() {
         const tbody = document.getElementById('trip-pax-tbody');
         if (!tbody) return;
         tbody.innerHTML = '';
+
+        if (!tripData || tripData.length === 0) {
+            const emptyTr = document.createElement('tr');
+            emptyTr.className = "text-center text-slate-400";
+            emptyTr.innerHTML = `
+                <td class="px-4 py-8 font-bold" colspan="10">No trip load records for the selected period.</td>
+            `;
+            tbody.appendChild(emptyTr);
+            return;
+        }
 
         tripData.forEach(trip => {
             const tr = document.createElement('tr');
@@ -127,34 +137,19 @@
 
             tr.innerHTML = `
                 <td class="px-4 py-2.5 font-bold">${trip.tripNo}</td>
-                <td class="px-4 py-2.5 font-mono text-slate-600">${trip.plate}</td>
                 <td class="px-4 py-2.5 font-bold text-slate-800">${trip.driver}</td>
+                <td class="px-4 py-2.5 font-mono text-slate-600">${trip.plate}</td>
                 <td class="px-4 py-2.5">${getRouteBadgeHtml(trip.route)}</td>
-                <td class="px-4 py-2.5 text-slate-500">${trip.depTime}</td>
-                <td class="px-4 py-2.5 text-slate-500">${trip.arrTime}</td>
-                <td class="px-4 py-2.5 font-bold text-slate-800">${trip.boarded}</td>
-                <td class="px-4 py-2.5 text-slate-500">${trip.alighted}</td>
+                <td class="px-4 py-2.5">${getStatusChipHtml(trip.status)}</td>
+                <td class="px-4 py-2.5 text-slate-500">${trip.startedAt}</td>
+                <td class="px-4 py-2.5 text-slate-500">${trip.endedAt}</td>
+                <td class="px-4 py-2.5 font-bold text-slate-700">${trip.recordedBoarded ?? 0}</td>
+                <td class="px-4 py-2.5 font-bold text-slate-700">${trip.recordedAlighted ?? 0}</td>
                 <td class="px-4 py-2.5 font-bold text-slate-700">${trip.peakLoad}</td>
-                <td class="px-4 py-2.5">${getCapacityCellHtml(trip.capacity)}</td>
             `;
             tbody.appendChild(tr);
         });
 
-        // Totals averages table footer row
-        const totalPaxBoarded = tripData.reduce((sum, t) => sum + parseInt(t.boarded || 0), 0);
-        const avgPaxTrip = tripData.length > 0 ? (totalPaxBoarded / tripData.length).toFixed(1) : 0;
-        const avgCapacityPct = tripData.length > 0 ? Math.round(tripData.reduce((sum, t) => sum + parseFloat(t.capacity || 0), 0) / tripData.length) : 0;
-
-        const footerTr = document.createElement('tr');
-        footerTr.className = "font-bold bg-slate-50 border-t border-slate-200 footer-row text-slate-900";
-        footerTr.innerHTML = `
-            <td class="px-4 py-3 text-slate-800" colspan="6">Totals & Averages</td>
-            <td class="px-4 py-3 font-extrabold text-[#003F87]">${totalPaxBoarded.toLocaleString()} pax</td>
-            <td class="px-4 py-3 text-slate-400">—</td>
-            <td class="px-4 py-3 font-extrabold">${avgPaxTrip} avg</td>
-            <td class="px-4 py-3 font-extrabold text-[#185FA5]">${avgCapacityPct}% avg</td>
-        `;
-        tbody.appendChild(footerTr);
     }
 
     // Helper: bus summary widget builder (3B)
@@ -177,15 +172,15 @@
                 
                 <div class="space-y-1.5 mt-2 flex-1 text-[11px] font-semibold text-slate-500">
                     <div class="flex justify-between">
-                        <span>Total trips:</span>
+                        <span>Trips run:</span>
                         <span class="text-slate-800 font-bold">${bus.trips}</span>
                     </div>
                     <div class="flex justify-between items-baseline">
-                        <span>Total pax today:</span>
+                        <span>Passengers handled:</span>
                         <span class="text-[#003F87] text-lg font-black leading-none">${bus.totalPax}</span>
                     </div>
                     <div class="flex justify-between">
-                        <span>Avg pax/trip:</span>
+                        <span>Avg peak load / trip:</span>
                         <span class="text-slate-800 font-bold">${bus.avgPax}</span>
                     </div>
                     <div class="flex justify-between">
@@ -262,7 +257,18 @@
         const tbody = document.getElementById('forecast-schedule-tbody');
         if (!tbody) return;
         tbody.innerHTML = '';
-        
+
+        if (!forecastData || forecastData.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="px-3 py-5 text-center text-slate-400 font-bold">
+                        Forecast recommendations deferred until reliable demand and TripLog foundation data are available.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
         forecastData.forEach(row => {
             tbody.innerHTML += getPredictionRowHtml(row);
         });
@@ -275,7 +281,7 @@
         tbody.innerHTML = '';
 
         if (!driverPerformanceData || driverPerformanceData.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="9" class="px-5 py-4 text-center text-slate-400">No driver records today</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="12" class="px-5 py-4 text-center text-slate-400">No driver operation records for the selected period</td></tr>`;
             return;
         }
 
@@ -297,9 +303,27 @@
             }
 
             const capacity = driver.capacity || 45;
-            let peakLoadHtml = `<span class="text-slate-500">${driver.peakLoad}</span>`;
-            if (driver.peakLoad >= capacity) {
-                peakLoadHtml = `<span class="text-rose-600 font-extrabold">${driver.peakLoad} <span class="text-[9px] font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full uppercase ml-1">Full</span></span>`;
+            const peakLoad = parseInt(driver.peakLoad || 0);
+            const tripsRun = parseInt(driver.tripsRun ?? driver.trips ?? 0);
+            const completedTrips = parseInt(driver.completedTrips || 0);
+            const ongoingTrips = parseInt(driver.ongoingTrips || 0);
+            const dispatchedTrips = parseInt(driver.dispatchedTrips || 0);
+            const cancelledTrips = parseInt(driver.cancelledTrips || 0);
+            const operationalScore = driver.operationalScore === null || driver.operationalScore === undefined
+                ? null
+                : Math.max(0, Math.min(100, parseInt(driver.operationalScore, 10)));
+            let operationalScoreHtml = `<span class="text-slate-400">No data</span>`;
+            if (operationalScore !== null && !Number.isNaN(operationalScore)) {
+                const scoreClass = operationalScore >= 90
+                    ? 'text-[#639922]'
+                    : operationalScore >= 70
+                        ? 'text-[#B45309]'
+                        : 'text-[#E24B4A]';
+                operationalScoreHtml = `<span class="${scoreClass} font-extrabold" title="Accident/Breakdown incident score; cancellations excluded">${operationalScore}</span>`;
+            }
+            let peakLoadHtml = `<span class="text-slate-500">${peakLoad}</span>`;
+            if (peakLoad >= capacity) {
+                peakLoadHtml = `<span class="text-rose-600 font-extrabold">${peakLoad} <span class="text-[9px] font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full uppercase ml-1">Full</span></span>`;
             }
 
             const tr = document.createElement('tr');
@@ -309,10 +333,13 @@
                 <td class="px-5 py-3.5 font-bold">${driver.name}</td>
                 <td class="px-5 py-3.5 font-mono text-slate-600">${driver.bus}</td>
                 <td class="px-5 py-3.5 font-bold text-[#003F87]">${driver.route}</td>
-                <td class="px-5 py-3.5">${driver.trips} trips</td>
-                <td class="px-5 py-3.5 font-extrabold text-[#003F87]">${driver.pax} pax</td>
-                <td class="px-5 py-3.5">${driver.avgPax}</td>
+                <td class="px-5 py-3.5 font-extrabold text-[#003F87]">${tripsRun}</td>
+                <td class="px-5 py-3.5">${completedTrips}</td>
+                <td class="px-5 py-3.5">${ongoingTrips}</td>
+                <td class="px-5 py-3.5">${dispatchedTrips}</td>
+                <td class="px-5 py-3.5">${cancelledTrips}</td>
                 <td class="px-5 py-3.5">${peakLoadHtml}</td>
+                <td class="px-5 py-3.5">${operationalScoreHtml}</td>
                 <td class="px-5 py-3.5 text-right">${incidentHtml}</td>
             `;
             tbody.appendChild(tr);
@@ -326,42 +353,65 @@
         tbody.innerHTML = '';
 
         if (!routeComparisonData || routeComparisonData.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-400">No route comparison data</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-slate-400">No route comparison data</td></tr>`;
             return;
         }
 
-        let totalTrips = 0;
-        let totalPax = 0;
-        let totalAvg = 0;
+        let totalTripsRun = 0;
+        let totalCompleted = 0;
+        let totalOngoing = 0;
+        let totalDispatched = 0;
+        let totalCancelled = 0;
 
         routeComparisonData.forEach(r => {
-            totalTrips += parseInt(r.trips || 0);
-            totalPax += parseInt(r.pax || 0);
+            const tripsRun = parseInt(r.tripsRun ?? r.trips ?? 0);
+            const completedTrips = parseInt(r.completedTrips || 0);
+            const ongoingTrips = parseInt(r.ongoingTrips || 0);
+            const dispatchedTrips = parseInt(r.dispatchedTrips || 0);
+            const cancelledTrips = parseInt(r.cancelledTrips || 0);
+            const completionRateValue = Number(r.completionRate);
+            const completionRate = r.completionRate !== null
+                && r.completionRate !== undefined
+                && r.completionRate !== 'No data'
+                && Number.isFinite(completionRateValue)
+                ? `${completionRateValue}%`
+                : 'No data';
+
+            totalTripsRun += tripsRun;
+            totalCompleted += completedTrips;
+            totalOngoing += ongoingTrips;
+            totalDispatched += dispatchedTrips;
+            totalCancelled += cancelledTrips;
             
             const tr = document.createElement('tr');
             tr.className = "hover:bg-slate-50/50 transition border-b border-slate-100";
             tr.innerHTML = `
                 <td class="py-3 font-bold text-[#003F87]">${r.route}</td>
-                <td class="py-3">${r.trips} trips</td>
-                <td class="py-3">${r.pax.toLocaleString()} pax</td>
-                <td class="py-3">${r.avgPax}</td>
-                <td class="py-3"><span class="inline-flex rounded-full bg-[#E6F1FB] px-2 py-0.5 text-[9px] font-bold text-[#003F87]">${r.peakHour}</span></td>
-                <td class="py-3 text-right">${r.busiestStop}</td>
+                <td class="py-3">${tripsRun}</td>
+                <td class="py-3">${completedTrips}</td>
+                <td class="py-3">${ongoingTrips}</td>
+                <td class="py-3">${dispatchedTrips}</td>
+                <td class="py-3">${cancelledTrips}</td>
+                <td class="py-3 text-right"><span class="inline-flex rounded-full bg-[#E6F1FB] px-2 py-0.5 text-[9px] font-bold text-[#003F87]">${completionRate}</span></td>
             `;
             tbody.appendChild(tr);
         });
 
         // Add footer row
-        totalAvg = totalTrips > 0 ? (totalPax / totalTrips).toFixed(1) : 0;
+        const totalCompletionDenominator = totalCompleted + totalCancelled;
+        const totalCompletionRate = totalCompletionDenominator > 0
+            ? `${Math.round((totalCompleted / totalCompletionDenominator) * 100)}%`
+            : 'No data';
         const footerTr = document.createElement('tr');
         footerTr.className = "font-bold bg-slate-50 border-t border-slate-200 footer-row text-slate-900";
         footerTr.innerHTML = `
             <td class="py-3 pl-2">Totals</td>
-            <td class="py-3">${totalTrips} trips</td>
-            <td class="py-3">${totalPax.toLocaleString()} pax</td>
-            <td class="py-3">${totalAvg} avg</td>
-            <td class="py-3">—</td>
-            <td class="py-3 text-right pr-2">—</td>
+            <td class="py-3">${totalTripsRun}</td>
+            <td class="py-3">${totalCompleted}</td>
+            <td class="py-3">${totalOngoing}</td>
+            <td class="py-3">${totalDispatched}</td>
+            <td class="py-3">${totalCancelled}</td>
+            <td class="py-3 text-right pr-2">${totalCompletionRate}</td>
         `;
         tbody.appendChild(footerTr);
     }
@@ -373,7 +423,7 @@
         tbody.innerHTML = '';
 
         if (!stopBoardingData || stopBoardingData.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" class="py-4 text-center text-slate-400">No stop flow data</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" class="py-4 text-center text-slate-400">No stop demand data available</td></tr>`;
             return;
         }
 
@@ -382,19 +432,15 @@
             const netColor = netVal >= 0 ? 'text-[#639922]' : 'text-[#E24B4A]';
             const netSign = netVal >= 0 ? '+' : '';
 
-            let routesServed = 'A';
-            if (stop.name.includes('Hall') || stop.name.includes('Terminal')) routesServed = 'A, B';
-            else if (stop.name.includes('Ortigas') || stop.name.includes('Rosario')) routesServed = 'B, C';
-            else if (stop.name.includes('Shaw')) routesServed = 'C';
-            else routesServed = 'A';
+            const routesServed = stop.routes || 'No data';
 
             const tr = document.createElement('tr');
             tr.className = "hover:bg-slate-50/50 transition border-b border-slate-100";
             tr.innerHTML = `
                 <td class="py-2.5 font-bold">${stop.name}</td>
                 <td class="py-2.5 text-[#003F87] font-bold">${routesServed}</td>
-                <td class="py-2.5">${stop.boarding} / day</td>
-                <td class="py-2.5">${stop.alighting} / day</td>
+                <td class="py-2.5">${stop.boarding} requests</td>
+                <td class="py-2.5">${stop.alighting} requests</td>
                 <td class="py-2.5 text-right ${netColor} font-bold">${netSign}${netVal}</td>
             `;
             tbody.appendChild(tr);
@@ -415,25 +461,22 @@
             if (el) el.innerHTML = html;
         };
 
-        setElementText('kpi-pax-today', kpisData.total_pax_today || '0');
-        setElementHtml('kpi-pax-today-trend', `<i class="ti ti-trending-up"></i> ${kpisData.pax_change_yesterday || '+8% vs yesterday'}`);
+        setElementText('kpi-pax-today', kpisData.total_pax_today ?? 0);
+        setElementHtml('kpi-pax-today-trend', `<i class="ti ti-users"></i> ${kpisData.pax_change_yesterday || 'Recorded boarded events in selected period'}`);
 
-        setElementText('kpi-pax-week', kpisData.pax_this_week || '0');
-        setElementHtml('kpi-pax-week-trend', `<i class="ti ti-trending-up"></i> ${kpisData.pax_change_last_week || '+3% vs last week'}`);
+        setElementText('kpi-pax-week', kpisData.pax_this_week ?? 0);
+        setElementHtml('kpi-pax-week-trend', `<i class="ti ti-calendar"></i> ${kpisData.pax_change_last_week || 'Recorded boarded events in selected period'}`);
 
-        setElementText('kpi-avg-pax', kpisData.avg_pax_trip || '0.0');
-        setElementHtml('kpi-avg-pax-trend', `<i class="ti ti-trending-down"></i> ${kpisData.avg_pax_trip_change || '-2% vs yesterday'}`);
+        setElementText('kpi-avg-pax', kpisData.avg_pax_trip ?? 0);
+        setElementHtml('kpi-avg-pax-trend', `<i class="ti ti-chart-bar"></i> ${kpisData.avg_pax_trip_change || 'Average peak load per actual trip in selected period'}`);
 
         setElementText('kpi-trips-completed', kpisData.trips_completed || '0');
-        
-        const completionPct = kpisData.trips_scheduled > 0 
-            ? Math.round((kpisData.trips_completed / kpisData.trips_scheduled) * 100) 
-            : 100;
-        setElementText('kpi-trips-completed-percent', `${completionPct}% Completion`);
-        setElementText('kpi-trips-completed-sub', `of ${kpisData.trips_scheduled || 0} scheduled`);
+
+        setElementText('kpi-trips-completed-percent', 'Actual operations');
+        setElementText('kpi-trips-completed-sub', 'completed trips in selected period');
 
         setElementText('kpi-fleet-util', `${kpisData.fleet_util || 0}%`);
-        setElementText('kpi-fleet-util-sub', `${kpisData.active_buses || 0} of ${kpisData.total_buses || 0} buses active`);
+        setElementText('kpi-fleet-util-sub', `${kpisData.buses_in_service ?? kpisData.active_buses ?? 0} of ${kpisData.total_buses || 0} buses operated in selected period`);
 
         // Update visual circle stroke dasharray if possible
         const circleSvg = document.querySelector('#screen-analytics svg circle[stroke="#003F87"]');
@@ -442,21 +485,25 @@
             circleSvg.setAttribute('stroke-dasharray', `${dashValue} 88`);
         }
 
-        setElementText('kpi-on-time-rate', `${kpisData.on_time_rate || 100}%`);
-        setElementText('kpi-on-time-sub', `${kpisData.delayed_trips || 0} delayed trips today`);
+        setElementText('kpi-on-time-rate', kpisData.on_time_rate || 'Deferred');
+        setElementText('kpi-on-time-sub', 'not schedule-status backed');
 
-        setElementText('doughnut-total-pax', kpisData.total_pax_today || '0');
+        const totalTripsRun = routeComparisonData
+            ? routeComparisonData.reduce((sum, r) => sum + parseInt(r.tripsRun ?? r.trips ?? 0), 0)
+            : 0;
+        setElementText('doughnut-total-trips', totalTripsRun);
 
-        // Dynamic rendering of Hourly ridership legend
+        // Dynamic rendering of trips-started legend
         const legendContainer = document.getElementById('hourly-chart-legend');
         if (legendContainer && routeComparisonData) {
             legendContainer.innerHTML = '';
             routeComparisonData.forEach((r, idx) => {
                 const color = r.color || ['#003F87', '#639922', '#BA7517', '#E24B4A'][idx % 4];
+                const tripsRun = parseInt(r.tripsRun ?? r.trips ?? 0);
                 legendContainer.innerHTML += `
                     <span class="flex items-center gap-1">
                         <span class="h-2.5 w-2.5 rounded" style="background-color: ${color};"></span>
-                        ${r.route} — ${r.pax.toLocaleString()} pax
+                        ${r.route} - ${tripsRun} trips run
                     </span>
                 `;
             });
@@ -466,23 +513,18 @@
         const doughnutLegend = document.getElementById('route-doughnut-legend');
         if (doughnutLegend && routeComparisonData) {
             doughnutLegend.innerHTML = '';
-            const totalPax = routeComparisonData.reduce((sum, r) => sum + r.pax, 0);
             routeComparisonData.forEach((r, idx) => {
                 const color = r.color || ['#003F87', '#639922', '#BA7517', '#E24B4A'][idx % 4];
-                const percentage = totalPax > 0 ? Math.round((r.pax / totalPax) * 100) : 0;
-                const isDown = idx === 2;
-                const trendPct = idx === 0 ? '+4%' : (idx === 1 ? '+2%' : '-1%');
-                const trendColor = isDown ? 'text-[#E24B4A]' : 'text-[#639922]';
-                const trendIcon = isDown ? 'ti-trending-down' : 'ti-trending-up';
-
+                const tripsRun = parseInt(r.tripsRun ?? r.trips ?? 0);
+                const percentage = totalTripsRun > 0 ? Math.round((tripsRun / totalTripsRun) * 100) : 0;
                 doughnutLegend.innerHTML += `
                     <div class="text-center">
                         <span class="flex items-center gap-1.5 justify-center">
                             <span class="h-2 w-2 rounded-full" style="background-color: ${color};"></span>
                             ${r.route}
                         </span>
-                        <p class="text-slate-800 font-extrabold mt-0.5">${r.pax.toLocaleString()} pax (${percentage}%)</p>
-                        <span class="${trendColor}"><i class="ti ${trendIcon}"></i> ${trendPct}</span>
+                        <p class="text-slate-800 font-extrabold mt-0.5">${tripsRun} trips (${percentage}%)</p>
+                        <span class="text-slate-400">No comparison data</span>
                     </div>
                 `;
             });
@@ -518,7 +560,6 @@
                 insightsContainer.innerHTML = `
                     <span class="bg-[#FDF2F2] text-[#E24B4A] border border-[#E24B4A]/10 px-2.5 py-0.5 rounded-full uppercase">Highest: ${maxDay} ${maxHour} · ${maxPax} pax</span>
                     <span class="bg-slate-50 border border-slate-200 px-2.5 py-0.5 rounded-full text-slate-500 uppercase">Lowest: ${minDay} ${minHour} · ${minPax} pax</span>
-                    <span class="bg-[#E6F1FB] text-[#003F87] border border-[#003F87]/10 px-2.5 py-0.5 rounded-full uppercase">Most consistent: Weekdays 7–9 AM</span>
                 `;
             }
         }
@@ -570,8 +611,5 @@
                     <button onclick="switchPredictionRoute('${r.route}')" data-pred-route-tab="${r.route}" class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded hover:bg-slate-200 transition uppercase cursor-pointer">${label}</button>
                 `;
             });
-        }
     }
-
-
-
+}

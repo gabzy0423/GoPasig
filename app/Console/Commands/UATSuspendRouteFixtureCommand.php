@@ -25,7 +25,7 @@ class UATSuspendRouteFixtureCommand extends Command
                 return Command::FAILURE;
             }
 
-            $this->info('Cleanup complete. Official Routes 1-3 remain untouched.');
+            $this->info('Cleanup complete. Official Routes 2-4 remain untouched.');
             foreach ($summary as $label => $count) {
                 $this->line("- {$label}: {$count}");
             }

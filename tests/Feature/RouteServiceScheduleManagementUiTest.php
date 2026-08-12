@@ -22,6 +22,16 @@ class RouteServiceScheduleManagementUiTest extends TestCase
             'route_id' => $route->id,
             'route_variant_id' => $outbound->id,
             'first_trip_time' => '05:30',
+            'last_trip_time' => '09:00',
+            'service_configuration' => 'continuous',
+            'service_days' => ['mon', 'tue', 'wed', 'thu', 'fri'],
+            'is_active' => true,
+            'source' => 'beneficiary_official',
+        ]);
+        RouteServiceSchedule::create([
+            'route_id' => $route->id,
+            'route_variant_id' => $outbound->id,
+            'first_trip_time' => '15:00',
             'last_trip_time' => '17:00',
             'service_configuration' => 'continuous',
             'service_days' => ['mon', 'tue', 'wed', 'thu', 'fri'],
@@ -43,11 +53,16 @@ class RouteServiceScheduleManagementUiTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('routes.0.name', 'Route 1 - SPED Ligaya')
+            ->assertJsonPath('routes.0.name', 'Route 2')
             ->assertJsonPath('routes.0.variants.0.serviceSchedule.firstTripTime', '6:00 AM')
             ->assertJsonPath('routes.0.variants.0.serviceSchedule.lastTripTime', '6:00 PM')
             ->assertJsonPath('routes.0.variants.1.serviceSchedule.firstTripTime', '5:30 AM')
             ->assertJsonPath('routes.0.variants.1.serviceSchedule.lastTripTime', '5:00 PM')
+            ->assertJsonPath('routes.0.variants.1.serviceSchedule.windowCount', 2)
+            ->assertJsonPath('routes.0.variants.1.serviceSchedules.0.firstTripTime', '5:30 AM')
+            ->assertJsonPath('routes.0.variants.1.serviceSchedules.0.lastTripTime', '9:00 AM')
+            ->assertJsonPath('routes.0.variants.1.serviceSchedules.1.firstTripTime', '3:00 PM')
+            ->assertJsonPath('routes.0.variants.1.serviceSchedules.1.lastTripTime', '5:00 PM')
             ->assertJsonPath('routes.0.variants.1.serviceSchedule.serviceDaysLabel', 'Monday - Friday');
     }
 
@@ -93,6 +108,7 @@ class RouteServiceScheduleManagementUiTest extends TestCase
         $this->assertStringContainsString('route_service_schedules', $section);
         $this->assertStringContainsString('First Trip', $section);
         $this->assertStringContainsString('Last Trip', $section);
+        $this->assertStringContainsString('Operating Windows', $section);
         $this->assertStringContainsString('Official operating hours not configured', $section);
         $this->assertStringContainsString('Inactive', $section);
         $this->assertStringNotContainsString('Create schedule', $section);
@@ -139,7 +155,7 @@ class RouteServiceScheduleManagementUiTest extends TestCase
 
     private function routeWithDirections(): array
     {
-        $route = Route::factory()->create(['name' => 'Route 1 - SPED Ligaya']);
+        $route = Route::factory()->create(['name' => 'Route 2']);
         $outbound = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
         $inbound = $this->variantFor($route, 'inbound', 'Ligaya', 'SPED');
 
@@ -148,7 +164,7 @@ class RouteServiceScheduleManagementUiTest extends TestCase
 
     private function routeWithSingleDirection(): array
     {
-        $route = Route::factory()->create(['name' => 'Route 1 - SPED Ligaya']);
+        $route = Route::factory()->create(['name' => 'Route 2']);
         $outbound = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
 
         return [$route, $outbound];

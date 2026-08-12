@@ -7,6 +7,7 @@ use App\Models\Driver;
 use App\Models\Route;
 use App\Models\ServiceAlert;
 use App\Models\Trip;
+use App\Services\RouteVariantSelectionService;
 use Carbon\Carbon;
 
 class CentralDispatchEligibilityService
@@ -18,6 +19,13 @@ class CentralDispatchEligibilityService
      */
     public static function route(Route $route): array
     {
+        if (! $route->isCanonicalProduction()) {
+            return [
+                'eligible' => false,
+                'reason' => 'Only official production routes are available for new operations.',
+            ];
+        }
+
         if ($route->status === 'Suspended') {
             $alert = ServiceAlert::activeAlerts()
                 ->where('suspend_route', true)

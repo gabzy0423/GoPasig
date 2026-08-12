@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Bus;
 use App\Models\Route;
 use App\Models\ServiceAlert;
+use App\Models\Trip;
 use App\Services\CommuterDashboardCacheService;
 use App\Services\RouteStatusService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,9 +27,9 @@ class CommuterPublicRouteHealthCentralizationTest extends TestCase
 
         Cache::flush();
 
-        $this->route1 = $this->makeRoute('Route 1');
-        $this->route2 = $this->makeRoute('Route 2');
-        $this->route3 = $this->makeRoute('Route 3');
+        $this->route1 = $this->makeRoute('Route 2');
+        $this->route2 = $this->makeRoute('Route 3');
+        $this->route3 = $this->makeRoute('Route 4');
         $this->legacyRoute = $this->makeRoute('Route A');
     }
 
@@ -42,7 +43,7 @@ class CommuterPublicRouteHealthCentralizationTest extends TestCase
 
         $data = app(CommuterDashboardCacheService::class)->dashboardData();
 
-        $this->assertSame(['Route 1', 'Route 2', 'Route 3'], $data['activeRoutes']->pluck('route_name')->all());
+        $this->assertSame(['Route 2', 'Route 3', 'Route 4'], $data['activeRoutes']->pluck('route_name')->all());
         $this->assertSame(['Disrupted', 'Disrupted', 'Disrupted'], $data['activeRoutes']->pluck('health_status')->all());
         $this->assertFalse(method_exists(CommuterDashboardCacheService::class, 'routeHealth'));
     }
@@ -55,12 +56,12 @@ class CommuterPublicRouteHealthCentralizationTest extends TestCase
 
         ServiceAlert::create([
             'route_id' => $this->route1->id,
-            'title' => 'Route 1 delay',
+            'title' => 'Route 2 delay',
             'message' => 'Expect minor delay.',
             'severity' => 'warning',
             'status' => 'active',
             'type' => 'delay',
-            'affected_routes' => 'Route 1',
+            'affected_routes' => 'Route 2',
         ]);
 
         $this->assertSame('Minor Delay', $service->getCommuterRouteHealth($this->route1, collect()));
@@ -68,12 +69,12 @@ class CommuterPublicRouteHealthCentralizationTest extends TestCase
         ServiceAlert::query()->delete();
         ServiceAlert::create([
             'route_id' => $this->route1->id,
-            'title' => 'Route 1 suspension',
+            'title' => 'Route 2 suspension',
             'message' => 'Service suspended.',
             'severity' => 'critical',
             'status' => 'active',
             'type' => 'suspension',
-            'affected_routes' => 'Route 1',
+            'affected_routes' => 'Route 2',
         ]);
 
         $this->assertSame('Disrupted', $service->getCommuterRouteHealth($this->route1, collect()));
@@ -98,7 +99,7 @@ class CommuterPublicRouteHealthCentralizationTest extends TestCase
 
         $data = app(CommuterDashboardCacheService::class)->dashboardData();
 
-        $this->assertSame(['Route 1', 'Route 2', 'Route 3'], $data['activeRoutes']->pluck('route_name')->all());
+        $this->assertSame(['Route 2', 'Route 3', 'Route 4'], $data['activeRoutes']->pluck('route_name')->all());
         $this->assertTrue($data['nearestBuses']->pluck('plate')->contains($canonicalBus->plate_number));
         $this->assertFalse($data['nearestBuses']->pluck('plate')->contains($legacyBus->plate_number));
     }
@@ -117,7 +118,7 @@ class CommuterPublicRouteHealthCentralizationTest extends TestCase
 
     private function makeActiveBus(Route $route, int $eta, string $plate = 'P5A-CAN'): Bus
     {
-        return Bus::create([
+        $bus = Bus::create([
             'plate_number' => $plate.'-'.$route->id,
             'fleet_number' => 'FLEET-'.$plate.'-'.$route->id,
             'vin' => 'P5ATESTVIN'.str_pad((string) $route->id, 7, '0', STR_PAD_LEFT),
@@ -136,5 +137,14 @@ class CommuterPublicRouteHealthCentralizationTest extends TestCase
             'status' => Bus::STATUS_ACTIVE,
             'is_simulated' => false,
         ]);
+
+        Trip::factory()->create([
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'status' => 'ongoing',
+            'started_at' => now(),
+        ]);
+
+        return $bus;
     }
 }

@@ -2,7 +2,7 @@
          style="--color-background-primary:#ffffff;--color-background-secondary:#F8F7F4;--color-text-primary:#1A1917;--color-text-secondary:#5F5E5A;--color-border-tertiary:#E8E6DF;--color-border-secondary:#D6D3C9;">
 
     <!-- BREADCRUMB & HEADER -->
-    <div class="flex flex-col gap-1 border-b border-slate-200 pb-4 mb-4 shrink-0">
+    <div class="driver-profile-no-print flex flex-col gap-1 border-b border-slate-200 pb-4 mb-4 shrink-0">
         <div class="flex items-center gap-4">
             <button onclick="switchScreen('drivers'); return false;" 
                class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all duration-200 shadow-sm cursor-pointer hover:scale-105 active:scale-95 border-none" 
@@ -71,11 +71,11 @@
                         <span id="dp-show-route-strip" class="text-slate-800 font-bold mt-0.5">--</span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-slate-400 font-semibold text-[10px]">Shift Schedule</span>
+                        <span class="text-slate-400 font-semibold text-[10px]">Employment Status</span>
                         <span id="dp-show-shift-strip" class="text-slate-800 font-bold mt-0.5">--</span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-slate-400 font-semibold text-[10px]">Active Dispatch</span>
+                        <span class="text-slate-400 font-semibold text-[10px]">Active Trip</span>
                         <span id="dp-show-dispatch-strip" class="text-slate-800 font-bold mt-0.5">--</span>
                     </div>
                 </div>
@@ -85,9 +85,9 @@
 
     <!-- Component 2: 3 KPI Cards Row -->
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <!-- Card 1: Performance Score -->
+        <!-- Card 1: Actual operations score -->
         <div class="rounded-2xl border-l-4 border-l-[#639922] border border-slate-200 bg-white p-4 shadow-sm">
-            <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block select-none">Performance Score</span>
+            <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block select-none">Operational Score Today</span>
             <span id="dp-show-stat-score-kpi" class="text-2xl font-black text-slate-800 block mt-1">--</span>
         </div>
         <!-- Card 2: Trips Completed -->
@@ -122,24 +122,24 @@
                 
                 <!-- Dynamic Content Wrapper -->
                 <div id="dp-show-operational-content">
-                    <!-- Loaded dynamically via drivers.js depending on On Duty vs Standby vs Suspended states -->
+                    <!-- Loaded dynamically from current assignment and Trip state. -->
                 </div>
             </div>
 
-            <!-- Component 4: Performance Trend Panel -->
+            <!-- Component 4: Actual Operations Performance Panel -->
             <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div class="flex items-center justify-between border-b border-slate-100 pb-4 mb-4 select-none">
                     <h3 class="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-1.5">
-                        <i class="ti ti-chart-bar text-[#003F87]"></i> Performance Breakdown & Trend
+                        <i class="ti ti-chart-bar text-[#003F87]"></i> Today's Operational Performance
                     </h3>
                 </div>
                 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="grid grid-cols-1 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-6">
                     <!-- Left: Progress Bars -->
                     <div class="space-y-4">
                         <div>
                             <div class="flex justify-between text-xs mb-1 font-semibold text-slate-650">
-                                <span>Overall Performance Score</span>
+                                <span>Operational Score Today</span>
                                 <span id="dp-show-perf-label" class="font-extrabold text-[#003F87]">-- / 100</span>
                             </div>
                             <div class="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
@@ -147,45 +147,20 @@
                             </div>
                         </div>
 
-                        <div>
-                            <div class="flex justify-between text-xs mb-1 font-semibold text-slate-650">
-                                <span>Schedule Adherence & Completion</span>
-                                <span id="dp-show-perf-adherence" class="font-extrabold text-slate-700">99.1%</span>
-                            </div>
-                            <div class="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                                <div id="dp-show-adherence-bar" class="h-full bg-emerald-500 rounded-full transition-all duration-500" style="width:99%;"></div>
-                            </div>
-                        </div>
-
-                        <div>
-                            <div class="flex justify-between text-xs mb-1 font-semibold text-slate-650">
-                                <span>Commuter Feedback Rating</span>
-                                <span id="dp-show-feedback-label" class="font-extrabold text-slate-700">-- / 5.0</span>
-                            </div>
-                            <div class="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                                <div id="dp-show-feedback-bar" class="h-full bg-blue-500 rounded-full transition-all duration-500" style="width:94%;"></div>
-                            </div>
-                        </div>
                     </div>
 
-                    <!-- Right: Statistics grid including attendance Coming Soon equivalent -->
-                    <div class="grid grid-cols-2 gap-4 border-l border-slate-100 pl-6">
+                    <!-- Right: Actual Trip and passenger-event statistics -->
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 border-l border-slate-100 pl-6">
                         <div class="flex flex-col">
-                            <span class="text-slate-400 font-semibold text-[10px] uppercase">Attendance Score</span>
-                            <span class="text-slate-700 font-bold text-xs mt-1 inline-flex items-center gap-1.5 select-none">
-                                <span class="h-2 w-2 rounded-full bg-amber-500"></span> No data available
-                            </span>
-                        </div>
-                        <div class="flex flex-col">
-                            <span class="text-slate-400 font-semibold text-[10px] uppercase">Trip Logs Count</span>
+                            <span class="text-slate-400 font-semibold text-[10px] uppercase">Trips Run Today</span>
                             <span id="dp-show-stat-trips" class="text-slate-800 font-black text-sm mt-1">--</span>
                         </div>
                         <div class="flex flex-col">
-                            <span class="text-slate-400 font-semibold text-[10px] uppercase">Commuters Carried</span>
+                            <span class="text-slate-400 font-semibold text-[10px] uppercase">Recorded Boarded Today</span>
                             <span id="dp-show-stat-pax" class="text-[#003F87] font-black text-sm mt-1">--</span>
                         </div>
                         <div class="flex flex-col">
-                            <span class="text-slate-400 font-semibold text-[10px] uppercase">Commuter Average</span>
+                            <span class="text-slate-400 font-semibold text-[10px] uppercase">Boarded / Trip Today</span>
                             <span id="dp-show-stat-avg" class="text-slate-800 font-black text-sm mt-1">--</span>
                         </div>
                     </div>
@@ -213,10 +188,10 @@
                         <p class="text-[10px] text-slate-400 font-semibold mt-0.5 select-none" id="dp-show-trip-count">Showing 0 of 0 Trips</p>
                     </div>
                     
-                    <!-- Search toolbar placeholder -->
+                    <!-- Current-driver history output -->
                     <div class="flex items-center gap-2">
-                        <button onclick="exportDriversCSV(); return false;" class="flex items-center gap-1 text-[11px] font-bold text-slate-600 hover:text-slate-900 border border-slate-200 rounded px-2.5 py-1 bg-white cursor-pointer shadow-sm">
-                            <i class="ti ti-download"></i> Export History
+                        <button onclick="exportCurrentDriverHistoryCSV(); return false;" class="flex items-center gap-1 text-[11px] font-bold text-slate-600 hover:text-slate-900 border border-slate-200 rounded px-2.5 py-1 bg-white cursor-pointer shadow-sm">
+                            <i class="ti ti-download"></i> Export Recent History
                         </button>
                     </div>
                 </div>
@@ -228,8 +203,8 @@
                                 <th class="px-6 py-3.5 text-[10px] font-black uppercase tracking-wider text-slate-400">Date</th>
                                 <th class="px-6 py-3.5 text-[10px] font-black uppercase tracking-wider text-slate-400">Bus</th>
                                 <th class="px-6 py-3.5 text-[10px] font-black uppercase tracking-wider text-slate-400">Route</th>
-                                <th class="px-6 py-3.5 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Trips</th>
-                                <th class="px-6 py-3.5 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Pax Boarded</th>
+                                <th class="px-6 py-3.5 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Trip ID</th>
+                                <th class="px-6 py-3.5 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Recorded Boarded</th>
                                 <th class="px-6 py-3.5 text-[10px] font-black uppercase tracking-wider text-slate-400">Status</th>
                             </tr>
                         </thead>
@@ -274,9 +249,8 @@
                     <div class="space-y-2">
                         <span class="text-[9px] font-black tracking-widest text-[#003F87] uppercase block select-none">Information</span>
                         <div class="space-y-2" id="dp-show-alert-info-container">
-                            <div class="flex items-center gap-2 text-xs text-slate-700 font-semibold bg-emerald-50/50 border border-emerald-100 rounded-lg p-2.5">
-                                <i class="ti ti-circle-check text-emerald-500 text-sm"></i>
-                                <span>No active incidents log</span>
+                            <div id="dp-show-incident-summary" class="flex items-center gap-2 text-xs text-slate-700 font-semibold rounded-lg p-2.5">
+                                <!-- Populated from actual Incident records in the last 30 days. -->
                             </div>
                             <div class="flex items-center gap-2 text-xs text-slate-700 font-semibold bg-[#E6F1FB] border border-[#003F87]/10 rounded-lg p-2.5" id="dp-show-dispatch-eligibility">
                                 <i class="ti ti-circle-check text-[#003F87] text-sm"></i>
@@ -288,7 +262,7 @@
             </div>
 
             <!-- Component 7: Categorized Quick Actions Panel -->
-            <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="driver-profile-no-print rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 class="text-xs font-black uppercase tracking-wider text-slate-400 mb-4 select-none">Administrative Actions</h3>
                 
                 <div class="space-y-4">
@@ -314,11 +288,11 @@
                     <div>
                         <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-2 select-none">Reports & Outputs</span>
                         <div class="flex flex-col gap-2">
-                            <button onclick="window.print(); return false;" 
+                            <button onclick="printCurrentDriverProfile(); return false;"
                                class="flex w-full items-center justify-start gap-2.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition shadow-sm cursor-pointer select-none">
                                 <i class="ti ti-printer text-slate-450 text-sm"></i> Print Profile
                             </button>
-                            <button onclick="exportDriversCSV(); return false;" 
+                            <button onclick="exportCurrentDriverReportCSV(); return false;"
                                class="flex w-full items-center justify-start gap-2.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition shadow-sm cursor-pointer select-none">
                                 <i class="ti ti-download text-slate-450 text-sm"></i> Export Driver Report
                             </button>
@@ -338,18 +312,6 @@
                             <span class="font-semibold text-slate-700">Driver License Validity</span>
                             <span class="inline-flex items-center gap-1 font-bold" id="dp-show-compliance-license-check-value">
                                 <i class="ti ti-circle-check text-emerald-500 text-sm"></i> Valid
-                            </span>
-                        </div>
-                        <div class="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50">
-                            <span class="font-semibold text-slate-700">Commuter Safety Audit</span>
-                            <span class="inline-flex items-center gap-1 text-emerald-600 font-bold">
-                                <i class="ti ti-circle-check text-emerald-500 text-sm"></i> Cleared
-                            </span>
-                        </div>
-                        <div class="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50">
-                            <span class="font-semibold text-slate-700">Medical Evaluation</span>
-                            <span class="inline-flex items-center gap-1 text-emerald-600 font-bold">
-                                <i class="ti ti-circle-check text-emerald-500 text-sm"></i> Cleared
                             </span>
                         </div>
                         <div class="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50" id="dp-show-compliance-dispatch-check-wrapper">
@@ -392,14 +354,60 @@
                         <span class="text-slate-400 font-medium block">Emergency Contact Person</span>
                         <p id="dp-show-emergency" class="text-slate-800 font-semibold mt-1 leading-relaxed">--</p>
                     </div>
-                    <div class="h-px bg-slate-100"></div>
-                    <div>
-                        <span class="text-slate-400 font-medium block">Internal Remarks & Notes</span>
-                        <p class="text-slate-400 italic mt-1 leading-normal select-none">No custom coordinator remarks recorded for this driver profile registry.</p>
-                    </div>
                 </div>
             </div>
         </div>
     </div>
 
 </section>
+
+<style>
+@media print {
+    body.printing-driver-profile * {
+        visibility: hidden !important;
+    }
+
+    body.printing-driver-profile #screen-drivers-show,
+    body.printing-driver-profile #screen-drivers-show * {
+        visibility: visible !important;
+    }
+
+    body.printing-driver-profile #screen-drivers-show {
+        display: block !important;
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        color-adjust: exact;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+    }
+
+    body.printing-driver-profile #screen-drivers-show .driver-profile-no-print {
+        display: none !important;
+    }
+
+    body.printing-driver-profile #screen-drivers-show .rounded-2xl {
+        break-inside: avoid-page;
+    }
+
+    body.printing-driver-profile #screen-drivers-show table {
+        break-inside: auto;
+    }
+
+    body.printing-driver-profile #screen-drivers-show thead {
+        display: table-header-group;
+    }
+
+    body.printing-driver-profile #screen-drivers-show tr {
+        break-inside: avoid;
+    }
+
+    body.printing-driver-profile #screen-drivers-show .shadow-sm,
+    body.printing-driver-profile #screen-drivers-show .shadow-inner {
+        box-shadow: none !important;
+    }
+}
+</style>

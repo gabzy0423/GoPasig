@@ -137,7 +137,7 @@
                         </span>
                         <select id="df-status" name="status" required
                                 class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-10 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white focus:ring-1 focus:ring-[#003F87] appearance-none cursor-pointer">
-                            <option value="active">Active (On Duty / Standby)</option>
+                            <option value="active">Active employment</option>
                             <option value="inactive" selected>Inactive (Off duty)</option>
                             <option value="suspended">Suspended (disciplinary hold)</option>
                         </select>

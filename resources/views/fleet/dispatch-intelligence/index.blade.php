@@ -166,32 +166,38 @@
                     $borderClass = $r->status === 'red' ? 'border-[#E24B4A] border-t-[4px]' : ($r->status === 'yellow' ? 'border-[#BA7517] border-t-[4px]' : 'border-slate-200 border-t-[4px] border-t-[#003F87]');
                     $badgeClass = $r->status === 'red' ? 'bg-[#FCEBEB] text-[#A32D2D]' : ($r->status === 'yellow' ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-[#EAF3DE] text-[#3B6D11]');
                     $badgeText = $r->status === 'red' ? 'Dispatch Now' : ($r->status === 'yellow' ? 'Standby (High)' : 'Normal');
-                    $loadPercent = $r->threshold > 0 ? min(100, round(($r->total / $r->threshold) * 100)) : 0;
+                    $loadPercent = $r->threshold > 0 ? min(100, round(($r->max_direction_waiting_count / $r->threshold) * 100)) : 0;
                     $progressBarColor = $r->status === 'red' ? 'bg-[#E24B4A]' : ($r->status === 'yellow' ? 'bg-[#BA7517]' : 'bg-[#003F87]');
                 @endphp
                 <div class="bg-white border rounded-2xl p-4 shadow-sm flex flex-col justify-between space-y-4 transition hover:shadow-md {{ $borderClass }}">
                     <div class="space-y-1">
                         <div class="flex justify-between items-start">
-                            <h4 class="text-sm font-extrabold text-[#001F44]">Route {{ $r->id }}</h4>
+                            <h4 class="text-sm font-extrabold text-[#001F44]">{{ $r->name }}</h4>
                             <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider {{ $badgeClass }}">{{ $badgeText }}</span>
                         </div>
                         <p class="text-[11px] text-slate-400 font-semibold leading-tight line-clamp-2 h-[32px]">{{ $r->description }}</p>
                     </div>
 
-                    <!-- Statistics counts breakdown -->
-                    <div class="grid grid-cols-3 gap-1 bg-slate-50 border border-slate-100 p-2 rounded-xl text-center">
-                        <div>
-                            <span class="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">App</span>
-                            <span class="text-sm font-bold text-slate-800 font-mono">{{ $r->auto_count }}</span>
+                    <div class="bg-slate-50 border border-slate-100 p-2 rounded-xl">
+                        <div class="grid gap-2 text-center" style="grid-template-columns: repeat({{ max(1, count($r->variants)) }}, minmax(0, 1fr));">
+                            @forelse($r->variants as $variant)
+                                <div class="min-w-0">
+                                    <span class="text-[9px] text-slate-400 font-bold block uppercase tracking-wider truncate">{{ $variant['direction'] }}</span>
+                                    <span class="text-sm font-bold text-slate-800 font-mono">{{ $variant['waiting_count'] }}</span>
+                                </div>
+                            @empty
+                                <span class="text-[10px] text-slate-400 font-bold">No route directions configured</span>
+                            @endforelse
                         </div>
-                        <div>
-                            <span class="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Manual</span>
-                            <span class="text-sm font-bold text-slate-800 font-mono">{{ $r->manual_count }}</span>
+                        <div class="mt-2 pt-2 border-t border-slate-200 flex justify-between text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                            <span>Resolved total: {{ $r->total }}</span>
+                            <span>Simulator: {{ $r->manual_count }}</span>
                         </div>
-                        <div>
-                            <span class="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Total</span>
-                            <span class="text-sm font-bold text-slate-800 font-mono">{{ $r->total }}</span>
-                        </div>
+                        @if($r->unresolved_waiting_count > 0)
+                            <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-bold text-amber-800">
+                                {{ $r->unresolved_waiting_count }} legacy waiting {{ $r->unresolved_waiting_count === 1 ? 'journey is' : 'journeys are' }} unresolved and excluded.
+                            </div>
+                        @endif
                     </div>
 
                     <!-- Progress bar -->
@@ -213,11 +219,11 @@
                     @endif
 
                     @if(!empty($r->variants) && count($r->variants) > 0)
-                        <select id="dispatch-variant-{{ $r->id }}" class="w-full h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-[#003F87]">
+                        <select id="dispatch-variant-{{ $r->id }}" data-dispatch-variant-route="{{ $r->id }}" class="w-full h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-[#003F87]">
                             <option value="">{{ collect($r->variants)->where('usable_for_dispatch', true)->count() > 1 ? 'Choose direction...' : 'Use default direction' }}</option>
                             @foreach($r->variants as $variant)
                                 <option value="{{ $variant['id'] }}" @disabled(! $variant['usable_for_dispatch'])>
-                                    {{ $variant['label'] }}{{ $variant['usable_for_dispatch'] ? '' : ' (' . $variant['geometry_status'] . ')' }}
+                                    {{ $variant['label'] }} - {{ $variant['waiting_count'] }} waiting{{ $variant['usable_for_dispatch'] ? '' : ' (' . $variant['geometry_status'] . ')' }}
                                 </option>
                             @endforeach
                         </select>
@@ -248,10 +254,9 @@
                     <div class="space-y-1">
                         <label class="text-[10px] font-black uppercase tracking-wider text-slate-400 block font-semibold">Select Route</label>
                         <select id="selectedRouteId" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 outline-none cursor-pointer">
-                            <option value="1" {{ $selectedRouteId == 1 ? 'selected' : '' }}>Route 1 (SPED - City Hall)</option>
-                            <option value="2" {{ $selectedRouteId == 2 ? 'selected' : '' }}>Route 2 (SPED - Ligaya)</option>
-                            <option value="3" {{ $selectedRouteId == 3 ? 'selected' : '' }}>Route 3 (SPED - One San Miguel)</option>
-                            <option value="4" {{ $selectedRouteId == 4 ? 'selected' : '' }}>Route 4 (SPED - Nagpayong)</option>
+                            @foreach($routesData as $route)
+                                <option value="{{ $route->id }}" {{ (int) $selectedRouteId === (int) $route->id ? 'selected' : '' }}>{{ $route->name }} ({{ $route->description ?: 'Official route' }})</option>
+                            @endforeach
                         </select>
                     </div>
 
@@ -326,7 +331,7 @@
                             </div>
                             
                             <div class="text-[11px] text-slate-500 font-semibold space-y-0.5">
-                                <div>Bus: <strong class="text-slate-700 font-mono">{{ $log->trip->bus->plate_number ?? '—' }}</strong> · Driver: <strong class="text-slate-700">{{ $log->trip->driver ? ($log->trip->driver->first_name . ' ' . $log->trip->driver->last_name) : '—' }}</strong></div>
+                                <div>Bus: <strong class="text-slate-700 font-mono">{{ $log->trip->bus->plate_number ?? 'â€”' }}</strong> Â· Driver: <strong class="text-slate-700">{{ $log->trip->driver ? ($log->trip->driver->first_name . ' ' . $log->trip->driver->last_name) : 'â€”' }}</strong></div>
                                 <div class="italic text-[10px] opacity-90 mt-0.5">{{ $log->notes }}</div>
                             </div>
                         </div>

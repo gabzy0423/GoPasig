@@ -20,6 +20,7 @@ class SecurityAuthTest extends TestCase
     protected $nonAdminUser;
     protected $testBus;
     protected $testRoute;
+    protected $testRouteVariant;
     protected $testDriver;
 
     protected function setUp(): void
@@ -31,7 +32,8 @@ class SecurityAuthTest extends TestCase
         $this->nonAdminUser = User::factory()->create(['role' => 'driver']);
 
         // Create test data with correct status
-        $this->testRoute = Route::factory()->create(['status' => 'active']);
+        $this->testRoute = Route::factory()->official()->withUsableVariant()->create();
+        $this->testRouteVariant = $this->testRoute->variants()->sole();
         $this->testBus = Bus::factory()->create(['status' => 'active']);
         $this->testDriver = Driver::factory()->create(['status' => 'active', 'license_expiry' => now()->addYear()]);
     }
@@ -184,6 +186,7 @@ class SecurityAuthTest extends TestCase
     {
         $response = $this->actingAs($this->nonAdminUser)->postJson('/admin/api/schedules', [
             'route_id' => $this->testRoute->id,
+            'route_variant_id' => $this->testRouteVariant->id,
             'bus_plate' => $this->testBus->plate_number,
             'driver_id' => $this->testDriver->id,
             'departure_time' => '08:00',
@@ -201,6 +204,7 @@ class SecurityAuthTest extends TestCase
     {
         $response = $this->actingAs($this->adminUser)->postJson('/admin/api/schedules', [
             'route_id' => $this->testRoute->id,
+            'route_variant_id' => $this->testRouteVariant->id,
             'bus_plate' => $this->testBus->plate_number,
             'driver_id' => $this->testDriver->id,
             'departure_time' => '08:00',
@@ -217,6 +221,7 @@ class SecurityAuthTest extends TestCase
 
         $response = $this->actingAs($this->nonAdminUser)->putJson("/admin/api/schedules/{$schedule->id}", [
             'route_id' => $this->testRoute->id,
+            'route_variant_id' => $this->testRouteVariant->id,
             'bus_plate' => $this->testBus->plate_number,
             'driver_id' => $this->testDriver->id,
             'departure_time' => '09:00',
@@ -343,8 +348,10 @@ class SecurityAuthTest extends TestCase
     /** @test */
     public function test_admin_can_create_stop()
     {
+        $mutableRoute = Route::factory()->create(['name' => 'Route Stop Admin Test']);
+
         $response = $this->actingAs($this->adminUser)->postJson('/admin/api/stops', [
-            'route_id' => $this->testRoute->id,
+            'route_id' => $mutableRoute->id,
             'name' => 'Stop Security Test',
         ]);
 
@@ -355,10 +362,11 @@ class SecurityAuthTest extends TestCase
     /** @test */
     public function test_non_admin_cannot_reorder_stops()
     {
-        $stop1 = Stop::create(['route_id' => $this->testRoute->id, 'name' => 'Stop 1', 'lat' => 14.5593, 'lng' => 121.0805, 'sequence' => 1]);
-        $stop2 = Stop::create(['route_id' => $this->testRoute->id, 'name' => 'Stop 2', 'lat' => 14.5620, 'lng' => 121.0820, 'sequence' => 2]);
+        $mutableRoute = Route::factory()->create(['name' => 'Route Stop Reorder Test']);
+        $stop1 = Stop::create(['route_id' => $mutableRoute->id, 'name' => 'Stop 1', 'lat' => 14.5593, 'lng' => 121.0805, 'sequence' => 1]);
+        $stop2 = Stop::create(['route_id' => $mutableRoute->id, 'name' => 'Stop 2', 'lat' => 14.5620, 'lng' => 121.0820, 'sequence' => 2]);
 
-        $response = $this->actingAs($this->nonAdminUser)->putJson("/admin/api/routes/{$this->testRoute->id}/stops/reorder", [
+        $response = $this->actingAs($this->nonAdminUser)->putJson("/admin/api/routes/{$mutableRoute->id}/stops/reorder", [
             'stop_ids' => [$stop2->id, $stop1->id],
         ]);
 
@@ -372,7 +380,8 @@ class SecurityAuthTest extends TestCase
     /** @test */
     public function test_non_admin_cannot_delete_stop()
     {
-        $stop = Stop::create(['route_id' => $this->testRoute->id, 'name' => 'Stop Test', 'lat' => 14.5593, 'lng' => 121.0805, 'sequence' => 1]);
+        $mutableRoute = Route::factory()->create(['name' => 'Route Stop Delete Test']);
+        $stop = Stop::create(['route_id' => $mutableRoute->id, 'name' => 'Stop Test', 'lat' => 14.5593, 'lng' => 121.0805, 'sequence' => 1]);
 
         $response = $this->actingAs($this->nonAdminUser)->deleteJson("/admin/api/stops/{$stop->id}");
 
@@ -410,7 +419,7 @@ class SecurityAuthTest extends TestCase
     public function test_admin_can_create_alert()
     {
         $officialRoute = Route::create([
-            'name' => 'Route 1',
+            'name' => 'Route 2',
             'description' => 'Official public route',
             'color' => '#003F87',
             'status' => 'Active',
@@ -486,7 +495,7 @@ class SecurityAuthTest extends TestCase
         $response->assertStatus(403);
         $response->assertJson([
             'success' => false,
-            'message' => 'Unauthorized: Only admins can delete alerts',
+            'message' => 'Unauthorized: Only admins can archive alerts',
         ]);
     }
 

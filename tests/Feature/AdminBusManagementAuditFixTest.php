@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Route;
 use App\Models\Driver;
 use App\Models\Trip;
+use App\Models\TripLog;
 use App\Models\Schedule;
 use App\Models\SystemSetting;
 use App\Services\BusStateService;
@@ -116,7 +117,7 @@ class AdminBusManagementAuditFixTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::factory()->create();
+        $route = Route::factory()->create(['name' => 'Route 2', 'status' => 'Active']);
         $driver = Driver::factory()->create();
         $bus = Bus::factory()->create(['status' => 'active']);
 
@@ -138,7 +139,7 @@ class AdminBusManagementAuditFixTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::factory()->create();
+        $route = Route::factory()->create(['name' => 'Route 2', 'status' => 'Active']);
         $driver = Driver::factory()->create();
         $bus = Bus::factory()->create(['status' => 'active']);
 
@@ -163,7 +164,7 @@ class AdminBusManagementAuditFixTest extends TestCase
         // 1. Inactive -> Active is prohibited manually (should return 422)
         $bus = Bus::factory()->create(['status' => Bus::STATUS_INACTIVE]);
         $driver = Driver::factory()->create(['status' => 'inactive']);
-        $route = Route::factory()->create();
+        $route = Route::factory()->create(['name' => 'Route 2', 'status' => 'Active']);
 
         $response = $this->putJson(route('admin.api.buses.update', $bus), [
             'fleet_number'          => $bus->fleet_number,
@@ -257,7 +258,7 @@ class AdminBusManagementAuditFixTest extends TestCase
         // Breakdown -> Active (Invalid transition, should fail)
         $bus = Bus::factory()->create(['status' => Bus::STATUS_BREAKDOWN]);
         $driver = Driver::factory()->create();
-        $route = Route::factory()->create();
+        $route = Route::factory()->create(['name' => 'Route 2', 'status' => 'Active']);
 
         $response = $this->putJson(route('admin.api.buses.update', $bus), [
             'fleet_number'          => $bus->fleet_number,
@@ -297,8 +298,8 @@ class AdminBusManagementAuditFixTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route1 = Route::factory()->create();
-        $route2 = Route::factory()->create();
+        $route1 = Route::factory()->create(['name' => 'Route 2', 'status' => 'Active']);
+        $route2 = Route::factory()->create(['name' => 'Route 3', 'status' => 'Active']);
         $driver1 = Driver::factory()->create(['status' => 'inactive']);
         $driver2 = Driver::factory()->create(['status' => 'inactive']);
 
@@ -344,7 +345,7 @@ class AdminBusManagementAuditFixTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::factory()->create();
+        $route = Route::factory()->create(['name' => 'Route 2', 'status' => 'Active']);
         $driver = Driver::factory()->create(['status' => 'active']);
         $bus = Bus::factory()->create([
             'status' => Bus::STATUS_ACTIVE,
@@ -402,6 +403,56 @@ class AdminBusManagementAuditFixTest extends TestCase
 
         $this->assertSame('breakdown', $bus->fresh()->status);
     }
+
+    #[Test]
+    public function status_transition_finalizes_ongoing_and_dispatched_trips_in_trip_logs(): void
+    {
+        $bus = Bus::factory()->create(['status' => 'operating']);
+        $driver = Driver::factory()->create([
+            'status' => 'active',
+            'operational_status' => 'driving',
+            'assigned_bus' => $bus->plate_number,
+        ]);
+        $route = Route::factory()->create(['name' => 'Route 2', 'status' => 'Active']);
+
+        $ongoingTrip = Trip::factory()->create([
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $route->id,
+            'status' => 'ongoing',
+            'started_at' => now()->subMinutes(20),
+        ]);
+        $dispatchedTrip = Trip::factory()->create([
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $route->id,
+            'status' => 'dispatched',
+            'started_at' => null,
+            'dispatched_at' => now()->subMinutes(5),
+            'gps_session' => 'OFF',
+        ]);
+
+        BusStateService::transition($bus, Bus::STATUS_BREAKDOWN, 'Finalize active trip logs');
+
+        $ongoingTrip->refresh();
+        $dispatchedTrip->refresh();
+
+        $this->assertSame('cancelled', $ongoingTrip->status);
+        $this->assertSame('cancelled', $dispatchedTrip->status);
+        $this->assertNotNull($ongoingTrip->ended_at);
+        $this->assertNotNull($dispatchedTrip->ended_at);
+        $this->assertSame(1, TripLog::where('trip_id', $ongoingTrip->id)->count());
+        $this->assertSame(1, TripLog::where('trip_id', $dispatchedTrip->id)->count());
+        $this->assertDatabaseHas('trip_logs', [
+            'trip_id' => $ongoingTrip->id,
+            'status' => 'cancelled',
+        ]);
+        $this->assertDatabaseHas('trip_logs', [
+            'trip_id' => $dispatchedTrip->id,
+            'status' => 'cancelled',
+        ]);
+    }
+
     #[Test]
     public function bus_management_writes_synchronize_fleet_data_and_paginated_listing(): void
     {

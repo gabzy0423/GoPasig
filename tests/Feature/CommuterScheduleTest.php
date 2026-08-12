@@ -9,6 +9,7 @@ use App\Models\RouteServiceSchedule;
 use App\Models\RouteVariant;
 use App\Models\Schedule;
 use App\Models\Stop;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
@@ -18,18 +19,35 @@ class CommuterScheduleTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
     public function test_public_commuter_schedule_reads_route_service_schedules_by_direction(): void
     {
-        [$route1, $route1Outbound, $route1Inbound] = $this->canonicalRouteWithDirections('Route 1', 'SPED', 'Ligaya');
-        [$route2, $route2Outbound, $route2Inbound] = $this->canonicalRouteWithDirections('Route 2', 'San Joaquin', 'Ortigas');
-        [$route3] = $this->canonicalRouteWithDirections('Route 3', 'Pasig City Hall', 'Rosario');
+        [$route2, $route2Outbound, $route2Inbound] = $this->canonicalRouteWithDirections('Route 2', 'SPED', 'Ligaya');
+        [$route3, $route3Outbound] = $this->canonicalRouteWithDirections('Route 3', 'San Joaquin', 'Ortigas');
+        [$route4] = $this->canonicalRouteWithDirections('Route 4', 'Pasig City Hall', 'Rosario');
         [$legacyRoute, $legacyOutbound] = $this->routeWithDirections('Route A', 'Legacy Origin', 'Legacy Destination');
         [$uatRoute, $uatOutbound] = $this->routeWithDirections('PHASE3C-UAT Point-to-Point A-B', 'UAT A', 'UAT B');
 
         RouteServiceSchedule::create([
-            'route_id' => $route1->id,
-            'route_variant_id' => $route1Outbound->id,
+            'route_id' => $route2->id,
+            'route_variant_id' => $route2Outbound->id,
             'first_trip_time' => '05:30',
+            'last_trip_time' => '09:00',
+            'service_configuration' => 'continuous',
+            'service_days' => ['mon', 'tue', 'wed', 'thu', 'fri'],
+            'is_active' => true,
+            'source' => 'beneficiary_official',
+        ]);
+
+        RouteServiceSchedule::create([
+            'route_id' => $route2->id,
+            'route_variant_id' => $route2Outbound->id,
+            'first_trip_time' => '15:00',
             'last_trip_time' => '17:00',
             'service_configuration' => 'continuous',
             'service_days' => ['mon', 'tue', 'wed', 'thu', 'fri'],
@@ -38,8 +56,8 @@ class CommuterScheduleTest extends TestCase
         ]);
 
         RouteServiceSchedule::create([
-            'route_id' => $route1->id,
-            'route_variant_id' => $route1Inbound->id,
+            'route_id' => $route2->id,
+            'route_variant_id' => $route2Inbound->id,
             'first_trip_time' => '06:00',
             'last_trip_time' => '18:00',
             'service_configuration' => 'continuous',
@@ -51,8 +69,8 @@ class CommuterScheduleTest extends TestCase
         ]);
 
         RouteServiceSchedule::create([
-            'route_id' => $route2->id,
-            'route_variant_id' => $route2Outbound->id,
+            'route_id' => $route3->id,
+            'route_variant_id' => $route3Outbound->id,
             'first_trip_time' => '07:00',
             'last_trip_time' => '16:30',
             'service_configuration' => 'continuous',
@@ -86,8 +104,8 @@ class CommuterScheduleTest extends TestCase
         $bus = Bus::factory()->create(['plate_number' => 'BUS-LEGACY']);
         $driver = Driver::factory()->create();
         Schedule::create([
-            'route_id' => $route1->id,
-            'route_variant_id' => $route1Outbound->id,
+            'route_id' => $route2->id,
+            'route_variant_id' => $route2Outbound->id,
             'bus_id' => $bus->id,
             'driver_id' => $driver->id,
             'departure_time' => '08:15:00',
@@ -97,14 +115,19 @@ class CommuterScheduleTest extends TestCase
         ]);
 
         $component = Livewire::test('commuter.commuter-schedule')
-            ->assertSee('Route 1')
             ->assertSee('Route 2')
             ->assertSee('Route 3')
+            ->assertSee('Route 4')
             ->assertSee('Outbound')
             ->assertSee('SPED')
             ->assertSee('Ligaya')
             ->assertSee('5:30 AM')
             ->assertSee('5:00 PM')
+            ->assertSee('Operating Windows')
+            ->assertSee('Window 1')
+            ->assertSee('5:30 AM - 9:00 AM')
+            ->assertSee('Window 2')
+            ->assertSee('3:00 PM - 5:00 PM')
             ->assertSee('Inbound')
             ->assertSee('6:00 AM')
             ->assertSee('6:00 PM')
@@ -127,19 +150,23 @@ class CommuterScheduleTest extends TestCase
             ->assertDontSee('Cancelled');
 
         $serviceRoutes = $component->viewData('serviceRoutes');
-        $route1Directions = collect($serviceRoutes)->firstWhere('name', 'Route 1')['directions'];
-
-        $this->assertSame(['outbound', 'inbound'], collect($route1Directions)->pluck('direction')->all());
-        $this->assertSame('5:30 AM', $route1Directions[0]['first_trip_time']);
-        $this->assertSame('6:00 PM', $route1Directions[1]['last_trip_time']);
-
         $route2Directions = collect($serviceRoutes)->firstWhere('name', 'Route 2')['directions'];
-        $this->assertSame('Missing Configuration', $route2Directions[1]['status_label']);
+
+        $this->assertSame(['outbound', 'inbound'], collect($route2Directions)->pluck('direction')->all());
+        $this->assertSame('5:30 AM', $route2Directions[0]['first_trip_time']);
+        $this->assertSame('5:00 PM', $route2Directions[0]['last_trip_time']);
+        $this->assertCount(2, $route2Directions[0]['service_windows']);
+        $this->assertSame('9:00 AM', $route2Directions[0]['service_windows'][0]['last_trip_time']);
+        $this->assertSame('3:00 PM', $route2Directions[0]['service_windows'][1]['first_trip_time']);
+        $this->assertSame('6:00 PM', $route2Directions[1]['last_trip_time']);
+
+        $route3Directions = collect($serviceRoutes)->firstWhere('name', 'Route 3')['directions'];
+        $this->assertSame('Missing Configuration', $route3Directions[1]['status_label']);
     }
 
     public function test_public_commuter_schedule_page_is_guest_accessible_without_trip_slot_fields(): void
     {
-        [$route, $outbound] = $this->canonicalRouteWithDirections('Route 1', 'SPED', 'Ligaya');
+        [$route, $outbound] = $this->canonicalRouteWithDirections('Route 2', 'SPED', 'Ligaya');
 
         RouteServiceSchedule::create([
             'route_id' => $route->id,
@@ -165,6 +192,53 @@ class CommuterScheduleTest extends TestCase
         $response->assertDontSee('Estimated Arrival Time');
         $response->assertDontSee('Trip details');
         $response->assertDontSee('Set arrival alert');
+    }
+
+    public function test_public_commuter_schedule_shows_direction_aware_midday_gap_status(): void
+    {
+        [$route, $outbound, $inbound] = $this->canonicalRouteWithDirections('Route 2', 'SPED', 'Ligaya');
+        $this->seedOfficialSplitWindows($route, $outbound, $inbound);
+        Carbon::setTestNow(Carbon::parse('2026-08-03 09:01:00', 'Asia/Manila'));
+
+        $component = Livewire::test('commuter.commuter-schedule')
+            ->assertSee('Starts in 359 min')
+            ->assertSee('Operating Windows');
+
+        $directions = collect($component->viewData('serviceRoutes'))
+            ->firstWhere('name', 'Route 2')['directions'];
+
+        $this->assertSame('Starts in 359 min', $directions[0]['operating_status_label']);
+        $this->assertFalse($directions[0]['is_operating_now']);
+        $this->assertSame('3:00 PM', $directions[0]['next_window']['first_trip_time']);
+        $this->assertSame('Starts in 359 min', $directions[1]['operating_status_label']);
+        $this->assertFalse($directions[1]['is_operating_now']);
+        $this->assertSame('3:00 PM', $directions[1]['next_window']['first_trip_time']);
+    }
+
+    public function test_public_commuter_schedule_does_not_treat_outbound_as_operating_after_five_pm(): void
+    {
+        [$route, $outbound, $inbound] = $this->canonicalRouteWithDirections('Route 2', 'SPED', 'Ligaya');
+        $this->seedOfficialSplitWindows($route, $outbound, $inbound);
+        Carbon::setTestNow(Carbon::parse('2026-08-03 17:01:00', 'Asia/Manila'));
+
+        $component = Livewire::test('commuter.commuter-schedule')
+            ->assertSee('Service ended')
+            ->assertSee('In service');
+
+        $directions = collect($component->viewData('serviceRoutes'))
+            ->firstWhere('name', 'Route 2')['directions'];
+
+        $this->assertSame('outbound', $directions[0]['direction']);
+        $this->assertFalse($directions[0]['is_operating_now']);
+        $this->assertSame('Service ended', $directions[0]['operating_status_label']);
+        $this->assertNull($directions[0]['current_window']);
+        $this->assertNull($directions[0]['next_window']);
+
+        $this->assertSame('inbound', $directions[1]['direction']);
+        $this->assertTrue($directions[1]['is_operating_now']);
+        $this->assertSame('In service', $directions[1]['operating_status_label']);
+        $this->assertSame('3:00 PM', $directions[1]['current_window']['first_trip_time']);
+        $this->assertSame('6:00 PM', $directions[1]['current_window']['last_trip_time']);
     }
 
     public function test_offsets_respect_database_segment_weights(): void
@@ -286,6 +360,28 @@ class CommuterScheduleTest extends TestCase
             'geometry_version' => 1,
             'geometry_status' => 'valid',
             'is_default' => $direction === 'outbound',
+        ]);
+    }
+
+    private function seedOfficialSplitWindows(Route $route, RouteVariant $outbound, RouteVariant $inbound): void
+    {
+        $this->serviceSchedule($route, $outbound, '05:30:00', '09:00:00');
+        $this->serviceSchedule($route, $outbound, '15:00:00', '17:00:00');
+        $this->serviceSchedule($route, $inbound, '06:00:00', '09:00:00');
+        $this->serviceSchedule($route, $inbound, '15:00:00', '18:00:00');
+    }
+
+    private function serviceSchedule(Route $route, RouteVariant $variant, string $firstTrip, string $lastTrip): void
+    {
+        RouteServiceSchedule::create([
+            'route_id' => $route->id,
+            'route_variant_id' => $variant->id,
+            'first_trip_time' => $firstTrip,
+            'last_trip_time' => $lastTrip,
+            'service_configuration' => 'with_designated_stops',
+            'service_days' => ['mon', 'tue', 'wed', 'thu', 'fri'],
+            'is_active' => true,
+            'source' => RouteServiceSchedule::SOURCE_BENEFICIARY_OFFICIAL,
         ]);
     }
 }

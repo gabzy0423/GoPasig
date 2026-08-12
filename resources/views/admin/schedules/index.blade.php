@@ -70,6 +70,25 @@
             return '<span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-slate-600">Inactive</span>';
         }
 
+        function renderRouteServiceWindows(variant) {
+            const windows = Array.isArray(variant.serviceSchedules) ? variant.serviceSchedules : [];
+            if (!windows.length) return '';
+
+            return `
+                <div class="mt-3 rounded-lg border border-white/80 bg-white px-3 py-2">
+                    <div class="text-[9px] font-black uppercase tracking-widest text-slate-400">Operating Windows</div>
+                    <div class="mt-2 flex flex-col gap-1.5">
+                        ${windows.map((window, index) => `
+                            <div class="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-600">
+                                <span class="rounded-md bg-slate-50 px-2 py-1 border border-slate-100">Window ${index + 1}: ${formatRouteServiceText(window.firstTripTime)} - ${formatRouteServiceText(window.lastTripTime)}</span>
+                                <span class="rounded-md bg-slate-50 px-2 py-1 border border-slate-100">${formatRouteServiceText(window.serviceConfigurationLabel)}</span>
+                                <span class="rounded-md bg-slate-50 px-2 py-1 border border-slate-100">${formatRouteServiceText(window.statusLabel)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>`;
+        }
+
         function renderRouteServiceVariant(route, variant) {
             const schedule = variant.serviceSchedule;
             const direction = variant.directionLabel || variant.direction || 'Direction';
@@ -82,7 +101,7 @@
                         <div class="flex items-start justify-between gap-3">
                             <div>
                                 <div class="text-[10px] font-black uppercase tracking-widest text-amber-700">${direction}</div>
-                                <div class="mt-1 text-sm font-black text-slate-800">${origin} ? ${destination}</div>
+                                <div class="mt-1 text-sm font-black text-slate-800">${origin} -> ${destination}</div>
                             </div>
                             ${routeServiceStatusBadge(null)}
                         </div>
@@ -98,7 +117,7 @@
                                 <span class="text-[10px] font-black uppercase tracking-widest ${schedule.isActive ? 'text-emerald-700' : 'text-slate-500'}">${direction}</span>
                                 ${routeServiceStatusBadge(schedule)}
                             </div>
-                            <div class="mt-1 text-sm font-black text-slate-800">${origin} ? ${destination}</div>
+                            <div class="mt-1 text-sm font-black text-slate-800">${origin} -> ${destination}</div>
                         </div>
                         <div class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 lg:min-w-[560px]">
                             <div class="rounded-lg border border-white/80 bg-white px-3 py-2">
@@ -123,6 +142,7 @@
                         <span class="rounded-md bg-white px-2 py-1 border border-slate-100">${formatRouteServiceText(schedule.effectiveRangeLabel, 'No effective date limit')}</span>
                         <span class="rounded-md bg-white px-2 py-1 border border-slate-100">Source: ${formatRouteServiceText(schedule.sourceLabel)}</span>
                     </div>
+                    ${renderRouteServiceWindows(variant)}
                 </div>`;
         }
 
@@ -214,22 +234,10 @@
                     <div class="flex items-center gap-2">
                         <span class="rm-inner-title" id="rm-detail-route-title">Loading Route Details...</span>
                         <span class="rm-badge-green" id="rm-detail-route-status">Active</span>
-                        <div id="routing-providers-health-container" class="flex gap-1 text-[9px] font-sans border-l border-slate-200 pl-3">
-                            <!-- Telemetry badges rendered by JS -->
-                        </div>
                     </div>
                     <div class="flex items-center gap-1.5">
-                        <!-- Provider Selection & Generate Preview -->
                         <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-0.5 shrink-0">
                             <select id="route-variant-select" onchange="syncVariantGeometrySelection()" class="rounded-md border-none bg-transparent px-2 py-1 text-[11px] font-semibold text-slate-800 outline-none transition focus:bg-white cursor-pointer" title="Official directional variant"><option value="">Legacy Route Geometry</option></select>
-                            <select id="route-provider-select" class="rounded-md border-none bg-transparent px-2 py-1 text-[11px] font-semibold text-slate-800 outline-none transition focus:bg-white cursor-pointer">
-                                <option value="osrm">OSRM Road Router</option>
-                                <option value="google">Google Directions</option>
-                                <option value="manual">Manual Straight</option>
-                            </select>
-                            <button class="rm-btn-primary rm-btn-xs bg-indigo-650 hover:bg-indigo-750 text-white font-bold" onclick="generateRoutePreview()" id="btn-generate-route" title="Generate Geometry Proposal">
-                                <i class="ti ti-rotate"></i> Generate
-                            </button>
                         </div>
                         <button class="rm-btn-primary rm-btn-xs bg-[#003F87] text-white" onclick="toggleGeometryEditing()" id="btn-edit-geometry">
                             <i class="ti ti-map-pin"></i> Edit Geometry
@@ -291,74 +299,7 @@
                                         Cancel
                                     </button>
                                 </div>
-                            </div>                            {{-- Route Preview Proposal Card overlay (hidden by default) --}}
-                            <div id="route-preview-proposal-card" class="hidden absolute bottom-12 left-2 right-2 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-lg p-2.5 shadow-md z-[1000] flex flex-col gap-2 text-xs select-none max-h-[300px] overflow-y-auto">
-                                <div class="flex items-center justify-between border-b border-slate-100 pb-1.5 font-sans">
-                                    <span class="font-extrabold text-indigo-700 text-[10px] uppercase tracking-wider flex items-center gap-1">
-                                        <i class="ti ti-route"></i> Proposed Route Preview
-                                    </span>
-                                    <span class="text-[9px] font-semibold text-slate-400" id="preview-expiry-label">Expires in 30m</span>
-                                </div>
-
-                                {{-- Quality Score Summary --}}
-                                <div class="flex items-center justify-between bg-indigo-50/70 p-1.5 rounded border border-indigo-100 font-sans">
-                                    <div class="flex items-center gap-1.5">
-                                        <i class="ti ti-shield-check text-indigo-600 text-sm"></i>
-                                        <span class="font-bold text-slate-700">Quality Score:</span>
-                                    </div>
-                                    <span class="font-extrabold text-[11px]" id="metric-quality-score">100 (Excellent)</span>
-                                </div>
-
-                                <div class="grid grid-cols-2 gap-1.5 text-[10px] text-slate-600 font-medium font-sans">
-                                    <div class="flex justify-between bg-slate-50 p-1 rounded">
-                                        <span>Len Diff:</span>
-                                        <strong id="metric-len-diff" class="text-slate-800">0.00 km</strong>
-                                    </div>
-                                    <div class="flex justify-between bg-slate-50 p-1 rounded">
-                                        <span>Vert Diff:</span>
-                                        <strong id="metric-vert-diff" class="text-slate-800">0</strong>
-                                    </div>
-                                    <div class="flex justify-between bg-slate-50 p-1 rounded">
-                                        <span>BBox Overlap:</span>
-                                        <strong id="metric-bbox-overlap" class="text-slate-800">100%</strong>
-                                    </div>
-                                    <div class="flex justify-between bg-slate-50 p-1 rounded">
-                                        <span>Hausdorff:</span>
-                                        <strong id="metric-hausdorff" class="text-slate-800">0.00m</strong>
-                                    </div>
-                                </div>
-
-                                {{-- Warnings and Recommendations lists --}}
-                                <div id="preview-warnings-container" class="hidden flex flex-col gap-1 border-t border-slate-100 pt-1.5 font-sans">
-                                    <span class="text-[9px] font-extrabold text-amber-600 uppercase tracking-wider">⚠️ Warnings & Recommendations</span>
-                                    <ul id="preview-warnings-list" class="list-disc pl-3 text-[9px] text-slate-600 space-y-0.5">
-                                        {{-- Loaded dynamically by JS --}}
-                                    </ul>
-                                </div>
-
-                                {{-- Advanced Analysis (Fréchet) Widget --}}
-                                <div class="border-t border-slate-100 pt-1.5 flex items-center justify-between font-sans">
-                                    <span class="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-0.5">
-                                        <i class="ti ti-activity"></i> Fréchet Similarity:
-                                    </span>
-                                    <div class="flex items-center gap-1.5">
-                                        <span id="metric-frechet" class="text-[10px] font-extrabold text-slate-800">Not Run</span>
-                                        <button class="rm-btn-outline px-1.5 py-0.5 text-[8px] bg-slate-50 hover:bg-slate-100 border-slate-300 rounded font-bold transition flex items-center gap-0.5 font-sans" id="btn-run-frechet" onclick="runFrechetAnalysis()">
-                                            Analyze Shape
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div class="flex gap-1.5 mt-1 justify-end border-t border-slate-100 pt-1.5">
-                                    <button class="rm-btn-outline rm-btn-xs text-rose-600 hover:bg-rose-50 border-rose-200 w-20 justify-center" onclick="rejectRouteProposal()" title="Discard generated preview">
-                                        Reject
-                                    </button>
-                                    <button class="rm-btn-primary rm-btn-xs bg-emerald-600 hover:bg-emerald-700 text-white w-20 justify-center border-none" onclick="acceptRouteProposal()" title="Apply geometry proposal to route">
-                                        Accept
-                                    </button>
-                                </div>
                             </div>
-
                             <div class="rm-map-canvas" id="rm-simulated-map-container">
                                 {{-- Map preview drawn by Leaflet --}}
                             </div>
@@ -2202,4 +2143,3 @@
         display: none !important;
     }
 </style>
-

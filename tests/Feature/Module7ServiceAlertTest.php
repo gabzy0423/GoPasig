@@ -45,7 +45,7 @@ class Module7ServiceAlertTest extends TestCase
 
         // Create a route
         $this->route = Route::create([
-            'name' => 'Route 1',
+            'name' => 'Route 2',
             'description' => 'Official route one',
             'color' => '#FFD700',
             'status' => 'Active',
@@ -69,7 +69,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Test message details',
             'severity' => 'High', // Invalid now
             'type' => 'Suspension', // Invalid now
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
         ]);
         $response->assertStatus(422);
@@ -80,7 +80,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Test message details',
             'severity' => 'Extreme', // Valid
             'type' => 'Detour', // Valid
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
         ]);
         $response->assertStatus(201);
@@ -104,7 +104,7 @@ class Module7ServiceAlertTest extends TestCase
                 'message' => "Message details for $input",
                 'severity' => $input,
                 'type' => 'Delay',
-                'affects' => ['Route 1'],
+                'affects' => ['Route 2'],
                 'timing' => 'now',
             ]);
             $response->assertStatus(201);
@@ -128,7 +128,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'This alert is scheduled for later',
             'severity' => 'High',
             'type' => 'Suspension',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'later',
             'schedule_time' => $futureTime->toDateTimeString(),
         ]);
@@ -155,10 +155,10 @@ class Module7ServiceAlertTest extends TestCase
         // Create an alert that suspends the route
         $response = $this->postJson(route('admin.api.alerts.store'), [
             'title' => 'Route Closure',
-            'message' => 'Route 1 is closed',
+            'message' => 'Route 2 is closed',
             'severity' => 'Emergency',
             'type' => 'Suspension',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => true,
         ]);
@@ -190,7 +190,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Closure 1',
             'severity' => 'Emergency',
             'type' => 'Suspension',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => true,
         ]);
@@ -201,7 +201,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Closure 2',
             'severity' => 'Emergency',
             'type' => 'Suspension',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => true,
         ]);
@@ -234,7 +234,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Suspension route policy test.',
             'severity' => 'High',
             'type' => 'Suspension',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => true,
         ]);
@@ -250,7 +250,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Suspension bulletin without route suspension.',
             'severity' => 'High',
             'type' => 'Suspension',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => false,
         ]);
@@ -266,7 +266,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Delay bulletin without route suspension.',
             'severity' => 'Medium',
             'type' => 'Delay',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => false,
         ]);
@@ -283,7 +283,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Approved operational suspension combination.',
             'severity' => $severity,
             'type' => $type,
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => true,
         ]);
@@ -311,7 +311,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Invalid operational suspension combination.',
             'severity' => $severity,
             'type' => $type,
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => true,
         ]);
@@ -342,7 +342,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Suspension route policy test.',
             'severity' => 'High',
             'type' => 'Suspension',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => true,
         ]);
@@ -356,7 +356,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Attempt to reclassify as delay.',
             'severity' => 'High',
             'type' => 'Delay',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => false,
         ]);
@@ -376,7 +376,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Operational suspension delete protection test.',
             'severity' => 'High',
             'type' => 'Suspension',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => true,
         ]);
@@ -405,7 +405,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Resolve before delete lifecycle test.',
             'severity' => 'High',
             'type' => 'Suspension',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => true,
         ]);
@@ -435,7 +435,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Resolved informational delete lifecycle test.',
             'severity' => 'Medium',
             'type' => 'Delay',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => false,
         ]);
@@ -464,7 +464,7 @@ class Module7ServiceAlertTest extends TestCase
                 'message' => 'Correct resolved alert ID targeting test.',
                 'severity' => 'Medium',
                 'type' => 'Delay',
-                'affects' => ['Route 1'],
+                'affects' => ['Route 2'],
                 'timing' => 'now',
                 'suspend_route' => false,
             ])->assertCreated();
@@ -500,7 +500,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Duplicate delete handling test.',
             'severity' => 'Medium',
             'type' => 'Delay',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => false,
         ])->assertCreated();
@@ -525,7 +525,7 @@ class Module7ServiceAlertTest extends TestCase
                 'message' => 'Informational alert delete lifecycle test.',
                 'severity' => $severity,
                 'type' => $type,
-                'affects' => ['Route 1'],
+                'affects' => ['Route 2'],
                 'timing' => 'now',
                 'suspend_route' => false,
             ]);
@@ -546,7 +546,7 @@ class Module7ServiceAlertTest extends TestCase
                 'message' => 'Multiple operational suspension lifecycle test.',
                 'severity' => 'High',
                 'type' => 'Suspension',
-                'affects' => ['Route 1'],
+                'affects' => ['Route 2'],
                 'timing' => 'now',
                 'suspend_route' => true,
             ])->assertCreated();
@@ -578,7 +578,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Alert should be returned with zero read records.',
             'severity' => 'Medium',
             'type' => 'Delay',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => false,
         ])->assertCreated();
@@ -597,7 +597,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Alert should count one read record.',
             'severity' => 'Medium',
             'type' => 'Delay',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => false,
         ])->assertCreated();
@@ -638,7 +638,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Read rows should survive soft archive.',
             'severity' => 'Medium',
             'type' => 'Delay',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => false,
         ])->assertCreated();
@@ -665,7 +665,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Older archive test.',
             'severity' => 'Medium',
             'type' => 'Delay',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => false,
         ])->assertCreated();
@@ -678,7 +678,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Newer archive test.',
             'severity' => 'Medium',
             'type' => 'Delay',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => false,
         ])->assertCreated();
@@ -691,7 +691,7 @@ class Module7ServiceAlertTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('history.0.title', 'Newer Archive Log')
             ->assertJsonPath('history.1.title', 'Older Archive Log')
-            ->assertJsonPath('history.0.affected_routes.0', 'Route 1');
+            ->assertJsonPath('history.0.affected_routes.0', 'Route 2');
     }
 
     public function test_normal_service_alert_queries_exclude_archived_records(): void
@@ -701,7 +701,7 @@ class Module7ServiceAlertTest extends TestCase
             'message' => 'Archived alert should disappear from normal surfaces.',
             'severity' => 'Medium',
             'type' => 'Delay',
-            'affects' => ['Route 1'],
+            'affects' => ['Route 2'],
             'timing' => 'now',
             'suspend_route' => false,
         ])->assertCreated();
@@ -751,7 +751,7 @@ class Module7ServiceAlertTest extends TestCase
         $response = $this->getJson(route('admin.api.alerts.index'));
         $response->assertStatus(200);
 
-        $stats = $response->json('stats.route_stats.Route 1');
+        $stats = $response->json('stats.route_stats.Route 2');
         $this->assertEquals(3, $stats['drivers']);
     }
 }

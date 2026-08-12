@@ -81,10 +81,10 @@
     <!-- ==================== SECTION 2: METRIC CARDS 4-COLUMN ROW ==================== -->
     <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
         
-        <!-- Metric 1: Active Buses -->
+        <!-- Metric 1: Buses In Service -->
         <div class="relative bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-[112px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5">
             <div class="flex justify-between items-start">
-                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Active Buses</span>
+                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Buses In Service</span>
                 <div class="h-8 w-8 rounded-lg bg-[#EBF4FA] flex items-center justify-center text-[#003F87]">
                     <i class="ti ti-bus text-lg"></i>
                 </div>
@@ -93,15 +93,15 @@
                 <span class="text-[26px] font-black text-slate-900 leading-none" id="metric-active-buses">0</span>
                 <div class="text-[11px] text-[#639922] font-semibold mt-0.5 flex items-center gap-0.5" id="metric-active-buses-sub">
                     <span class="h-1.5 w-1.5 rounded-full bg-[#639922] animate-pulse mr-0.5"></span>
-                    <span>Normal fleet ops</span>
+                    <span>Based on ongoing trips</span>
                 </div>
             </div>
         </div>
 
-        <!-- Metric 2: Buses in Route -->
+        <!-- Metric 2: Trips Completed Today -->
         <div class="relative bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-[112px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5">
             <div class="flex justify-between items-start">
-                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Buses in Route</span>
+                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Trips Completed</span>
                 <div class="h-8 w-8 rounded-lg bg-[#F3F9EA] flex items-center justify-center text-[#639922]">
                     <i class="ti ti-map-pin text-lg"></i>
                 </div>
@@ -109,7 +109,7 @@
             <div class="mt-1">
                 <span class="text-[26px] font-black text-slate-900 leading-none" id="metric-buses-in-route">0</span>
                 <div class="text-[11px] text-slate-500 font-semibold mt-0.5">
-                    <span>On active transit lines</span>
+                    <span>Actual completed today</span>
                 </div>
             </div>
         </div>
@@ -125,15 +125,15 @@
             <div class="mt-1">
                 <span class="text-[26px] font-black text-slate-900 leading-none" id="metric-under-maintenance">0</span>
                 <div class="text-[11px] text-slate-500 font-semibold mt-0.5">
-                    <span>Scheduled checkups</span>
+                    <span>Current fleet state</span>
                 </div>
             </div>
         </div>
 
-        <!-- Metric 4: Service Alerts -->
+        <!-- Metric 4: Open Disruptions -->
         <div class="relative bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-[112px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 border-l-[3px] border-l-[#E24B4A]">
             <div class="flex justify-between items-start">
-                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Service Alerts</span>
+                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Open Disruptions</span>
                 <div class="h-8 w-8 rounded-lg bg-[#FDF2F2] flex items-center justify-center text-[#E24B4A]">
                     <i class="ti ti-bell-ringing text-lg"></i>
                 </div>
@@ -160,7 +160,7 @@
                     <span class="flex h-2.5 w-2.5 rounded-full bg-[#639922] animate-pulse"></span>
                     <span class="text-[12px] font-extrabold uppercase tracking-wider text-slate-800">Live Vehicle Visualizer</span>
                 </div>
-                <span class="text-[10px] font-extrabold text-[#003F87] bg-[#E6F1FB] px-2.5 py-0.5 rounded-full uppercase tracking-widest">{{ $primaryRouteName }}</span>
+                <span class="text-[10px] font-extrabold text-[#003F87] bg-[#E6F1FB] px-2.5 py-0.5 rounded-full uppercase tracking-widest">Official Routes</span>
             </div>
             
             <!-- Live Google Maps Visualizer -->
@@ -169,16 +169,16 @@
             </div>
         </div>
 
-        <!-- RIGHT (35%): Today's Dispatch Queue -->
+        <!-- RIGHT (35%): Official Operating Schedule -->
         <div class="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm flex flex-col h-[420px] hover:shadow-md transition-shadow">
             <div class="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
-                <span class="text-[12px] font-extrabold uppercase tracking-wider text-slate-800">Dispatch Queue</span>
-                <x-ui.button variant="soft" size="xs" color="blue" onclick="switchScreen('dispatch')" class="text-[11px] font-extrabold uppercase tracking-wider cursor-pointer">Manage Queue</x-ui.button>
+                <span class="text-[12px] font-extrabold uppercase tracking-wider text-slate-800">Official Operating Schedule</span>
+                <x-ui.button variant="soft" size="xs" color="blue" onclick="switchScreen('routes-schedule')" class="text-[11px] font-extrabold uppercase tracking-wider cursor-pointer">Manage Schedule</x-ui.button>
             </div>
             
-            <!-- Dispatch List (Scrollable) -->
-            <div id="dispatch-queue-list" class="flex-1 overflow-y-auto py-2 space-y-3 mt-3 scrollbar-thin scrollbar-thumb-slate-200 pr-1">
-                <div class="text-center py-16 text-xs font-semibold text-slate-400">Loading active dispatch queue...</div>
+            <!-- Official Schedule List (Scrollable) -->
+            <div id="official-schedule-list" class="flex-1 overflow-y-auto py-2 space-y-3 mt-3 scrollbar-thin scrollbar-thumb-slate-200 pr-1">
+                <div class="text-center py-16 text-xs font-semibold text-slate-400">Loading official schedules...</div>
             </div>
         </div>
 
@@ -187,10 +187,10 @@
     <!-- ==================== SECTION 4: BOTTOM 3-COLUMN ROW ==================== -->
     <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
         
-        <!-- Col 1: Recent Trip Logs Table -->
+        <!-- Col 1: Recent Trip Activity Table -->
         <div class="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm flex flex-col h-[320px] hover:shadow-md transition-shadow">
             <div class="border-b border-slate-100 pb-3 shrink-0 flex items-center justify-between">
-                <span class="text-[12px] font-extrabold uppercase tracking-wider text-slate-800">Recent Trip Logs</span>
+                <span class="text-[12px] font-extrabold uppercase tracking-wider text-slate-800">Recent Trip Activity</span>
                 <span class="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Last 5 trips</span>
             </div>
             
@@ -206,7 +206,7 @@
                     </thead>
                     <tbody class="text-xs font-semibold text-slate-700 divide-y divide-slate-100/50" id="trip-logs-tbody">
                         <tr>
-                            <td colspan="4" class="py-12 text-center text-xs text-slate-400 font-semibold">Loading recent trip logs...</td>
+                            <td colspan="4" class="py-12 text-center text-xs text-slate-400 font-semibold">Loading recent trip activity...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -241,9 +241,9 @@
                 
                 <!-- Legend Grid -->
                 <div class="mt-3 grid grid-cols-3 gap-x-2 text-[10px] font-bold text-slate-500 w-full shrink-0 justify-items-center">
-                    <div class="flex items-center gap-1.5" id="donut-legend-active"><span class="h-2.5 w-2.5 rounded-full bg-[#639922]"></span> Active (0)</div>
-                    <div class="flex items-center gap-1.5" id="donut-legend-maintenance"><span class="h-2.5 w-2.5 rounded-full bg-[#BA7517]"></span> Maint (0)</div>
-                    <div class="flex items-center gap-1.5" id="donut-legend-alert"><span class="h-2.5 w-2.5 rounded-full bg-[#E24B4A]"></span> Alert (0)</div>
+                    <div class="flex items-center gap-1.5" id="donut-legend-active"><span class="h-2.5 w-2.5 rounded-full bg-[#639922]"></span> In Service (0)</div>
+                    <div class="flex items-center gap-1.5" id="donut-legend-maintenance"><span class="h-2.5 w-2.5 rounded-full bg-[#BA7517]"></span> Standby (0)</div>
+                    <div class="flex items-center gap-1.5" id="donut-legend-alert"><span class="h-2.5 w-2.5 rounded-full bg-[#E24B4A]"></span> Unavailable (0)</div>
                 </div>
             </div>
         </div>

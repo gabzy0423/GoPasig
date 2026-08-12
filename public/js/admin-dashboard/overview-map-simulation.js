@@ -4,7 +4,6 @@ let overviewMapInstance = null;
 const overviewMarkersMap = {};
 let overviewPolylines = [];
 let overviewStops = [];
-const scheduledDispatchesInFlight = new Set();
 
 // Expose dynamic rendering globally so it can be re-triggered by dashboard-data.js
 function renderOverviewBuses() {
@@ -23,7 +22,7 @@ function renderOverviewBuses() {
         const color = statusColors[bus.status] || '#888780';
         const iconHtml = `
             <div class="relative flex items-center justify-center">
-                ${bus.status === 'Active' || bus.status === 'Delayed' ? `
+                ${bus.status === 'Active' || bus.status === 'Operating' || bus.status === 'Delayed' ? `
                     <span class="absolute inline-flex h-8 w-8 animate-ping rounded-full opacity-20" style="background-color: ${color};"></span>
                 ` : ''}
                 <div class="relative flex h-7 w-7 items-center justify-center rounded-full text-white border-2 border-white shadow-md font-semibold" style="background-color: ${color};">
@@ -54,15 +53,21 @@ function renderOverviewPolylines() {
     overviewPolylines = [];
 
     routesDataDb.forEach(route => {
-        if (route.polyline_coordinates && route.polyline_coordinates.length > 0) {
+        const geometries = route.map_geometry_source === 'route_variant'
+            ? (route.map_variant_geometries || []).filter(geometry => geometry.polyline_coordinates?.length >= 2)
+            : [{ polyline_coordinates: route.polyline_coordinates }];
+
+        geometries.forEach(geometry => {
+            if (!geometry.polyline_coordinates || geometry.polyline_coordinates.length < 2) return;
+
             const color = routeColors[route.id.toString()] || '#003F87';
-            const polyline = L.polyline(route.polyline_coordinates, {
+            const polyline = L.polyline(geometry.polyline_coordinates, {
                 color: color,
                 weight: 4,
                 opacity: 0.85
             }).addTo(overviewMapInstance);
             overviewPolylines.push(polyline);
-        }
+        });
     });
 }
 
@@ -152,7 +157,7 @@ function initOverviewMap() {
         // This handles buses newly dispatched (appear) and buses gone offline (disappear).
         renderOverviewBuses();
 
-        // Refresh stats panel (dispatch queue, donut, system status chip)
+        // Refresh the existing overview cards, schedule panel, and status chart.
         if (typeof updateOverviewDashboard === 'function') {
             updateOverviewDashboard();
         }
@@ -184,173 +189,61 @@ switchScreen = function (screenName) {
 
 // Expose dynamic metrics and cards updater globally
 function updateOverviewDashboard() {
-    if (!fleetData || fleetData.length === 0) return;
+    if (!overviewOperationsData) return;
 
-    // 1. Calculate Metrics
-    const totalBuses = fleetData.length;
-    const activeBuses = fleetData.filter(b => b.status === 'Active' || b.status === 'Delayed');
-    const activeCount = activeBuses.length;
+    const metrics = overviewOperationsData.metrics || {};
+    const fleetStatus = overviewOperationsData.fleet_status || {};
+    const disruptionBreakdown = overviewOperationsData.disruption_breakdown || {};
+    const inServiceCount = Number(metrics.buses_in_service) || 0;
+    const completedToday = Number(metrics.completed_today) || 0;
+    const maintenanceCount = Number(metrics.under_maintenance) || 0;
+    const disruptionCount = Number(metrics.open_disruptions) || 0;
 
-    // Buses in Route are active buses that have an assigned route
-    const routeCount = activeBuses.filter(b => b.route !== 'None' && b.route !== '').length;
-
-    // Maintenance count
-    const maintCount = fleetData.filter(b => b.status === 'Maintenance').length;
-
-    // Alert count (Breakdown)
-    const alertCount = fleetData.filter(b => b.status === 'Breakdown').length;
-
-    // Update DOM Metrics
+    // 1. Update the four existing metric cards from actual operations.
     const activeEl = document.getElementById('metric-active-buses');
-    if (activeEl) activeEl.textContent = activeCount;
+    if (activeEl) activeEl.textContent = inServiceCount;
 
     const activeSubEl = document.getElementById('metric-active-buses-sub');
     if (activeSubEl) {
-        if (activeCount === totalBuses && totalBuses > 0) {
-            activeSubEl.innerHTML = `<span class="h-1.5 w-1.5 rounded-full bg-[#639922] animate-pulse mr-0.5"></span><span>Full fleet active</span>`;
-            activeSubEl.className = "text-[11px] text-[#639922] font-semibold mt-0.5 flex items-center gap-0.5";
-        } else if (activeCount > 0) {
-            activeSubEl.innerHTML = `<span class="h-1.5 w-1.5 rounded-full bg-[#639922] animate-pulse mr-0.5"></span><span>Normal fleet ops</span>`;
+        if (inServiceCount > 0) {
+            activeSubEl.innerHTML = `<span class="h-1.5 w-1.5 rounded-full bg-[#639922] animate-pulse mr-0.5"></span><span>Based on ongoing trips</span>`;
             activeSubEl.className = "text-[11px] text-[#639922] font-semibold mt-0.5 flex items-center gap-0.5";
         } else {
-            activeSubEl.innerHTML = `<span class="h-1.5 w-1.5 rounded-full bg-slate-400 mr-0.5"></span><span>No active buses</span>`;
+            activeSubEl.innerHTML = `<span class="h-1.5 w-1.5 rounded-full bg-slate-400 mr-0.5"></span><span>No ongoing trips</span>`;
             activeSubEl.className = "text-[11px] text-slate-500 font-semibold mt-0.5 flex items-center gap-0.5";
         }
     }
 
     const routeEl = document.getElementById('metric-buses-in-route');
-    if (routeEl) routeEl.textContent = routeCount;
+    if (routeEl) routeEl.textContent = completedToday;
 
     const maintEl = document.getElementById('metric-under-maintenance');
-    if (maintEl) maintEl.textContent = maintCount;
+    if (maintEl) maintEl.textContent = maintenanceCount;
 
     const alertEl = document.getElementById('metric-service-alerts');
-    if (alertEl) alertEl.textContent = alertCount;
+    if (alertEl) alertEl.textContent = disruptionCount;
 
     const alertSubEl = document.getElementById('metric-service-alerts-sub');
     if (alertSubEl) {
-        if (alertCount > 0) {
-            alertSubEl.innerHTML = `<i class="ti ti-alert-triangle"></i><span>Action required</span>`;
+        if (disruptionCount > 0) {
+            const details = [
+                `${Number(disruptionBreakdown.incidents) || 0} incidents`,
+                `${Number(disruptionBreakdown.service_alerts) || 0} alerts`,
+                `${Number(disruptionBreakdown.breakdowns) || 0} breakdowns`,
+            ].join(' / ');
+            alertSubEl.innerHTML = `<i class="ti ti-alert-triangle"></i><span title="${escapeOverviewHtml(details)}">Action required</span>`;
             alertSubEl.className = "text-[11px] text-[#E24B4A] font-bold mt-0.5 flex items-center gap-0.5";
         } else {
-            alertSubEl.innerHTML = `<i class="ti ti-circle-check"></i><span>No issues reported</span>`;
+            alertSubEl.innerHTML = `<i class="ti ti-circle-check"></i><span>No open disruptions</span>`;
             alertSubEl.className = "text-[11px] text-[#639922] font-bold mt-0.5 flex items-center gap-0.5";
         }
     }
 
-    // Dynamic System Status Chip
-    const statusContainer = document.getElementById('system-status-container');
-    if (statusContainer) {
-        if (alertCount > 0) {
-            statusContainer.innerHTML = `
-                <span class="inline-flex items-center gap-1 bg-[#FDF2F2] text-[#E24B4A] font-bold px-3 py-1.5 rounded-lg uppercase text-[11px] tracking-wider shadow-sm border border-red-100">
-                    <span class="h-1.5 w-1.5 rounded-full bg-[#E24B4A] animate-pulse"></span>
-                    Service Disruption
-                </span>
-            `;
-        } else {
-            statusContainer.innerHTML = `
-                <span class="inline-flex items-center gap-1 bg-[#E8F4E0] text-[#639922] font-bold px-3 py-1.5 rounded-lg uppercase text-[11px] tracking-wider shadow-sm">
-                    <span class="h-1.5 w-1.5 rounded-full bg-[#639922] animate-pulse"></span>
-                    Systems Nominal
-                </span>
-            `;
-        }
-    }
+    renderOverviewSystemHealth(overviewOperationsData.system_health || {});
+    renderOverviewFleetDonut(fleetStatus);
+    renderOverviewOfficialSchedules(overviewOperationsData.official_schedules || []);
 
-    // 2. Update Donut Chart
-    const donutTotal = document.getElementById('donut-total-buses');
-    if (donutTotal) donutTotal.textContent = totalBuses;
-
-    const activeCircle = document.getElementById('donut-circle-active');
-    const maintCircle = document.getElementById('donut-circle-maintenance');
-    const alertCircle = document.getElementById('donut-circle-alert');
-
-    const legendActive = document.getElementById('donut-legend-active');
-    const legendMaint = document.getElementById('donut-legend-maintenance');
-    const legendAlert = document.getElementById('donut-legend-alert');
-
-    if (legendActive) legendActive.innerHTML = `<span class="h-2.5 w-2.5 rounded-full bg-[#639922]"></span> Active (${activeCount})`;
-    if (legendMaint) legendMaint.innerHTML = `<span class="h-2.5 w-2.5 rounded-full bg-[#BA7517]"></span> Maint (${maintCount})`;
-    if (legendAlert) legendAlert.innerHTML = `<span class="h-2.5 w-2.5 rounded-full bg-[#E24B4A]"></span> Alert (${alertCount})`;
-
-    if (totalBuses > 0) {
-        const circ = 238.76; // 2 * pi * r (r=38)
-
-        // Count alert as total - active - maint to encompass inactive buses and breakdowns
-        const totalAlerts = totalBuses - activeCount - maintCount;
-        if (legendAlert) legendAlert.innerHTML = `<span class="h-2.5 w-2.5 rounded-full bg-[#E24B4A]"></span> Alert/Inactive (${totalAlerts})`;
-
-        const activeLen = (activeCount / totalBuses) * circ;
-        const maintLen = (maintCount / totalBuses) * circ;
-        const alertLen = (totalAlerts / totalBuses) * circ;
-
-        if (activeCircle) {
-            activeCircle.setAttribute('stroke-dasharray', `${activeLen.toFixed(1)} ${circ.toFixed(0)}`);
-            activeCircle.setAttribute('stroke-dashoffset', '0');
-        }
-        if (maintCircle) {
-            maintCircle.setAttribute('stroke-dasharray', `${maintLen.toFixed(1)} ${circ.toFixed(0)}`);
-            maintCircle.setAttribute('stroke-dashoffset', `-${activeLen.toFixed(1)}`);
-        }
-        if (alertCircle) {
-            alertCircle.setAttribute('stroke-dasharray', `${alertLen.toFixed(1)} ${circ.toFixed(0)}`);
-            alertCircle.setAttribute('stroke-dashoffset', `-${(activeLen + maintLen).toFixed(1)}`);
-        }
-    } else {
-        if (activeCircle) activeCircle.setAttribute('stroke-dasharray', '0 239');
-        if (maintCircle) maintCircle.setAttribute('stroke-dasharray', '0 239');
-        if (alertCircle) alertCircle.setAttribute('stroke-dasharray', '0 239');
-    }
-
-    // 3. Render Today's Dispatch Queue
-    const dispatchList = document.getElementById('dispatch-queue-list');
-    if (dispatchList) {
-        dispatchList.innerHTML = '';
-
-        const dispatchedBuses = typeof dispatchQueueData !== 'undefined' ? [...dispatchQueueData] : [];
-
-        // Sort so delayed trips appear at top, then by departure time
-        dispatchedBuses.sort((a, b) => {
-            if (a.status === 'Delayed' && b.status !== 'Delayed') return -1;
-            if (a.status !== 'Delayed' && b.status === 'Delayed') return 1;
-            return a.departureTime.localeCompare(b.departureTime);
-        });
-
-        if (dispatchedBuses.length === 0) {
-            dispatchList.innerHTML = `
-                <div class="py-16 text-center text-xs font-semibold text-slate-400">
-                    No dispatches scheduled for today.
-                </div>
-            `;
-        } else {
-            dispatchedBuses.forEach(dispatch => {
-                const card = document.createElement('div');
-                card.className = "rounded-lg border border-slate-100 bg-slate-50/50 p-3 hover:border-slate-200 hover:bg-slate-50 transition-all duration-200";
-
-                const dispatchStatus = dispatch.status === 'Delayed' || dispatch.status === 'delayed' ? 'Delayed' : 'On Time';
-                const badgeClass = dispatchStatus === 'Delayed' ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-[#EAF3DE] text-[#3B6D11]';
-
-                card.innerHTML = `
-                    <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-[#003F87]">${dispatch.busPlate}</span>
-                        <span class="inline-flex rounded-full ${badgeClass} px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">${dispatchStatus}</span>
-                    </div>
-                    <div class="mt-2 text-[11px] text-slate-500 font-semibold space-y-1">
-                        <div>Route: <span class="text-slate-800 font-bold">${dispatch.routeName}</span></div>
-                        <div>Driver: <span class="text-slate-800 font-bold">${dispatch.driverName}</span></div>
-                    </div>
-                    <div class="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2 shrink-0">
-                        <span class="text-[10px] font-bold text-slate-400">Departure: ${dispatch.departureTime}</span>
-                        ${renderScheduleDispatchAction(dispatch)}
-                    </div>
-                `;
-                dispatchList.appendChild(card);
-            });
-        }
-    }
-
-    // 4. Render Recent Trip Logs
+    // 2. Render Recent Trip Activity in the existing table.
     const tripLogsTbody = document.getElementById('trip-logs-tbody');
     if (tripLogsTbody) {
         tripLogsTbody.innerHTML = '';
@@ -358,7 +251,7 @@ function updateOverviewDashboard() {
         if (tripsData.length === 0) {
             tripLogsTbody.innerHTML = `
                 <tr>
-                    <td colspan="4" class="py-12 text-center text-xs text-slate-400 font-semibold">No recent logs available.</td>
+                    <td colspan="4" class="py-12 text-center text-xs text-slate-400 font-semibold">No recent trip activity.</td>
                 </tr>
             `;
         } else {
@@ -368,10 +261,10 @@ function updateOverviewDashboard() {
 
                 // Status badge styling
                 let badgeClass = 'bg-[#E6F1FB] text-[#0C447C]';
-                if (trip.status === 'Active') {
+                if (trip.status === 'Ongoing') {
                     badgeClass = 'bg-[#EAF3DE] text-[#3B6D11]';
-                } else if (trip.status === 'Delayed') {
-                    badgeClass = 'bg-[#FEF7ED] text-[#BA7517]';
+                } else if (trip.status === 'Awaiting Start') {
+                    badgeClass = 'bg-[#E6F1FB] text-[#0C447C]';
                 } else if (trip.status === 'Cancelled') {
                     badgeClass = 'bg-[#FCEBEB] text-[#A32D2D]';
                 }
@@ -387,7 +280,7 @@ function updateOverviewDashboard() {
         }
     }
 
-    // 5. Render Maintenance Alerts
+    // 3. Keep the existing Maintenance Schedule panel and behavior.
     const maintList = document.getElementById('overview-maintenance-list');
     if (maintList) {
         maintList.innerHTML = '<div class="py-12 text-center text-slate-400 font-semibold text-xs">Loading maintenance schedules...</div>';
@@ -396,7 +289,15 @@ function updateOverviewDashboard() {
             try {
                 const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.maintenanceBaseUrl) ? window.GoPasigConfig.maintenanceBaseUrl : '/admin/api/maintenance';
                 const response = await fetch(baseUrl);
-                const records = await response.json();
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(payload.message || 'Maintenance request failed.');
+                }
+
+                const records = Array.isArray(payload)
+                    ? payload
+                    : (Array.isArray(payload.data) ? payload.data : []);
 
                 maintList.innerHTML = '';
 
@@ -414,7 +315,7 @@ function updateOverviewDashboard() {
                         const card = document.createElement('div');
                         card.className = "flex items-center justify-between border-b border-slate-100/50 pb-2 bg-slate-50/20 hover:bg-slate-50/50 p-1.5 rounded transition";
 
-                        const type = record.type.includes('Corrective') ? 'Corrective' : 'Preventive';
+                        const type = String(record.type || '').includes('Corrective') ? 'Corrective' : 'Preventive';
                         const badgeClass = type === 'Corrective' ? 'bg-[#FCEBEB] text-[#A32D2D]' : 'bg-[#FAEEDA] text-[#854F0B]';
 
                         const busLabel = record.bus ? record.bus.plate_number : `Bus #${record.bus_id}`;
@@ -432,132 +333,113 @@ function updateOverviewDashboard() {
                 }
             } catch (error) {
                 console.error("Overview failed to load maintenance schedule:", error);
-                maintList.innerHTML = `<div class="py-12 text-center text-rose-500 font-semibold text-xs">Error loading schedules.</div>`;
+                maintList.innerHTML = `<div class="py-12 text-center text-slate-400 font-semibold text-xs">Maintenance schedules are currently unavailable.</div>`;
             }
         })();
     }
 }
 
-function renderScheduleDispatchAction(dispatch) {
-    const isSuspended = dispatch.isRouteSuspended || dispatch.dispatchState === 'route_suspended';
-    const reason = dispatch.suspensionReason || dispatch.dispatchBlockedReason || 'Route is currently suspended.';
-    const tripCount = typeof dispatch.remainingActiveTrips === 'number' ? dispatch.remainingActiveTrips : 0;
-    const tripCountLabel = `${tripCount} ${tripCount === 1 ? 'ongoing trip' : 'ongoing trips'}`;
-    const tooltipText = `Route Suspended\n\nReason: ${reason}\n\nRemaining ongoing trips: ${tripCount}`;
+function renderOverviewSystemHealth(health) {
+    const statusContainer = document.getElementById('system-status-container');
+    if (!statusContainer) return;
 
-    // 1. Primary State: Dispatched
-    if (dispatch.dispatchState === 'dispatched' || dispatch.isDispatched) {
-        const tripLabel = dispatch.tripId ? `Trip #${dispatch.tripId}` : 'Linked Trip';
-        let html = `<div class="flex flex-col items-end gap-1"><span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Dispatched - ${tripLabel}</span>`;
+    const state = health.state || 'nominal';
+    const styles = {
+        critical: ['bg-[#FDF2F2]', 'text-[#E24B4A]', 'border-red-100', 'bg-[#E24B4A]'],
+        degraded: ['bg-[#FEF7ED]', 'text-[#BA7517]', 'border-amber-100', 'bg-[#BA7517]'],
+        nominal: ['bg-[#E8F4E0]', 'text-[#639922]', 'border-green-100', 'bg-[#639922]'],
+    }[state] || ['bg-[#E8F4E0]', 'text-[#639922]', 'border-green-100', 'bg-[#639922]'];
 
-        // UI-06: Secondary badge for Dispatched + Route Suspended
-        if (isSuspended) {
-            html += `<span class="inline-flex items-center gap-1 rounded bg-rose-50 border border-rose-200 px-1.5 py-0.5 text-[9px] font-extrabold text-rose-700 uppercase tracking-wider shadow-2xs" title="${tooltipText}" aria-label="Route suspended. ${tripCountLabel}."><i class="ti ti-ban text-[10px]"></i><span>Route Suspended</span></span>`;
-        }
-
-        html += `</div>`;
-        return html;
-    }
-
-    // 2. Primary State: Cancelled (UI-07: No secondary badge when cancelled)
-    if (dispatch.dispatchState === 'cancelled') {
-        return `<span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Cancelled</span>`;
-    }
-
-    // 3. Primary State: Invalid Resource / Missing Assignment (Blocked)
-    if (dispatch.dispatchState === 'blocked') {
-        const blockedReason = dispatch.dispatchBlockedReason || 'Missing required assignment';
-        return `<span class="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-700 uppercase tracking-wider" title="${blockedReason}"><i class="ti ti-alert-triangle text-xs"></i><span>Blocked</span></span>`;
-    }
-
-    // 4. Primary State: Route Suspended (No prior dispatch, resources valid)
-    if (isSuspended) {
-        return `<div class="flex flex-col items-end gap-1 select-none">
-            <span class="inline-flex items-center gap-1 rounded-md bg-rose-50 border border-rose-200 px-2 py-1 text-[10px] font-extrabold text-rose-700 uppercase tracking-wider shadow-2xs"
-                  title="${tooltipText}"
-                  aria-label="Route suspended. Reason: ${reason}. ${tripCountLabel}.">
-                <i class="ti ti-ban text-xs text-rose-600"></i>
-                <span>Route Suspended</span>
-            </span>
-            <span class="text-[9.5px] font-semibold text-slate-500 tracking-tight">${tripCountLabel}</span>
-        </div>`;
-    }
-
-    // 5. Primary State: Ready
-    if (!dispatch.canDispatch) {
-        const blockedReason = dispatch.dispatchBlockedReason || 'Unavailable';
-        return `<span class="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-700 uppercase tracking-wider" title="${blockedReason}"><i class="ti ti-alert-triangle text-xs"></i><span>Blocked</span></span>`;
-    }
-
-    return `<button type="button" data-schedule-dispatch-button="${dispatch.id}" onclick="dispatchSchedule(${dispatch.id}, this)" class="text-[10px] font-extrabold text-[#003F87] hover:text-[#002D62] transition uppercase tracking-wider cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">Dispatch Schedule</button>`;
+    statusContainer.innerHTML = `
+        <span class="inline-flex items-center gap-1 ${styles[0]} ${styles[1]} font-bold px-3 py-1.5 rounded-lg uppercase text-[11px] tracking-wider shadow-sm border ${styles[2]}">
+            <span class="h-1.5 w-1.5 rounded-full ${styles[3]} animate-pulse"></span>
+            ${escapeOverviewHtml(health.label || 'Systems Nominal')}
+        </span>
+    `;
 }
 
-function scheduleDispatchUrl(scheduleId) {
-    const template = window.GoPasigConfig && window.GoPasigConfig.scheduleDispatchUrlTemplate
-        ? window.GoPasigConfig.scheduleDispatchUrlTemplate
-        : '/admin/api/schedules/:id/dispatch';
+function renderOverviewFleetDonut(fleetStatus) {
+    const total = Number(fleetStatus.total) || 0;
+    const inService = Number(fleetStatus.in_service) || 0;
+    const standby = Number(fleetStatus.standby) || 0;
+    const unavailable = Number(fleetStatus.unavailable) || 0;
+    const categories = [inService, standby, unavailable];
+    const circleIds = ['donut-circle-active', 'donut-circle-maintenance', 'donut-circle-alert'];
+    const legendData = [
+        ['donut-legend-active', 'bg-[#639922]', 'In Service', inService],
+        ['donut-legend-maintenance', 'bg-[#BA7517]', 'Standby', standby],
+        ['donut-legend-alert', 'bg-[#E24B4A]', 'Unavailable', unavailable],
+    ];
 
-    return template.replace(':id', scheduleId);
+    const donutTotal = document.getElementById('donut-total-buses');
+    if (donutTotal) donutTotal.textContent = total;
+
+    legendData.forEach(([id, dotClass, label, count]) => {
+        const legend = document.getElementById(id);
+        if (legend) legend.innerHTML = `<span class="h-2.5 w-2.5 rounded-full ${dotClass}"></span> ${label} (${count})`;
+    });
+
+    const circumference = 238.76;
+    let offset = 0;
+    circleIds.forEach((id, index) => {
+        const circle = document.getElementById(id);
+        if (!circle) return;
+
+        const length = total > 0 ? (categories[index] / total) * circumference : 0;
+        circle.setAttribute('stroke-dasharray', `${length.toFixed(1)} ${circumference.toFixed(0)}`);
+        circle.setAttribute('stroke-dashoffset', `-${offset.toFixed(1)}`);
+        offset += length;
+    });
 }
 
-async function dispatchSchedule(scheduleId, button) {
-    if (scheduledDispatchesInFlight.has(scheduleId)) return;
+function renderOverviewOfficialSchedules(routes) {
+    const scheduleList = document.getElementById('official-schedule-list');
+    if (!scheduleList) return;
 
-    scheduledDispatchesInFlight.add(scheduleId);
-    if (button) {
-        button.disabled = true;
-        button.textContent = 'Dispatching...';
+    if (!routes.length) {
+        scheduleList.innerHTML = '<div class="py-16 text-center text-xs font-semibold text-slate-400">No official schedules configured.</div>';
+        return;
     }
 
-    try {
-        const response = await fetch(scheduleDispatchUrl(scheduleId), {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': window.GoPasigConfig?.csrfToken || '',
-            },
-            body: JSON.stringify({}),
-        });
-        const data = await response.json();
+    scheduleList.innerHTML = routes.map(route => {
+        const directions = (route.directions || []).map(direction => {
+            const windows = direction.windows && direction.windows.length
+                ? direction.windows.join(' | ')
+                : 'No operating window';
+            const badgeClass = direction.state === 'in_service'
+                ? 'bg-[#EAF3DE] text-[#3B6D11]'
+                : direction.state === 'suspended'
+                    ? 'bg-[#FCEBEB] text-[#A32D2D]'
+                    : 'bg-slate-100 text-slate-500';
 
-        if (!response.ok || !data.success) {
-            throw new Error(data.message || 'Schedule dispatch failed.');
-        }
+            return `
+                <div class="border-t border-slate-100 pt-2 first:border-t-0 first:pt-0">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">${escapeOverviewHtml(direction.direction || 'Direction')}</span>
+                        <span class="inline-flex rounded-full ${badgeClass} px-2 py-0.5 text-[9px] font-bold">${escapeOverviewHtml(direction.status || '')}</span>
+                    </div>
+                    <p class="mt-1 text-[11px] font-bold text-slate-700 leading-4">${escapeOverviewHtml(windows)}</p>
+                </div>
+            `;
+        }).join('');
 
-        if (typeof refreshBusManagementState === 'function') {
-            await refreshBusManagementState();
-        } else {
-            if (typeof loadTodayDispatchQueue === 'function') {
-                await loadTodayDispatchQueue();
-            }
-            if (typeof updateOverviewDashboard === 'function') {
-                updateOverviewDashboard();
-            }
-        }
-    } catch (error) {
-        GoPasigUI.alert(error.message || 'Schedule dispatch failed.');
-        if (button) {
-            button.disabled = false;
-            button.textContent = 'Dispatch Schedule';
-        }
-    } finally {
-        scheduledDispatchesInFlight.delete(scheduleId);
-    }
-}
-// Navigation bridge from dispatch queue view buttons
-function viewTripDetails(busId) {
-    switchScreen('map');
-
-    // Auto pan/zoom mapping locator integration
-    if (typeof initLiveFleetMap === 'function') {
-        initLiveFleetMap();
-    }
-
-    if (typeof locateBusOnMap === 'function') {
-        setTimeout(() => {
-            locateBusOnMap(busId);
-        }, 400);
-    }
+        return `
+            <div class="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                <div class="mb-2 flex items-center gap-2">
+                    <span class="h-2 w-2 rounded-full" style="background-color: ${escapeOverviewHtml(route.route_color || '#003F87')}"></span>
+                    <span class="text-xs font-extrabold text-slate-900">${escapeOverviewHtml(route.route_name || 'Official Route')}</span>
+                </div>
+                <div class="space-y-2">${directions}</div>
+            </div>
+        `;
+    }).join('');
 }
 
+function escapeOverviewHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}

@@ -11,6 +11,8 @@ class RouteVariantGeometryController extends Controller
 {
     public function generatePreview(Request $request, RouteVariant $routeVariant, RouteVariantGeometryWorkflow $workflow)
     {
+        $this->abortUnlessRouteGenerationMaintenanceEnabled();
+
         abort_unless(auth()->user()->role === 'admin', 403);
         $request->validate(['provider' => 'required|in:google']);
 
@@ -24,6 +26,8 @@ class RouteVariantGeometryController extends Controller
 
     public function acceptPreview(Request $request, RouteVariant $routeVariant, RouteVariantGeometryWorkflow $workflow)
     {
+        $this->abortUnlessRouteGenerationMaintenanceEnabled();
+
         abort_unless(auth()->user()->role === 'admin', 403);
         $data = $request->validate(['session_id' => 'required|uuid', 'last_geometry_version' => 'required|integer']);
 
@@ -39,6 +43,8 @@ class RouteVariantGeometryController extends Controller
 
     public function rejectPreview(Request $request, RouteVariant $routeVariant, RouteVariantGeometryWorkflow $workflow)
     {
+        $this->abortUnlessRouteGenerationMaintenanceEnabled();
+
         abort_unless(auth()->user()->role === 'admin', 403);
         $data = $request->validate(['session_id' => 'required|uuid']);
         $workflow->rejectPreview($data['session_id'], $routeVariant->id);
@@ -49,5 +55,10 @@ class RouteVariantGeometryController extends Controller
     {
         abort_unless(auth()->user()->role === 'admin', 403);
         return response()->json(['success' => true, 'history' => $routeVariant->geometryVersions()->with('creator')->paginate(20)]);
+    }
+
+    private function abortUnlessRouteGenerationMaintenanceEnabled(): void
+    {
+        abort_unless((bool) config('routing.route_generation_maintenance_enabled', false), 404);
     }
 }

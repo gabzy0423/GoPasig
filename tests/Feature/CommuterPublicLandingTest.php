@@ -20,7 +20,7 @@ class CommuterPublicLandingTest extends TestCase
 
         Cache::flush();
 
-        foreach (['Route A', 'Route B', 'Route C', 'Route D', 'PHASE2-UAT Route', 'PHASE3C-UAT Point-to-Point A-B', 'Route 1', 'Route 2', 'Route 3'] as $name) {
+        foreach (['Route A', 'Route B', 'Route C', 'Route D', 'PHASE2-UAT Route', 'PHASE3C-UAT Point-to-Point A-B', 'Route 2', 'Route 3', 'Route 4'] as $name) {
             $route = Route::create([
                 'name' => $name,
                 'description' => $name . ' Description',
@@ -127,9 +127,9 @@ class CommuterPublicLandingTest extends TestCase
         $response = $this->get('/commuter/routes');
 
         $response->assertOk();
-        $response->assertSee('Route 1');
         $response->assertSee('Route 2');
         $response->assertSee('Route 3');
+        $response->assertSee('Route 4');
         $response->assertDontSee('Route A');
         $response->assertDontSee('Route B');
         $response->assertDontSee('Route C');

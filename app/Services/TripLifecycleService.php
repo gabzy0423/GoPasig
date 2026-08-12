@@ -107,6 +107,11 @@ class TripLifecycleService
                     'actual_arrival_time' => $endedAt->copy()->timezone('Asia/Manila')->format('H:i:s'),
                 ]);
             }
+
+            TripLogService::logTrip($trip->fresh(), [
+                'completed_at' => $endedAt,
+                'status' => TripStatus::COMPLETED->value,
+            ]);
         });
     }
 
@@ -136,11 +141,18 @@ class TripLifecycleService
                 ]);
             }
 
+            $endedAt = now();
+
             // 3. Trip: ongoing -> cancelled, GPS: ACTIVE -> CLOSED
             $trip->update([
                 'status' => TripStatus::CANCELLED,
                 'gps_session' => GpsSessionStatus::CLOSED,
-                'ended_at' => now(),
+                'ended_at' => $endedAt,
+            ]);
+
+            TripLogService::logTrip($trip->fresh(), [
+                'completed_at' => $endedAt,
+                'status' => TripStatus::CANCELLED->value,
             ]);
         });
     }

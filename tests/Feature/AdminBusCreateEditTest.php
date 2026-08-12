@@ -252,7 +252,7 @@ class AdminBusCreateEditTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = \App\Models\Route::factory()->create();
+        $route = \App\Models\Route::factory()->create(['name' => 'Route 2', 'status' => 'Active']);
         $driver = \App\Models\Driver::factory()->create();
 
         $bus = Bus::create([

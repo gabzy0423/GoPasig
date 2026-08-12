@@ -312,7 +312,7 @@
                 <div class="w-full py-12 flex flex-col items-center justify-center bg-white border border-slate-100 rounded-2xl px-4 text-center">
                     <i class="ti ti-bus-off text-slate-300 text-5xl mb-2"></i>
                     <h4 class="text-sm font-bold text-slate-800">No active buses right now</h4>
-                    <p class="text-xs font-semibold text-slate-400 mt-1 max-w-[200px] mx-auto">Check back during service hours: 5:00 AM – 9:00 PM</p>
+                    <p class="text-xs font-semibold text-slate-400 mt-1 max-w-[200px] mx-auto">Check the Schedule page for today's official operating windows.</p>
                 </div>
             @endforelse
         </div>

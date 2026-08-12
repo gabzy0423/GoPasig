@@ -8,7 +8,10 @@ use App\Models\Schedule;
 use App\Models\ServiceAlert;
 use App\Models\Stop;
 use App\Models\SystemSetting;
+use App\Models\Trip;
+use App\Enums\TripStatus;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
 
 class CommuterDashboardCacheService
@@ -19,8 +22,9 @@ class CommuterDashboardCacheService
     {
         return Cache::remember('commuter_active_buses_list', 15, function () {
             return Bus::with('route')
-                ->where('status', 'active')
+                ->whereIn('status', Bus::commuterServiceStatuses())
                 ->whereHas('route', fn ($query) => $query->publicCommuterActiveService())
+                ->whereHas('trips', fn ($query) => $query->where('status', TripStatus::ONGOING->value))
                 ->get();
         });
     }
@@ -28,18 +32,21 @@ class CommuterDashboardCacheService
     public function dashboardData(): array
     {
         return Cache::remember('commuter_dashboard_aggregate', now()->addSeconds(self::CACHE_TTL_SECONDS), function () {
+            $today = Carbon::today('Asia/Manila')->toDateString();
             $routes = Route::publicCommuterVisible()->with('stops')->orderBy('id')->get();
-            $activeBuses = Bus::with('route')
-                ->where('status', 'active')
-                ->whereHas('route', fn ($query) => $query->publicCommuterActiveService())
-                ->orderBy('eta')
+            $activeBuses = self::getActiveBuses()->sortBy('eta')->values();
+            $schedules = Schedule::whereDate('service_date', $today)
+                ->orderBy('departure_time')
                 ->get();
-            $schedules = Schedule::orderBy('departure_time')->get();
+            $completedTripsByRoute = Trip::where('status', TripStatus::COMPLETED->value)
+                ->whereDate('ended_at', $today)
+                ->selectRaw('route_id, COUNT(*) as completed_count')
+                ->groupBy('route_id')
+                ->pluck('completed_count', 'route_id');
             $activeAlerts = ServiceAlert::activeAlerts()->publicCommuterVisible()->latest('created_at')->get();
 
             $activeBusesByRoute = $activeBuses->groupBy('route_id');
             $schedulesByRoute = $schedules->groupBy('route_id');
-            $nowTimeString = now()->toTimeString();
             $defaultRouteColor = config('brand.route_color_default', '#003F87');
             $unassignedRouteColor = config('brand.route_color_unassigned', '#888780');
             $defaultDelayThreshold = Bus::getDelayThreshold();
@@ -48,8 +55,9 @@ class CommuterDashboardCacheService
             $labelOnTime = SystemSetting::get('label_bus_status_on_time', 'On Time');
             $etaProvenanceService = app(CommuterEtaProvenanceService::class);
             $routeStatusService = app(RouteStatusService::class);
+            $routeServiceScheduleEvaluator = app(RouteServiceScheduleEvaluator::class);
 
-            $activeRoutes = $routes->map(function ($route) use ($activeBusesByRoute, $schedulesByRoute, $nowTimeString, $activeAlerts, $defaultRouteColor, $defaultDelayThreshold, $etaProvenanceService, $routeStatusService) {
+            $activeRoutes = $routes->map(function ($route) use ($activeBusesByRoute, $schedulesByRoute, $completedTripsByRoute, $activeAlerts, $defaultRouteColor, $defaultDelayThreshold, $etaProvenanceService, $routeStatusService) {
                 $routeBuses = $activeBusesByRoute->get($route->id, collect());
                 $routeSchedules = $schedulesByRoute->get($route->id, collect());
                 $nextEta = null;
@@ -59,15 +67,6 @@ class CommuterDashboardCacheService
                     $nextBus = $routeBuses->sortBy('eta')->first();
                     $nextEtaProvenance = $nextBus ? $etaProvenanceService->forBus($nextBus) : null;
                     $nextEta = $nextEtaProvenance?->minutes;
-                } else {
-                    $nextSched = $routeSchedules
-                        ->where('departure_time', '>', $nowTimeString)
-                        ->sortBy('departure_time')
-                        ->first();
-
-                    if ($nextSched) {
-                        $nextEta = max(1, now()->diffInMinutes(Carbon::parse($nextSched->departure_time)));
-                    }
                 }
 
                 return (object) [
@@ -78,41 +77,35 @@ class CommuterDashboardCacheService
                     'next_eta_minutes' => $nextEta,
                     'next_eta_provenance_state' => $nextEtaProvenance?->state,
                     'next_eta_label' => $nextEtaProvenance?->label ?: ($nextEta !== null ? $nextEta . 'm' : 'TBA'),
-                    'completed_trips' => $routeSchedules->where('departure_time', '<=', $nowTimeString)->count(),
+                    'completed_trips' => (int) ($completedTripsByRoute[$route->id] ?? 0),
                     'scheduled_trips' => $routeSchedules->count(),
                 ];
             });
 
-            $schedulePeek = $routes->map(function ($route) use ($schedulesByRoute, $defaultRouteColor) {
-                $routeSchedules = $schedulesByRoute->get($route->id, collect());
-                $firstSchedule = $routeSchedules->first();
-                $lastSchedule = $routeSchedules->last();
-                $serviceStatus = 'In service';
-                $minsUntilStart = 0;
-
-                if ($route->status === 'Suspended') {
-                    $serviceStatus = 'Suspended';
-                } elseif ($firstSchedule && $lastSchedule) {
-                    $firstTripTime = Carbon::parse($firstSchedule->departure_time);
-                    $lastTripTime = Carbon::parse($lastSchedule->departure_time);
-                    $currentTime = Carbon::now();
-
-                    if ($currentTime->lessThan($firstTripTime)) {
-                        $minsUntilStart = max(1, $currentTime->diffInMinutes($firstTripTime));
-                        $serviceStatus = "Starts in {$minsUntilStart} min";
-                    } elseif ($currentTime->greaterThan($lastTripTime)) {
-                        $serviceStatus = 'Service ended';
-                    }
-                } else {
-                    $serviceStatus = 'No service';
-                }
+            $schedulePeek = $routes->map(function ($route) use ($defaultRouteColor, $routeServiceScheduleEvaluator) {
+                $currentTime = Carbon::now('Asia/Manila');
+                $serviceStatus = $route->status === 'Suspended'
+                    ? [
+                        'is_operating' => false,
+                        'status_label' => 'Suspended',
+                        'current_window' => null,
+                        'next_window' => null,
+                    ]
+                    : $routeServiceScheduleEvaluator->statusForRoute($route, $currentTime);
+                $serviceWindows = $routeServiceScheduleEvaluator->activeWindowsForRouteOn($route, $currentTime);
+                $firstWindow = $serviceWindows->sortBy('first_trip_time')->first();
+                $lastWindow = $serviceWindows->sortByDesc('last_trip_time')->first();
+                $nextWindow = $serviceStatus['next_window'] ?? null;
+                $minsUntilStart = $nextWindow
+                    ? max(1, (int) ceil($currentTime->diffInMinutes($this->timeOnDate($currentTime, $nextWindow->first_trip_time), false)))
+                    : 0;
 
                 return (object) [
                     'route_name' => $route->name,
                     'route_color' => $route->color ?: $defaultRouteColor,
-                    'first_trip' => $firstSchedule ? Carbon::parse($firstSchedule->departure_time)->format('g:i A') : 'No schedules',
-                    'last_trip' => $lastSchedule ? Carbon::parse($lastSchedule->departure_time)->format('g:i A') : 'No schedules',
-                    'service_status' => $serviceStatus,
+                    'first_trip' => $firstWindow ? $this->formatRouteServiceTime($firstWindow->first_trip_time) : 'No schedules',
+                    'last_trip' => $lastWindow ? $this->formatRouteServiceTime($lastWindow->last_trip_time) : 'No schedules',
+                    'service_status' => $serviceStatus['status_label'],
                     'mins_until_start' => $minsUntilStart,
                 ];
             });
@@ -184,13 +177,30 @@ class CommuterDashboardCacheService
                 'route.stops',
                 'route.schedules',
                 'route.durations',
-                'route.buses' => fn($query) => $query->where('status', 'active'),
+                'route.buses' => fn($query) => $query->whereIn('status', Bus::commuterServiceStatuses()),
             ])
                 ->whereHas('route', fn ($query) => $query->publicCommuterVisible())
                 ->orderBy('route_id')
                 ->orderBy('sequence')
                 ->get();
         });
+    }
+
+    private function formatRouteServiceTime(?string $time): string
+    {
+        if (! $time) {
+            return 'No schedules';
+        }
+
+        return Carbon::createFromFormat('H:i:s', strlen($time) === 5 ? $time . ':00' : $time, 'Asia/Manila')
+            ->format('g:i A');
+    }
+
+    private function timeOnDate(CarbonInterface $date, ?string $time): Carbon
+    {
+        $normalized = $time ? (strlen($time) === 5 ? $time . ':00' : substr($time, 0, 8)) : '00:00:00';
+
+        return Carbon::instance($date)->copy()->timezone('Asia/Manila')->setTimeFromTimeString($normalized);
     }
 
 }

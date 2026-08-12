@@ -2,38 +2,43 @@
 
 namespace App\Http\Controllers\Fleet;
 
+use App\Enums\GeofenceType;
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
-use Carbon\Carbon;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
+use App\Models\ActivityLog;
 use App\Models\Bus;
-use App\Models\Trip;
+use App\Models\BusStatusAuditLog;
+use App\Models\ColorPalette;
+use App\Models\CommuterSession;
+use App\Models\CommuterTrip;
+use App\Models\Geofence;
+use App\Models\GeofenceTransition;
+use App\Models\Incident;
+use App\Models\IncidentType;
 use App\Models\Route;
+use App\Models\RouteVariantCorridor;
 use App\Models\Schedule;
 use App\Models\ServiceAlert;
-use App\Models\Incident;
-use App\Models\Driver;
-use App\Models\ColorPalette;
 use App\Models\SystemSetting;
-use App\Models\IncidentType;
-use App\Services\DashboardService;
-use App\Services\RouteStatusService;
-use App\Models\CommuterTrip;
-use App\Models\CommuterSession;
-use App\Models\Geofence;
-use App\Models\RouteCorridor;
-use App\Models\GeofenceTransition;
+use App\Models\Trip;
 use App\Models\TripProgress;
 use App\Models\VehiclePosition;
-use App\Services\ValueObjects\Coordinate;
+use App\Services\BusStateService;
+use App\Services\DashboardService;
 use App\Services\RouteMapGeometryService;
-use App\Services\Contracts\GeospatialServiceInterface;
+use App\Services\RouteStatusService;
+use App\Services\Routing\FleetStatusService;
+use App\Services\ValueObjects\Coordinate;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class FleetController extends Controller
 {
     protected $dashboardService;
+
     protected $routeStatusService;
 
     public function __construct(DashboardService $dashboardService, RouteStatusService $routeStatusService)
@@ -41,6 +46,7 @@ class FleetController extends Controller
         $this->dashboardService = $dashboardService;
         $this->routeStatusService = $routeStatusService;
     }
+
     /**
      * Show the main Fleet Ops Dashboard.
      */
@@ -69,19 +75,33 @@ class FleetController extends Controller
         }
 
         if (request()->boolean('fragment') && $activeFleetTab !== 'overview') {
+            $fragmentData = [];
+            if ($activeFleetTab === 'monitor') {
+                $fragmentData['routes'] = $this->getOverviewDataArray()['routes'];
+            } elseif ($activeFleetTab === 'commuter-trips') {
+                $fragmentData['routes'] = Route::getCanonicalProductionCached()
+                    ->sortBy('id')
+                    ->map(fn (Route $route) => [
+                        'id' => $route->id,
+                        'name' => $route->name,
+                    ])
+                    ->values()
+                    ->all();
+            }
+
             return response()->json([
                 'success' => true,
                 'tab' => $activeFleetTab,
-                'html' => view($this->fleetModuleView($activeFleetTab))->render(),
+                'html' => view($this->fleetModuleView($activeFleetTab), $fragmentData)->render(),
             ]);
         }
         // Load operating hours from database settings (fallback: 05:00 - 21:00)
         $startTime = SystemSetting::get('service_start_time', '05:00');
-        $endTime   = SystemSetting::get('service_end_time',   '21:00');
+        $endTime = SystemSetting::get('service_end_time', '21:00');
         [$startH, $startM] = array_map('intval', explode(':', $startTime));
-        [$endH,   $endM]   = array_map('intval', explode(':', $endTime));
+        [$endH,   $endM] = array_map('intval', explode(':', $endTime));
         $start = Carbon::createFromTime($startH, $startM, 0, 'Asia/Manila');
-        $end   = Carbon::createFromTime($endH,   $endM,   0, 'Asia/Manila');
+        $end = Carbon::createFromTime($endH, $endM, 0, 'Asia/Manila');
         $inService = $now->between($start, $end);
 
         // Fetch initial data to render server-side for fast loading
@@ -115,12 +135,14 @@ class FleetController extends Controller
             default => 'fleet.overview-content',
         };
     }
+
     /**
      * API endpoint to get refreshed overview data.
      */
     public function getOverviewData()
     {
         $data = $this->getOverviewDataArray();
+
         return response()->json($data);
     }
 
@@ -132,7 +154,7 @@ class FleetController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|min:3|max:255',
             'location' => 'required|string|max:255',
-            'route_id' => 'required|integer|exists:routes,id',
+            'route_id' => ['required', 'integer', 'exists:routes,id', Rule::in(Route::getCanonicalProductionCached()->pluck('id')->all())],
             'severity' => 'required|string|in:Low,Medium,High',
         ]);
 
@@ -140,37 +162,37 @@ class FleetController extends Controller
 
         // Find an ongoing trip on this route to associate with the incident
         $trip = Trip::where('route_id', $routeId)->where('status', 'ongoing')->first();
-        if (!$trip) {
+        if (! $trip) {
             return response()->json([
                 'success' => false,
-                'message' => 'Walang aktibong biyahe (ongoing trip) sa rutang ito sa kasalukuyan.'
+                'message' => 'Walang aktibong biyahe (ongoing trip) sa rutang ito sa kasalukuyan.',
             ], 422);
         }
 
         // Determine incident type from configurable severity map
-        $severityMap   = json_decode(SystemSetting::get('incident_severity_map', '{"Low":"Route Issue","Medium":"Delay","High":"Breakdown"}'), true);
-        $type          = $severityMap[$validated['severity']] ?? 'Delay';
+        $severityMap = json_decode(SystemSetting::get('incident_severity_map', '{"Low":"Route Issue","Medium":"Delay","High":"Breakdown"}'), true);
+        $type = $severityMap[$validated['severity']] ?? 'Delay';
 
         // Create incident in DB
         $incident = Incident::create([
             'trip_id' => $trip->id,
             'driver_id' => $trip->driver_id,
             'type' => $type,
-            'description' => $validated['title'] . ' at ' . $validated['location'],
+            'description' => $validated['title'].' at '.$validated['location'],
             'status' => 'reported',
             'reported_at' => now(),
         ]);
 
         // If the incident type matches Breakdown or Accident, flag bus for breakdown status
         if ((Incident::isBreakdown($type) || Incident::isAccident($type)) && $trip->bus) {
-            \App\Services\BusStateService::transition($trip->bus, \App\Models\Bus::STATUS_BREAKDOWN, 'Incident Report: ' . $type);
+            BusStateService::transition($trip->bus, Bus::STATUS_BREAKDOWN, 'Incident Report: '.$type);
         } else {
             if ($trip->bus) {
-                \App\Models\BusStatusAuditLog::create([
-                    'bus_id'     => $trip->bus->id,
+                BusStatusAuditLog::create([
+                    'bus_id' => $trip->bus->id,
                     'old_status' => $trip->bus->status,
                     'new_status' => $trip->bus->status,
-                    'reason'     => 'Incident Report: ' . $type,
+                    'reason' => 'Incident Report: '.$type,
                     'changed_by' => auth()->id(),
                 ]);
             }
@@ -178,12 +200,12 @@ class FleetController extends Controller
 
         // Log recent activity
         $user = Auth::user();
-        $this->logActivity('Incident', 'Reported: ' . ($trip->bus ? $trip->bus->plate_number : 'Bus') . ' â€” ' . $type . ' (' . $incident->description . ') by ' . ($user->name ?? 'Dispatcher'));
+        $this->logActivity('Incident', 'Reported: '.($trip->bus ? $trip->bus->plate_number : 'Bus').' Ã¢â‚¬â€ '.$type.' ('.$incident->description.') by '.($user->name ?? 'Dispatcher'));
 
         return response()->json([
             'success' => true,
             'message' => 'Incident successfully logged!',
-            'incident' => $incident
+            'incident' => $incident,
         ]);
     }
 
@@ -198,10 +220,10 @@ class FleetController extends Controller
         }
 
         $incident = Incident::with('trip.bus')->find((int) $id);
-        if (!$incident) {
+        if (! $incident) {
             return response()->json([
                 'success' => false,
-                'message' => 'Incident record not found.'
+                'message' => 'Incident record not found.',
             ], 404);
         }
 
@@ -210,11 +232,11 @@ class FleetController extends Controller
         // Log activity
         $user = Auth::user();
         $plate = ($incident->trip && $incident->trip->bus) ? $incident->trip->bus->plate_number : 'Bus';
-        $this->logActivity('Incident', 'Incident resolved: ' . $plate . ' â€” ' . $incident->type . ' by ' . ($user->name ?? 'Dispatcher'));
+        $this->logActivity('Incident', 'Incident resolved: '.$plate.' Ã¢â‚¬â€ '.$incident->type.' by '.($user->name ?? 'Dispatcher'));
 
         return response()->json([
             'success' => true,
-            'message' => 'Incident resolved successfully!'
+            'message' => 'Incident resolved successfully!',
         ]);
     }
 
@@ -239,12 +261,12 @@ class FleetController extends Controller
         ]);
 
         // Log activity
-        $this->logActivity('Announcement', 'Announcement posted: "' . $validated['title'] . '"');
+        $this->logActivity('Announcement', 'Announcement posted: "'.$validated['title'].'"');
 
         return response()->json([
             'success' => true,
             'message' => 'Announcement successfully posted!',
-            'alert' => $alert
+            'alert' => $alert,
         ]);
     }
 
@@ -258,7 +280,7 @@ class FleetController extends Controller
      */
     protected function logActivity(string $type, string $description): void
     {
-        \App\Models\ActivityLog::create([
+        ActivityLog::create([
             'type' => $type,
             'description' => $description,
             'user_id' => Auth::id(),
@@ -267,12 +289,12 @@ class FleetController extends Controller
         $userId = Auth::id();
         $userName = Auth::user()?->name ?? 'System';
 
-        Log::info('[FleetActivity] ' . $type, [
-            'type'        => $type,
+        Log::info('[FleetActivity] '.$type, [
+            'type' => $type,
             'description' => $description,
-            'user_id'     => $userId,
-            'user_name'   => $userName,
-            'logged_at'   => now()->toDateTimeString(),
+            'user_id' => $userId,
+            'user_name' => $userName,
+            'logged_at' => now()->toDateTimeString(),
         ]);
     }
 
@@ -301,13 +323,13 @@ class FleetController extends Controller
                     ->where('reported_at', '>=', now()->subHour())
                     ->exists();
 
-                if (!$alreadyLogged) {
+                if (! $alreadyLogged) {
                     $location = $busCheck->next_stop ?: "Lat {$busCheck->lat}, Lng {$busCheck->lng}";
                     Incident::create([
                         'trip_id' => $ongoingTrip->id,
                         'driver_id' => $ongoingTrip->driver_id,
                         'type' => 'Delay', // maps to Medium severity
-                        'description' => "Bus {$busCheck->plate_number} signal lost â€” last known position: {$location}",
+                        'description' => "Bus {$busCheck->plate_number} signal lost Ã¢â‚¬â€ last known position: {$location}",
                         'status' => 'reported',
                         'reported_at' => now(),
                     ]);
@@ -343,22 +365,22 @@ class FleetController extends Controller
         $dbIncidentsMapped = $dbIncidents->map(function ($incident) use ($severityMap) {
             $severity = $severityMap[$incident->type] ?? 'Low';
 
-                $plateNumber = $incident->plate_number ?? 'Unknown Bus';
-                $driverName = trim(($incident->driver_first_name ?? '') . ' ' . ($incident->driver_last_name ?? ''));
-                if (empty($driverName)) {
-                    $driverName = 'Unknown Driver';
-                }
-                $routeName = $incident->route_name ?? 'Unknown Route';
+            $plateNumber = $incident->plate_number ?? 'Unknown Bus';
+            $driverName = trim(($incident->driver_first_name ?? '').' '.($incident->driver_last_name ?? ''));
+            if (empty($driverName)) {
+                $driverName = 'Unknown Driver';
+            }
+            $routeName = $incident->route_name ?? 'Unknown Route';
 
-                return [
-                    'id' => 'db-' . $incident->id,
-                    'severity' => $severity,
-                    'title' => trim($plateNumber) . ' â€” ' . $incident->type . ': ' . $incident->description,
-                    'location' => 'Active Route',
-                    'affected_route' => $routeName,
-                    'reported_at' => Carbon::parse($incident->reported_at)->toIso8601String(),
-                ];
-            })
+            return [
+                'id' => 'db-'.$incident->id,
+                'severity' => $severity,
+                'title' => trim($plateNumber).' Ã¢â‚¬â€ '.$incident->type.': '.$incident->description,
+                'location' => 'Active Route',
+                'affected_route' => $routeName,
+                'reported_at' => Carbon::parse($incident->reported_at)->toIso8601String(),
+            ];
+        })
             ->toArray();
 
         $activeIncidents = $dbIncidentsMapped;
@@ -372,8 +394,7 @@ class FleetController extends Controller
             $routeColors[$idx + 1] = $colorEntry->hex_color;
         }
 
-        $routes = Route::getAllCached()
-            ->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])
+        $routes = Route::getCanonicalProductionCached()
             ->sortBy('id');
 
         // Pre-fetch counts to avoid N+1 queries in loop
@@ -405,7 +426,7 @@ class FleetController extends Controller
             ->get(['route_id', 'departure_time'])
             ->groupBy('route_id');
 
-        $routeHealth = $routes->map(function ($route) use ($today, $routeColors, $ongoingCounts, $completedTodayCounts, $completedAllCounts, $scheduledCounts, $schedulesByRoute) {
+        $routeHealth = $routes->map(function ($route) use ($routeColors, $ongoingCounts, $completedTodayCounts, $completedAllCounts, $scheduledCounts, $schedulesByRoute) {
             $busesOnRoute = $ongoingCounts[$route->id] ?? 0;
 
             $completedToday = $completedTodayCounts[$route->id] ?? 0;
@@ -428,14 +449,14 @@ class FleetController extends Controller
                         $gaps[] = $gapMinutes;
                     }
                 }
-                $avgHeadway = !empty($gaps) ? round(array_sum($gaps) / count($gaps), 1) : 0;
+                $avgHeadway = ! empty($gaps) ? round(array_sum($gaps) / count($gaps), 1) : 0;
             }
 
             $healthStatus = $this->routeStatusService->getFleetRouteHealth($route, $busesOnRoute);
 
             return [
                 'route_id' => $route->id,
-                'route_name' => $route->name . ' â€” ' . $route->description,
+                'route_name' => $route->name.' Ã¢â‚¬â€ '.$route->description,
                 'route_color' => $routeColors[$route->id] ?? '#888780',
                 'health_status' => $healthStatus,
                 'buses_on_route' => $busesOnRoute,
@@ -447,8 +468,8 @@ class FleetController extends Controller
 
         // 4. SCHEDULE COMPLIANCE
         $totalSchedules = Schedule::count();
-        $onTimeCount   = Schedule::where('status', Schedule::STATUS_ON_TIME)->count();
-        $delayedCount  = Schedule::where('status', Schedule::STATUS_DELAYED)->count();
+        $onTimeCount = Schedule::where('status', Schedule::STATUS_ON_TIME)->count();
+        $delayedCount = Schedule::where('status', Schedule::STATUS_DELAYED)->count();
         $cancelledCount = Schedule::where('status', Schedule::STATUS_CANCELLED)->count();
         $compliancePct = $totalSchedules > 0 ? (int) round(($onTimeCount / $totalSchedules) * 100) : 100;
 
@@ -481,7 +502,7 @@ class FleetController extends Controller
             ->map(function ($log) {
                 return [
                     'type' => 'Dispatch',
-                    'description' => $log->plate_number . ' dispatched on ' . $log->route_name . ' by ' . $log->dispatcher_name,
+                    'description' => $log->plate_number.' dispatched on '.$log->route_name.' by '.$log->dispatcher_name,
                     'timestamp' => Carbon::parse($log->event_time)->diffForHumans(),
                     'sort_time' => $log->event_time,
                 ];
@@ -503,9 +524,10 @@ class FleetController extends Controller
             ->get()
             ->map(function ($inc) {
                 $prefix = $inc->status === 'resolved' ? 'Resolved' : 'Reported';
+
                 return [
                     'type' => 'Incident',
-                    'description' => $prefix . ': ' . $inc->plate_number . ' â€” ' . $inc->type . ' (' . $inc->description . ')',
+                    'description' => $prefix.': '.$inc->plate_number.' Ã¢â‚¬â€ '.$inc->type.' ('.$inc->description.')',
                     'timestamp' => Carbon::parse($inc->event_time)->diffForHumans(),
                     'sort_time' => $inc->event_time,
                 ];
@@ -526,7 +548,7 @@ class FleetController extends Controller
             ->map(function ($rec) {
                 return [
                     'type' => 'Maintenance',
-                    'description' => $rec->plate_number . ' â€” ' . $rec->type . ' (' . $rec->status . ')',
+                    'description' => $rec->plate_number.' Ã¢â‚¬â€ '.$rec->type.' ('.$rec->status.')',
                     'timestamp' => Carbon::parse($rec->event_time)->diffForHumans(),
                     'sort_time' => $rec->event_time,
                 ];
@@ -539,7 +561,7 @@ class FleetController extends Controller
             ->map(function ($alert) {
                 return [
                     'type' => 'Announcement',
-                    'description' => 'Alert: "' . $alert->title . '" (' . $alert->status . ')',
+                    'description' => 'Alert: "'.$alert->title.'" ('.$alert->status.')',
                     'timestamp' => Carbon::parse($alert->created_at)->diffForHumans(),
                     'sort_time' => $alert->created_at,
                 ];
@@ -552,6 +574,7 @@ class FleetController extends Controller
             ->take(10)
             ->map(function ($item) {
                 unset($item['sort_time']);
+
                 return $item;
             })
             ->toArray();
@@ -562,7 +585,7 @@ class FleetController extends Controller
                     'type' => 'System',
                     'description' => 'No recent activity. Dispatch a bus to get started.',
                     'timestamp' => 'Just now',
-                ]
+                ],
             ];
         }
 
@@ -571,7 +594,7 @@ class FleetController extends Controller
             return [
                 'id' => $trip->id,
                 'plate_number' => $trip->bus ? $trip->bus->plate_number : 'Unknown Bus',
-                'driver_name' => $trip->driver ? ($trip->driver->first_name . ' ' . $trip->driver->last_name) : 'Unknown Driver',
+                'driver_name' => $trip->driver ? ($trip->driver->first_name.' '.$trip->driver->last_name) : 'Unknown Driver',
                 'route_name' => $trip->route ? $trip->route->name : 'Unknown Route',
             ];
         })->toArray();
@@ -580,11 +603,11 @@ class FleetController extends Controller
         $activeTripsForMap = Trip::where('status', 'ongoing')->with('routeVariant')->get();
         $routeMapGeometry = app(RouteMapGeometryService::class);
 
-        $allRoutes = Route::getAllCached()
-            ->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])
+        $allRoutes = Route::getCanonicalProductionCached()
             ->sortBy('id')
             ->map(function ($route) use ($activeTripsForMap, $routeMapGeometry) {
                 $mapGeometry = $routeMapGeometry->forRoute($route, $activeTripsForMap);
+
                 return [
                     'id' => $route->id,
                     'name' => $route->name,
@@ -604,9 +627,9 @@ class FleetController extends Controller
         // All Buses (including breakdown buses to keep them visible on the map, excluding inactive/maintenance ones)
         $allBuses = Bus::where('status', '!=', 'inactive')
             ->where('status', '!=', 'maintenance')
-            ->where(function($q) use ($activeBusIds) {
+            ->where(function ($q) use ($activeBusIds) {
                 $q->whereIn('id', $activeBusIds)
-                  ->orWhere('status', 'breakdown');
+                    ->orWhere('status', 'breakdown');
             })
             ->get()
             ->map(function ($bus) {
@@ -639,13 +662,20 @@ class FleetController extends Controller
      */
     public function getCommuterTrips(Request $request)
     {
-        $query = CommuterTrip::with(['route', 'originStop', 'destinationStop'])
+        $query = CommuterTrip::with([
+            'route',
+            'routeVariant',
+            'originStop',
+            'destinationStop',
+            'originRouteVariantStop',
+            'destinationRouteVariantStop',
+        ])
             ->where('is_simulated', false)
             ->latest();
 
         if ($request->filled('search')) {
             $search = $request->input('search');
-            $query->where('session_token', 'like', '%' . $search . '%');
+            $query->where('session_token', 'like', '%'.$search.'%');
         }
 
         if ($request->filled('route_id') && $request->input('route_id') !== 'all') {
@@ -671,8 +701,8 @@ class FleetController extends Controller
         if ($request->filled('search')) {
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
-                $q->where('session_token', 'like', '%' . $search . '%')
-                  ->orWhere('ip_address', 'like', '%' . $search . '%');
+                $q->where('session_token', 'like', '%'.$search.'%')
+                    ->orWhere('ip_address', 'like', '%'.$search.'%');
             });
         }
 
@@ -681,6 +711,7 @@ class FleetController extends Controller
         // Map session statuses dynamically
         $sessions->getCollection()->transform(function ($session) {
             $session->is_active = $session->expires_at && $session->expires_at->isFuture();
+
             return $session;
         });
 
@@ -698,11 +729,11 @@ class FleetController extends Controller
         $activeBusIds = $activeTrips->keys()->all();
 
         $rawBuses = Bus::where(function ($q) use ($activeBusIds) {
-                $q->whereIn('id', $activeBusIds)
-                  ->orWhere('status', 'breakdown');
-            })
+            $q->whereIn('id', $activeBusIds)
+                ->orWhere('status', 'breakdown');
+        })
             ->get(['id', 'plate_number', 'lat', 'lng', 'speed',
-                   'passengers', 'capacity', 'next_stop', 'eta', 'status', 'route_id', 'updated_at']);
+            'passengers', 'capacity', 'next_stop', 'eta', 'status', 'route_id', 'updated_at']);
 
         $livePositions = VehiclePosition::whereIn('bus_id', $rawBuses->pluck('id'))
             ->get()
@@ -714,9 +745,10 @@ class FleetController extends Controller
             $trip = $activeTrips->get($bus->id);
 
             $livePos = $livePositions->get($bus->id);
-            $livePosMatchesTrip = $livePos && (!$trip || (int) $livePos->trip_id === (int) $trip->id);
+            $livePosMatchesTrip = $livePos && (! $trip || (int) $livePos->trip_id === (int) $trip->id);
             $hasLiveTelemetry = (bool) $livePosMatchesTrip;
-            $coordinateSource = $hasLiveTelemetry ? 'vehicle_position' : 'bus_fallback';            $liveLat = $hasLiveTelemetry ? (float) $livePos->lat : (float) $bus->lat;
+            $coordinateSource = $hasLiveTelemetry ? 'vehicle_position' : 'bus_fallback';
+            $liveLat = $hasLiveTelemetry ? (float) $livePos->lat : (float) $bus->lat;
             $liveLng = $hasLiveTelemetry ? (float) $livePos->lng : (float) $bus->lng;
             $liveSpeedMps = $hasLiveTelemetry ? (float) $livePos->speed : (float) $bus->speed;
             $liveSpeedKmh = round($liveSpeedMps * 3.6, 1);
@@ -728,7 +760,7 @@ class FleetController extends Controller
             $movementConfidence = $hasLiveTelemetry ? $livePos->movement_confidence : null;
             $movementReason = $hasLiveTelemetry ? $livePos->movement_reason : null;
             $movementStateUpdatedAt = $hasLiveTelemetry && $livePos->movement_state_updated_at ? $livePos->movement_state_updated_at->toIso8601String() : null;
-            $fleetStatusService = app(\App\Services\Routing\FleetStatusService::class);
+            $fleetStatusService = app(FleetStatusService::class);
             $operationalStatus = $hasLiveTelemetry ? $fleetStatusService->determineStatus($livePos) : null;
             $stationaryDurationSeconds = $hasLiveTelemetry ? $fleetStatusService->stationaryDurationSeconds($livePos) : null;
             $gpsQualityState = $hasLiveTelemetry ? ($livePos->gps_quality_state ?: 'UNKNOWN') : null;
@@ -809,69 +841,82 @@ class FleetController extends Controller
                 $trip->loadMissing('driver', 'route', 'routeVariant');
                 $driverName = $trip->driver ? $trip->driver->name : 'Unassigned';
                 $routeId = $trip->route_id;
-                $routeName = $trip->route ? ($trip->route->name . ' - ' . $trip->route->description) : 'Unassigned';
+                $routeName = $trip->route ? ($trip->route->name.' - '.$trip->route->description) : 'Unassigned';
                 $tripId = $trip->id;
             }
 
             $healthyBusStatuses = ['operating', 'active', 'ready'];
-            $stateMismatch = $trip && !in_array((string) $bus->status, $healthyBusStatuses, true);
+            $stateMismatch = $trip && ! in_array((string) $bus->status, $healthyBusStatuses, true);
 
             $buses[] = array_merge($bus->toArray(), [
-                'nearest_stop'       => $nearestStopName,
-                'current_stop'       => $currentStopName,
-                'upcoming_stop'      => $upcomingStopName,
-                'next_stop'          => $upcomingStopName,
-                'current_fence'      => $currentFenceName,
+                'nearest_stop' => $nearestStopName,
+                'current_stop' => $currentStopName,
+                'upcoming_stop' => $upcomingStopName,
+                'next_stop' => $upcomingStopName,
+                'current_fence' => $currentFenceName,
                 'dwell_time_seconds' => $dwellTimeSeconds,
-                'route_adherence'    => $adherence,
-                'corridor_distance'  => $corridorDistance,
-                'driver_name'        => $driverName,
-                'route_id'           => $routeId,
-                'route_name'         => $routeName,
-                'route_variant_id'   => $trip?->route_variant_id,
-                'direction'          => $trip?->routeVariant?->direction,
-                'origin_name'        => $trip?->routeVariant?->origin_name,
-                'destination_name'   => $trip?->routeVariant?->destination_name,
-                'trip_id'            => $tripId,
-                'trip_progress'      => $tripProgress,
-                'speed_mps'          => $liveSpeedMps,
-                'speed_kmh'          => $liveSpeedKmh,
-                'speed_unit'         => 'm/s',
-                'heading'            => $liveHeading !== null ? (float) $liveHeading : null,
-                'display_heading'    => $displayHeading !== null ? (float) $displayHeading : null,
-                'heading_source'     => $headingSource,
+                'route_adherence' => $adherence,
+                'corridor_distance' => $corridorDistance,
+                'driver_name' => $driverName,
+                'route_id' => $routeId,
+                'route_name' => $routeName,
+                'route_variant_id' => $trip?->route_variant_id,
+                'direction' => $trip?->routeVariant?->direction,
+                'origin_name' => $trip?->routeVariant?->origin_name,
+                'destination_name' => $trip?->routeVariant?->destination_name,
+                'trip_id' => $tripId,
+                'trip_progress' => $tripProgress,
+                'speed_mps' => $liveSpeedMps,
+                'speed_kmh' => $liveSpeedKmh,
+                'speed_unit' => 'm/s',
+                'heading' => $liveHeading !== null ? (float) $liveHeading : null,
+                'display_heading' => $displayHeading !== null ? (float) $displayHeading : null,
+                'heading_source' => $headingSource,
                 'heading_updated_at' => $headingUpdatedAt,
-                'status'             => $operationalStatus ?? $bus->status,
-                'bus_status'         => $bus->status,
+                'status' => $operationalStatus ?? $bus->status,
+                'bus_status' => $bus->status,
                 'operational_status' => $operationalStatus,
-                'movement_state'     => $movementState,
+                'movement_state' => $movementState,
                 'movement_confidence' => $movementConfidence !== null ? (float) $movementConfidence : null,
-                'movement_reason'    => $movementReason,
+                'movement_reason' => $movementReason,
                 'movement_state_updated_at' => $movementStateUpdatedAt,
                 'stationary_duration_seconds' => $stationaryDurationSeconds,
                 'gps_quality_state' => $gpsQualityState,
                 'gps_quality_reason' => $gpsQualityReason,
                 'gps_fix_age_seconds' => $gpsFixAgeSeconds,
                 'last_gps_fix_at' => $lastGpsFixAt,
-                'coordinate_source'  => $coordinateSource,
+                'coordinate_source' => $coordinateSource,
                 'has_live_telemetry' => $hasLiveTelemetry,
-                'state_mismatch'     => (bool) $stateMismatch,
+                'state_mismatch' => (bool) $stateMismatch,
                 'state_mismatch_details' => $stateMismatch ? [
                     'trip_status' => $trip->status,
                     'gps_session' => $trip->gps_session,
                     'bus_status' => $bus->status,
                 ] : null,
-                'last_gps_at'        => $hasLiveTelemetry && $livePos->last_updated_at ? $livePos->last_updated_at->toIso8601String() : null,
+                'last_gps_at' => $hasLiveTelemetry && $livePos->last_updated_at ? $livePos->last_updated_at->toIso8601String() : null,
             ]);
         }
 
-        $geofences = Geofence::where('status', 'active')->get();
-        $corridors = RouteCorridor::all();
+        $geofences = Geofence::where('status', 'active')
+            ->whereNotIn('type', [GeofenceType::STOP->value, GeofenceType::TERMINAL->value])
+            ->get();
+        $variantCorridors = RouteVariantCorridor::query()
+            ->whereHas('routeVariant.route', fn ($query) => $query->canonicalProduction())
+            ->with('routeVariant:id,route_id,direction')
+            ->orderBy('route_variant_id')
+            ->get()
+            ->map(fn (RouteVariantCorridor $corridor) => [
+                'route_variant_id' => $corridor->route_variant_id,
+                'direction' => $corridor->routeVariant?->direction,
+                'geometry' => $corridor->geometry,
+                'geometry_hash' => $corridor->geometry_hash,
+            ])
+            ->values();
 
         return response()->json([
             'buses' => $buses,
             'geofences' => $geofences,
-            'corridors' => $corridors,
+            'variant_corridors' => $variantCorridors,
         ]);
     }
 

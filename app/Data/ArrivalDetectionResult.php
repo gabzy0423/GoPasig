@@ -3,13 +3,14 @@
 namespace App\Data;
 
 use App\Models\CommuterTrip;
+use App\Models\RouteVariantStop;
 use App\Models\Stop;
 
 final class ArrivalDetectionResult
 {
     public function __construct(
         public readonly ?CommuterTrip $journey = null,
-        public readonly ?Stop $destinationStop = null,
+        public readonly Stop|RouteVariantStop|null $destinationStop = null,
         public readonly bool $insideDestinationGeofence = false,
         public readonly bool $pending = false,
         public readonly bool $arrived = false,
@@ -25,8 +26,11 @@ final class ArrivalDetectionResult
         return new self(journey: $journey, reason: $reason);
     }
 
-    public static function firstConfirmation(CommuterTrip $journey, Stop $destinationStop, int $busId): self
-    {
+    public static function firstConfirmation(
+        CommuterTrip $journey,
+        Stop|RouteVariantStop $destinationStop,
+        int $busId
+    ): self {
         return new self(
             journey: $journey,
             destinationStop: $destinationStop,
@@ -40,8 +44,11 @@ final class ArrivalDetectionResult
         );
     }
 
-    public static function arrived(CommuterTrip $journey, Stop $destinationStop, int $busId): self
-    {
+    public static function arrived(
+        CommuterTrip $journey,
+        Stop|RouteVariantStop $destinationStop,
+        int $busId
+    ): self {
         return new self(
             journey: $journey,
             destinationStop: $destinationStop,

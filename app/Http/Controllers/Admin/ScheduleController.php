@@ -89,7 +89,7 @@ class ScheduleController extends Controller
             ], 403);
         }
         $validated = $request->validate([
-            'route_id' => 'required|exists:routes,id',
+            'route_id' => ['required', 'exists:routes,id', \Illuminate\Validation\Rule::in(Route::getCanonicalProductionCached()->pluck('id')->all())],
             'route_variant_id' => 'nullable|integer|exists:route_variants,id',
             'bus_plate' => 'required|string',
             'driver_id' => 'required|integer|exists:drivers,id',
@@ -219,7 +219,7 @@ class ScheduleController extends Controller
             ], 403);
         }
         $validated = $request->validate([
-            'route_id' => 'required|exists:routes,id',
+            'route_id' => ['required', 'exists:routes,id', \Illuminate\Validation\Rule::in(Route::getCanonicalProductionCached()->pluck('id')->all())],
             'route_variant_id' => 'nullable|integer|exists:route_variants,id',
             'bus_plate' => 'required|string',
             'driver_id' => 'required|integer|exists:drivers,id',

@@ -14,6 +14,15 @@ class Bus extends Model
     public const STATUS_BREAKDOWN = 'breakdown';
     public const STATUS_MAINTENANCE = 'maintenance';
 
+    /**
+     * Normal commuter-visible runtime states. Breakdown and maintenance are
+     * incident states, not available-service candidates.
+     */
+    public static function commuterServiceStatuses(): array
+    {
+        return [self::STATUS_ACTIVE, 'operating'];
+    }
+
     // -------------------------------------------------------------------------
     // All operational thresholds are stored in system_settings and accessed via
     // the static getter methods below (e.g. Bus::getDelayThreshold()).

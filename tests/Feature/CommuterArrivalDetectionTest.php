@@ -8,6 +8,8 @@ use App\Models\Bus;
 use App\Models\CommuterSession;
 use App\Models\CommuterTrip;
 use App\Models\Route;
+use App\Models\RouteVariant;
+use App\Models\RouteVariantStop;
 use App\Models\Stop;
 use App\Services\Commuter\CommuterJourneyCoordinator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -45,8 +47,14 @@ class CommuterArrivalDetectionTest extends TestCase
             ->call('updateLocation', $destination->lat, $destination->lng, 5)
             ->assertSet('activeTrip.status', 'ARRIVED')
             ->assertSet('activeTrip.bus_id', $bus->id)
+            ->assertSet('completedJourneyPendingReset', true)
+            ->assertSeeHtml('wire:poll.5s="resetCompletedJourney"')
+            ->assertDispatched('commuter-arrived')
             ->assertSet('pendingArrivalJourneyId', null)
-            ->assertSet('pendingArrivalConfirmations', 0);
+            ->assertSet('pendingArrivalConfirmations', 0)
+            ->call('resetCompletedJourney')
+            ->assertSet('activeTrip', null)
+            ->assertSet('completedJourneyPendingReset', false);
 
         $completed = $trip->fresh();
         $this->assertSame('ARRIVED', $completed->status);
@@ -140,10 +148,10 @@ class CommuterArrivalDetectionTest extends TestCase
 
         Livewire::withCookie('commuter_session_token', $token)
             ->test(GeofenceDetector::class)
-            ->assertSet('activeTrip.status', 'ARRIVED')
+            ->assertSet('activeTrip', null)
             ->call('updateLocation', $destination->lat, $destination->lng, 5)
             ->call('updateLocation', $destination->lat, $destination->lng, 5)
-            ->assertSet('activeTrip.status', 'ARRIVED')
+            ->assertSet('activeTrip', null)
             ->assertSet('pendingArrivalConfirmations', 0);
 
         $this->assertTrue($arrivedAt->equalTo($trip->fresh()->arrived_at));
@@ -167,7 +175,7 @@ class CommuterArrivalDetectionTest extends TestCase
     public function test_destination_from_wrong_route_does_not_complete(): void
     {
         [$route, $origin, $destination] = $this->seedCanonicalRouteWithStops();
-        $wrongRoute = Route::create(['name' => 'Route 2', 'description' => 'Other route', 'status' => 'Active', 'color' => '#111111']);
+        $wrongRoute = Route::create(['name' => 'Route 3', 'description' => 'Other route', 'status' => 'Active', 'color' => '#111111']);
         $wrongDestination = Stop::create([
             'route_id' => $wrongRoute->id,
             'name' => 'Wrong Destination',
@@ -332,10 +340,69 @@ class CommuterArrivalDetectionTest extends TestCase
         $this->assertTrue($arrivedAt->equalTo($trip->fresh()->arrived_at));
     }
 
+    public function test_variant_only_inbound_destination_can_complete_arrival(): void
+    {
+        $route = Route::create([
+            'name' => 'Route 2',
+            'description' => 'Canonical commuter route',
+            'status' => 'Active',
+            'color' => '#003F87',
+        ]);
+        $variant = RouteVariant::create([
+            'route_id' => $route->id,
+            'direction' => 'inbound',
+            'origin_name' => 'Ligaya',
+            'destination_name' => 'SPED',
+            'geometry_status' => 'valid',
+            'is_default' => false,
+        ]);
+        $origin = RouteVariantStop::create([
+            'route_variant_id' => $variant->id,
+            'name' => 'Ligaya',
+            'lat' => 14.6182022,
+            'lng' => 121.0924001,
+            'sequence' => 1,
+            'radius_meters' => 80,
+        ]);
+        $destination = RouteVariantStop::create([
+            'route_variant_id' => $variant->id,
+            'name' => 'SPED',
+            'lat' => 14.5603845,
+            'lng' => 121.0798618,
+            'sequence' => 2,
+            'radius_meters' => 80,
+        ]);
+        $token = $this->createCommuterSession('cb5-inbound-variant');
+        $bus = $this->createBus($route, 'PAS-INBOUND-ARRIVAL', $destination->lat, $destination->lng);
+        $trip = CommuterTrip::create([
+            'session_token' => $token,
+            'route_id' => $route->id,
+            'route_variant_id' => $variant->id,
+            'origin_stop_id' => null,
+            'origin_route_variant_stop_id' => $origin->id,
+            'destination_stop_id' => null,
+            'destination_route_variant_stop_id' => $destination->id,
+            'status' => 'ON_BUS',
+            'bus_id' => $bus->id,
+            'boarded_at' => now()->subMinutes(3),
+        ]);
+
+        Livewire::withCookie('commuter_session_token', $token)
+            ->test(GeofenceDetector::class)
+            ->call('updateLocation', $destination->lat, $destination->lng, 5)
+            ->assertSet('pendingArrivalDestinationStopId', $destination->id)
+            ->call('updateLocation', $destination->lat, $destination->lng, 5)
+            ->assertSet('activeTrip.status', 'ARRIVED')
+            ->assertSet('activeTrip.direction', 'inbound');
+
+        $this->assertSame('ARRIVED', $trip->fresh()->status);
+        $this->assertNotNull($trip->fresh()->arrived_at);
+    }
+
     private function seedCanonicalRouteWithStops(): array
     {
         $route = Route::create([
-            'name' => 'Route 1',
+            'name' => 'Route 2',
             'description' => 'Canonical commuter route',
             'status' => 'Active',
             'color' => '#003F87',

@@ -12,6 +12,7 @@ use App\Models\Stop;
 use App\Models\DispatchSimulationDefault;
 use App\Models\TripProgress;
 use App\Models\VehiclePosition;
+use App\Services\AdminOperationsOverviewService;
 use App\Services\CentralDispatchEligibilityService;
 use App\Services\RouteVariantSelectionService;
 use App\Services\RouteMapGeometryService;
@@ -114,7 +115,7 @@ class DashboardController extends Controller
         ));
     }
 
-    public function getFleetData()
+    public function getFleetData(AdminOperationsOverviewService $operationsOverview)
     {
         $stopsByRoute = Stop::getAllCached()->groupBy('route_id');
         $avgPaxByRoute = Trip::where('status', 'completed')
@@ -126,8 +127,7 @@ class DashboardController extends Controller
         $routeMapGeometry = app(RouteMapGeometryService::class);
         $variantsByRoute = \App\Models\RouteVariant::with(['stops' => fn ($query) => $query->orderBy('sequence')])->withCount('stops')->get()->groupBy('route_id');
 
-        $routes = Route::getAllCached()
-            ->whereNotIn('status', ['suspended', 'inactive', 'Suspended', 'Inactive'])
+        $routes = Route::getCanonicalProductionCached()
             ->map(function ($route) use ($stopsByRoute, $avgPaxByRoute, $variantsByRoute, $routeVariantSelection) {
                 $route->setRelation('stops', $stopsByRoute->get($route->id, collect()));
 
@@ -305,9 +305,15 @@ class DashboardController extends Controller
             return $route;
         });
 
-        $trips = Trip::with(['bus', 'driver', 'route', 'routeVariant'])->latest()->take(5)->get();
+        $trips = Trip::with(['bus', 'driver', 'route', 'routeVariant'])
+            ->whereIn('route_id', $routes->pluck('id'))
+            ->whereIn('status', ['dispatched', 'ongoing', 'completed', 'cancelled'])
+            ->latest('updated_at')
+            ->take(5)
+            ->get();
+        $overview = $operationsOverview->snapshot();
 
-        return response()->json(compact('routes', 'buses', 'trips'));
+        return response()->json(compact('routes', 'buses', 'trips', 'overview'));
     }
 
     public function getSettings()

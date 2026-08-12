@@ -23,7 +23,7 @@ class RouteVariantGeometryWorkflowTest extends TestCase
     {
         $this->seed(RouteSeeder::class);
         $this->seed(OfficialPasigRouteSeeder::class);
-        $variant = Route::where('name', 'Route 1')->firstOrFail()->variants()->where('direction', 'outbound')->firstOrFail();
+        $variant = Route::where('name', 'Route 2')->firstOrFail()->variants()->where('direction', 'outbound')->firstOrFail();
         $existingGeometry = $variant->polyline_coordinates;
 
         try {
@@ -41,7 +41,7 @@ class RouteVariantGeometryWorkflowTest extends TestCase
     {
         $this->seed(RouteSeeder::class);
         $this->seed(OfficialPasigRouteSeeder::class);
-        $route = Route::where('name', 'Route 1')->firstOrFail();
+        $route = Route::where('name', 'Route 2')->firstOrFail();
         $outbound = $route->variants()->where('direction', 'outbound')->firstOrFail();
         $inbound = $route->variants()->where('direction', 'inbound')->firstOrFail();
         $legacyGeometry = $route->polyline_coordinates;
@@ -74,7 +74,8 @@ class RouteVariantGeometryWorkflowTest extends TestCase
     public function test_approved_variant_is_usable_only_when_directional_stops_are_complete(): void
     {
         $this->seed(RouteSeeder::class);
-        $route = Route::findOrFail(2);
+        $this->seed(OfficialPasigRouteSeeder::class);
+        $route = Route::where('name', 'Route 2')->firstOrFail();
         $variant = $route->variants()->firstOrFail();
         $variant->update([
             'polyline_coordinates' => [[14.55, 121.08], [14.56, 121.09]],

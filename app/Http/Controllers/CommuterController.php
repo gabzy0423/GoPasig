@@ -4,13 +4,11 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Bus;
-use App\Models\Schedule;
 use App\Models\ServiceAlert;
 use App\Models\Route;
 use Carbon\Carbon;
 use App\Services\DashboardService;
 use App\Services\RouteStatusService;
-use App\Services\SchedulePeekService;
 use App\Services\CommuterDashboardCacheService;
 
 class CommuterController extends Controller
@@ -21,7 +19,6 @@ class CommuterController extends Controller
     public function dashboard(
         DashboardService $dashboardService,
         RouteStatusService $routeStatusService,
-        SchedulePeekService $schedulePeekService,
         CommuterDashboardCacheService $commuterDashboardCache
     ) {
         $dashboardData = $commuterDashboardCache->dashboardData();
@@ -92,7 +89,7 @@ class CommuterController extends Controller
             ->filter()
             ->unique();
 
-        $buses = Bus::where('status', 'active')
+        $buses = Bus::whereIn('status', Bus::commuterServiceStatuses())
             ->whereIn('id', $canonicalActiveBusIds)
             ->get(['plate_number', 'lat', 'lng', 'status', 'next_stop', 'eta']);
 

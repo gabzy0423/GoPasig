@@ -16,6 +16,18 @@ class TripService
 {
     public static function startTrip(Bus $bus, Driver $driver, Route $route, int $peakPassengers = 0, ?RouteVariant $routeVariant = null, ?Schedule $schedule = null): Trip
     {
+        if (! $route->isCanonicalProduction()) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'route_id' => 'Only official production routes are available for new operations.',
+            ]);
+        }
+
+        if ($routeVariant === null) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'route_variant_id' => 'Official operational trips require a route direction.',
+            ]);
+        }
+
         return Trip::create([
             'bus_id'          => $bus->id,
             'driver_id'       => $driver->id,

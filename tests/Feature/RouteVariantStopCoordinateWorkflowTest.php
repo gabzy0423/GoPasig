@@ -27,17 +27,17 @@ class RouteVariantStopCoordinateWorkflowTest extends TestCase
     {
         $this->seedOfficial();
 
-        $this->assertSame(82, RouteVariantStop::whereHas('routeVariant.route', fn ($q) => $q->whereIn('name', ['Route 1', 'Route 2', 'Route 3']))->count());
-        $this->assertSame([18, 20], Route::where('name', 'Route 1')->firstOrFail()->variants()->orderBy('direction')->withCount('stops')->pluck('stops_count')->sort()->values()->all());
-        $this->assertSame([8, 9], Route::where('name', 'Route 2')->firstOrFail()->variants()->withCount('stops')->pluck('stops_count')->sort()->values()->all());
+        $this->assertSame(82, RouteVariantStop::whereHas('routeVariant.route', fn ($q) => $q->whereIn('name', ['Route 2', 'Route 3', 'Route 4']))->count());
+        $this->assertSame([18, 20], Route::where('name', 'Route 2')->firstOrFail()->variants()->orderBy('direction')->withCount('stops')->pluck('stops_count')->sort()->values()->all());
         $this->assertSame([13, 14], Route::where('name', 'Route 3')->firstOrFail()->variants()->withCount('stops')->pluck('stops_count')->sort()->values()->all());
+        $this->assertSame([8, 9], Route::where('name', 'Route 4')->firstOrFail()->variants()->withCount('stops')->pluck('stops_count')->sort()->values()->all());
     }
 
     public function test_coordinate_status_transitions_are_admin_scoped(): void
     {
         $this->seedOfficial();
         $admin = User::factory()->create(['role' => 'admin']);
-        $variant = Route::where('name', 'Route 1')->firstOrFail()->variants()->where('direction', 'outbound')->firstOrFail();
+        $variant = Route::where('name', 'Route 2')->firstOrFail()->variants()->where('direction', 'outbound')->firstOrFail();
         $stop = $variant->stops()->firstOrFail();
 
         $this->actingAs($admin)->patchJson("/admin/api/route-variants/{$variant->id}/stops/{$stop->id}/coordinates", [
@@ -57,7 +57,7 @@ class RouteVariantStopCoordinateWorkflowTest extends TestCase
     public function test_candidate_pending_and_rejected_stops_block_generation_with_exact_blockers(): void
     {
         $this->seedOfficial();
-        $variant = Route::where('name', 'Route 2')->firstOrFail()->variants()->where('direction', 'outbound')->firstOrFail();
+        $variant = Route::where('name', 'Route 3')->firstOrFail()->variants()->where('direction', 'outbound')->firstOrFail();
         $stop = $variant->stops()->firstOrFail();
 
         foreach (['candidate', 'pending', 'rejected'] as $status) {
@@ -79,7 +79,7 @@ class RouteVariantStopCoordinateWorkflowTest extends TestCase
             'status' => 'OK',
             'routes' => [['overview_polyline' => ['points' => '_`owA_yoaV_pR_pR']]],
         ], 200)]);
-        $variant = Route::where('name', 'Route 2')->firstOrFail()->variants()->where('direction', 'outbound')->firstOrFail();
+        $variant = Route::where('name', 'Route 3')->firstOrFail()->variants()->where('direction', 'outbound')->firstOrFail();
         $variant->stops()->get()->each(function (RouteVariantStop $stop, int $index) {
             $stop->update(['lat' => 14.55 + $index * 0.001, 'lng' => 121.08 + $index * 0.001, 'coordinate_status' => 'verified']);
         });
@@ -93,7 +93,7 @@ class RouteVariantStopCoordinateWorkflowTest extends TestCase
     {
         $this->seedOfficial();
         $admin = User::factory()->create(['role' => 'admin']);
-        $route = Route::where('name', 'Route 2')->firstOrFail();
+        $route = Route::where('name', 'Route 4')->firstOrFail();
         $outbound = $route->variants()->where('direction', 'outbound')->firstOrFail();
         $inbound = $route->variants()->where('direction', 'inbound')->firstOrFail();
         $outboundStop = $outbound->stops()->where('name', 'Kenneth Road')->firstOrFail();
@@ -113,7 +113,7 @@ class RouteVariantStopCoordinateWorkflowTest extends TestCase
     public function test_legacy_stop_coordinates_are_not_copied_to_official_variant_stops(): void
     {
         $this->seedOfficial();
-        $variant = Route::where('name', 'Route 1')->firstOrFail()->variants()->where('direction', 'outbound')->firstOrFail();
+        $variant = Route::where('name', 'Route 2')->firstOrFail()->variants()->where('direction', 'outbound')->firstOrFail();
 
         $this->assertNull($variant->stops()->firstOrFail()->lat);
         $this->assertNull($variant->stops()->firstOrFail()->canonical_stop_id);
@@ -122,7 +122,7 @@ class RouteVariantStopCoordinateWorkflowTest extends TestCase
     public function test_rerunning_official_seeder_preserves_existing_coordinate_metadata(): void
     {
         $this->seedOfficial();
-        $variant = Route::where('name', 'Route 1')->firstOrFail()->variants()->where('direction', 'outbound')->firstOrFail();
+        $variant = Route::where('name', 'Route 2')->firstOrFail()->variants()->where('direction', 'outbound')->firstOrFail();
         $stop = $variant->stops()->firstOrFail();
         $stop->update([
             'lat' => 14.5593,

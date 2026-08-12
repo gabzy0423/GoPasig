@@ -69,7 +69,7 @@ new class extends Component
         $routeVariantSelection = app(RouteVariantSelectionService::class);
         $variantsByRoute = RouteVariant::withCount('stops')->get()->groupBy('route_id');
 
-        $this->routes = Route::getAllCached()->map(function($r) use ($variantsByRoute, $routeVariantSelection) {
+        $this->routes = Route::getCanonicalProductionCached()->map(function($r) use ($variantsByRoute, $routeVariantSelection) {
             $variants = ($variantsByRoute->get($r->id, collect()))->map(fn ($variant) => [
                 'id' => $variant->id,
                 'route_id' => $variant->route_id,

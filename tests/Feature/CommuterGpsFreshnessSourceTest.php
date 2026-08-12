@@ -33,9 +33,9 @@ class CommuterGpsFreshnessSourceTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-23 00:00:00', 'UTC'));
 
         $this->legacyRoute = $this->makeRoute('Route A');
-        $this->route1 = $this->makeRoute('Route 1');
-        $this->route2 = $this->makeRoute('Route 2');
-        $this->route3 = $this->makeRoute('Route 3');
+        $this->route1 = $this->makeRoute('Route 2');
+        $this->route2 = $this->makeRoute('Route 3');
+        $this->route3 = $this->makeRoute('Route 4');
         $this->driver = Driver::factory()->create();
 
         foreach ([$this->legacyRoute, $this->route1, $this->route2, $this->route3] as $route) {
@@ -147,7 +147,7 @@ class CommuterGpsFreshnessSourceTest extends TestCase
         $this->position($legacyBus, now()->subSeconds(10));
 
         Livewire::test(Tracker::class)
-            ->assertViewHas('routes', fn ($routes) => $routes->pluck('name')->all() === ['Route 1', 'Route 2', 'Route 3'])
+            ->assertViewHas('routes', fn ($routes) => $routes->pluck('name')->all() === ['Route 2', 'Route 3', 'Route 4'])
             ->assertViewHas('activeBuses', function ($buses) {
                 $plates = collect($buses)->pluck('plate_number')->all();
 

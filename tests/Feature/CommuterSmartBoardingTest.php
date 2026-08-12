@@ -6,7 +6,10 @@ use App\Livewire\Commuter\GeofenceDetector;
 use App\Models\Bus;
 use App\Models\CommuterSession;
 use App\Models\CommuterTrip;
+use App\Models\Driver;
 use App\Models\Route;
+use App\Models\RouteVariant;
+use App\Models\RouteVariantStop;
 use App\Models\Stop;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -56,7 +59,7 @@ class CommuterSmartBoardingTest extends TestCase
     public function test_wrong_route_bus_never_boards_commuter(): void
     {
         [$route, $origin, $destination] = $this->seedCanonicalRouteWithStops();
-        $wrongRoute = Route::create(['name' => 'Route 2', 'description' => 'Other route', 'status' => 'Active', 'color' => '#111111']);
+        $wrongRoute = Route::create(['name' => 'Route 3', 'description' => 'Other route', 'status' => 'Active', 'color' => '#111111']);
         $token = $this->createCommuterSession('cb4-wrong-route');
         $this->createWaitingTrip($token, $route, $origin, $destination);
         $this->createBus($wrongRoute, 'PAS-WRONG', $origin->lat, $origin->lng);
@@ -69,6 +72,89 @@ class CommuterSmartBoardingTest extends TestCase
             ->assertSet('pendingBoardingBusId', null);
 
         $this->assertDatabaseHas('commuter_trips', ['session_token' => $token, 'status' => 'WAITING', 'bus_id' => null]);
+    }
+
+    public function test_active_bus_without_ongoing_trip_does_not_board_commuter(): void
+    {
+        [$route, $origin, $destination] = $this->seedCanonicalRouteWithStops();
+        $token = $this->createCommuterSession('cb4-no-trip');
+        $this->createWaitingTrip($token, $route, $origin, $destination);
+        $this->createBus($route, 'PAS-NO-TRIP', $origin->lat, $origin->lng, false);
+
+        Livewire::withCookie('commuter_session_token', $token)
+            ->test(GeofenceDetector::class)
+            ->call('updateLocation', $origin->lat, $origin->lng, 5)
+            ->call('updateLocation', $origin->lat, $origin->lng, 5)
+            ->assertSet('activeTrip.status', 'WAITING')
+            ->assertSet('pendingBoardingBusId', null)
+            ->assertSet('pendingBoardingConfirmations', 0);
+
+        $this->assertDatabaseHas('commuter_trips', [
+            'session_token' => $token,
+            'status' => 'WAITING',
+            'bus_id' => null,
+            'boarded_at' => null,
+        ]);
+    }
+
+    public function test_operating_bus_with_ongoing_trip_can_board_commuter(): void
+    {
+        [$route, $origin, $destination] = $this->seedCanonicalRouteWithStops();
+        $token = $this->createCommuterSession('cb4-operating-bus');
+        $this->createWaitingTrip($token, $route, $origin, $destination);
+        $bus = $this->createBus($route, 'PAS-OPERATING', $origin->lat, $origin->lng);
+        $bus->update(['status' => 'operating']);
+
+        Livewire::withCookie('commuter_session_token', $token)
+            ->test(GeofenceDetector::class)
+            ->call('updateLocation', $origin->lat, $origin->lng, 5)
+            ->assertSet('pendingBoardingBusId', $bus->id)
+            ->call('updateLocation', $origin->lat, $origin->lng, 5)
+            ->assertSet('activeTrip.status', 'ON_BUS')
+            ->assertSet('activeTrip.bus_id', $bus->id);
+    }
+
+    public function test_bus_with_ongoing_trip_on_another_route_does_not_board_commuter(): void
+    {
+        [$route, $origin, $destination] = $this->seedCanonicalRouteWithStops();
+        $otherRoute = Route::create(['name' => 'Route 3', 'description' => 'Other route', 'status' => 'Active', 'color' => '#111111']);
+        $token = $this->createCommuterSession('cb4-wrong-trip-route');
+        $this->createWaitingTrip($token, $route, $origin, $destination);
+        $bus = $this->createBus($route, 'PAS-WRONG-TRIP-ROUTE', $origin->lat, $origin->lng, false);
+        $driver = Driver::factory()->create([
+            'status' => 'active',
+            'operational_status' => 'available',
+        ]);
+        $bus->trips()->create([
+            'driver_id' => $driver->id,
+            'route_id' => $otherRoute->id,
+            'status' => 'ongoing',
+            'gps_session' => 'ACTIVE',
+            'started_at' => now(),
+        ]);
+
+        Livewire::withCookie('commuter_session_token', $token)
+            ->test(GeofenceDetector::class)
+            ->call('updateLocation', $origin->lat, $origin->lng, 5)
+            ->call('updateLocation', $origin->lat, $origin->lng, 5)
+            ->assertSet('activeTrip.status', 'WAITING')
+            ->assertSet('pendingBoardingBusId', null);
+    }
+
+    public function test_bus_on_suspended_official_route_does_not_board_commuter(): void
+    {
+        [$route, $origin, $destination] = $this->seedCanonicalRouteWithStops();
+        $route->update(['status' => 'Suspended']);
+        $token = $this->createCommuterSession('cb4-suspended-route');
+        $this->createWaitingTrip($token, $route, $origin, $destination);
+        $this->createBus($route, 'PAS-SUSPENDED', $origin->lat, $origin->lng);
+
+        Livewire::withCookie('commuter_session_token', $token)
+            ->test(GeofenceDetector::class)
+            ->call('updateLocation', $origin->lat, $origin->lng, 5)
+            ->call('updateLocation', $origin->lat, $origin->lng, 5)
+            ->assertSet('activeTrip.status', 'WAITING')
+            ->assertSet('pendingBoardingBusId', null);
     }
 
     public function test_bus_outside_boarding_radius_does_not_board(): void
@@ -188,10 +274,59 @@ class CommuterSmartBoardingTest extends TestCase
             ->assertSet('activeTrip.bus_id', $bus->id);
     }
 
+    public function test_variant_aware_journey_boards_only_the_bus_running_the_same_direction(): void
+    {
+        [$route, $origin, $destination] = $this->seedCanonicalRouteWithStops();
+        $outbound = $this->createVariant($route, 'outbound', $origin, $destination);
+        $inbound = $this->createVariant($route, 'inbound', $destination, $origin);
+        $outboundOrigin = $outbound->stops->first();
+        $outboundDestination = $outbound->stops->last();
+        $token = $this->createCommuterSession('cb4-direction');
+
+        CommuterTrip::create([
+            'session_token' => $token,
+            'route_id' => $route->id,
+            'route_variant_id' => $outbound->id,
+            'origin_stop_id' => $origin->id,
+            'origin_route_variant_stop_id' => $outboundOrigin->id,
+            'destination_stop_id' => $destination->id,
+            'destination_route_variant_stop_id' => $outboundDestination->id,
+            'status' => 'WAITING',
+            'is_simulated' => false,
+        ]);
+
+        $wrongDirectionBus = $this->createBus($route, 'PAS-INBOUND', $origin->lat, $origin->lng, false);
+        $correctDirectionBus = $this->createBus($route, 'PAS-OUTBOUND', $origin->lat, $origin->lng, false);
+        $wrongDirectionBus->trips()->create([
+            'driver_id' => Driver::factory()->create()->id,
+            'route_id' => $route->id,
+            'route_variant_id' => $inbound->id,
+            'status' => 'ongoing',
+            'gps_session' => 'ACTIVE',
+            'started_at' => now(),
+        ]);
+        $correctDirectionBus->trips()->create([
+            'driver_id' => Driver::factory()->create()->id,
+            'route_id' => $route->id,
+            'route_variant_id' => $outbound->id,
+            'status' => 'ongoing',
+            'gps_session' => 'ACTIVE',
+            'started_at' => now(),
+        ]);
+
+        Livewire::withCookie('commuter_session_token', $token)
+            ->test(GeofenceDetector::class)
+            ->call('updateLocation', $origin->lat, $origin->lng, 5)
+            ->assertSet('pendingBoardingBusId', $correctDirectionBus->id)
+            ->call('updateLocation', $origin->lat, $origin->lng, 5)
+            ->assertSet('activeTrip.status', 'ON_BUS')
+            ->assertSet('activeTrip.bus_id', $correctDirectionBus->id);
+    }
+
     private function seedCanonicalRouteWithStops(): array
     {
         $route = Route::create([
-            'name' => 'Route 1',
+            'name' => 'Route 2',
             'description' => 'Canonical commuter route',
             'status' => 'Active',
             'color' => '#003F87',
@@ -228,6 +363,32 @@ class CommuterSmartBoardingTest extends TestCase
         return $token;
     }
 
+    private function createVariant(Route $route, string $direction, Stop $origin, Stop $destination): RouteVariant
+    {
+        $variant = RouteVariant::create([
+            'route_id' => $route->id,
+            'direction' => $direction,
+            'origin_name' => $origin->name,
+            'destination_name' => $destination->name,
+            'geometry_status' => 'valid',
+            'is_default' => $direction === 'outbound',
+        ]);
+
+        foreach ([[$origin, 1], [$destination, 2]] as [$stop, $sequence]) {
+            RouteVariantStop::create([
+                'route_variant_id' => $variant->id,
+                'canonical_stop_id' => $stop->id,
+                'name' => $stop->name,
+                'lat' => $stop->lat,
+                'lng' => $stop->lng,
+                'sequence' => $sequence,
+                'radius_meters' => $stop->radius_meters,
+            ]);
+        }
+
+        return $variant->load('stops');
+    }
+
     private function createWaitingTrip(string $token, Route $route, Stop $origin, Stop $destination): CommuterTrip
     {
         return CommuterTrip::create([
@@ -239,9 +400,9 @@ class CommuterSmartBoardingTest extends TestCase
         ]);
     }
 
-    private function createBus(Route $route, string $plateNumber, float $lat, float $lng): Bus
+    private function createBus(Route $route, string $plateNumber, float $lat, float $lng, bool $withOngoingTrip = true): Bus
     {
-        return Bus::create([
+        $bus = Bus::create([
             'plate_number' => $plateNumber,
             'route_id' => $route->id,
             'driver_name' => 'Test Driver',
@@ -254,5 +415,22 @@ class CommuterSmartBoardingTest extends TestCase
             'lng' => $lng,
             'status' => Bus::STATUS_ACTIVE,
         ]);
+
+        if ($withOngoingTrip) {
+            $driver = Driver::factory()->create([
+                'status' => 'active',
+                'operational_status' => 'available',
+            ]);
+
+            $bus->trips()->create([
+                'driver_id' => $driver->id,
+                'route_id' => $route->id,
+                'status' => 'ongoing',
+                'gps_session' => 'ACTIVE',
+                'started_at' => now(),
+            ]);
+        }
+
+        return $bus;
     }
 }

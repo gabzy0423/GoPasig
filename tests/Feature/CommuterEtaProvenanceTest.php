@@ -39,9 +39,9 @@ class CommuterEtaProvenanceTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-23 00:00:00', 'UTC'));
 
         $this->legacyRoute = $this->makeRoute('Route A');
-        $this->route1 = $this->makeRoute('Route 1');
-        $this->route2 = $this->makeRoute('Route 2');
-        $this->route3 = $this->makeRoute('Route 3');
+        $this->route1 = $this->makeRoute('Route 2');
+        $this->route2 = $this->makeRoute('Route 3');
+        $this->route3 = $this->makeRoute('Route 4');
         $this->driver = Driver::factory()->create();
     }
 
@@ -211,9 +211,9 @@ class CommuterEtaProvenanceTest extends TestCase
         $this->get('/commuter/tracker')->assertOk();
         $this->get('/commuter/routes')
             ->assertOk()
-            ->assertSee('Route 1')
             ->assertSee('Route 2')
             ->assertSee('Route 3')
+            ->assertSee('Route 4')
             ->assertDontSee('Route A');
     }
 

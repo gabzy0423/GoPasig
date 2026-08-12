@@ -6,6 +6,8 @@ use App\Models\User;
 use App\Models\Driver;
 use App\Models\Bus;
 use App\Models\Route;
+use App\Models\RouteVariant;
+use App\Models\Trip;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -19,15 +21,24 @@ class PeakLoadAnalyticsTest extends TestCase
     {
         // 1. Setup route, bus, driver, and user
         $route = Route::create([
-            'name' => 'Route Z',
-            'description' => 'Test Route Z',
+            'name' => 'Route 2',
+            'description' => 'Test Route 2',
             'polyline_coordinates' => [[14.5, 121.0]],
             'status' => 'Active',
         ]);
 
+        $variant = RouteVariant::create([
+            'route_id' => $route->id,
+            'direction' => 'outbound',
+            'origin_name' => 'SPED',
+            'destination_name' => 'Ligaya',
+            'polyline_coordinates' => [[14.5, 121.0], [14.51, 121.01]],
+            'geometry_version' => 1,
+        ]);
+
         $bus = Bus::create([
             'plate_number' => 'PAS-999',
-            'status' => 'inactive',
+            'status' => 'ready',
             'capacity' => 60,
             'lat' => 14.5,
             'lng' => 121.0,
@@ -47,6 +58,17 @@ class PeakLoadAnalyticsTest extends TestCase
             'assigned_bus' => 'PAS-999',
             'assigned_route' => (string) $route->id,
             'performance_score' => 90,
+        ]);
+
+        Trip::factory()->create([
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $route->id,
+            'route_variant_id' => $variant->id,
+            'status' => 'dispatched',
+            'gps_session' => 'OFF',
+            'dispatched_at' => now(),
+            'peak_passengers' => 0,
         ]);
 
         // 2. Start trip session (toggleTrip to active)

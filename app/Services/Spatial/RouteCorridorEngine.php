@@ -4,6 +4,7 @@ namespace App\Services\Spatial;
 
 use App\Models\VehiclePosition;
 use App\Models\RouteCorridor;
+use Illuminate\Database\Eloquent\Model;
 use App\Models\Trip;
 use App\Models\TripProgress;
 use App\Models\RouteDeviation;
@@ -24,7 +25,7 @@ class RouteCorridorEngine
     /**
      * Snap coordinate to authoritative trip geometry and evaluate corridor deviation severity.
      */
-    public function check(VehiclePosition $position, Coordinate $coord, ?RouteCorridor $corridor, Trip $trip): void
+    public function check(VehiclePosition $position, Coordinate $coord, ?Model $corridor, Trip $trip): void
     {
         $plan = $this->routeResolver->resolveForTrip($trip);
         $polylineCoordinates = $plan->polylineCoordinates;
@@ -49,7 +50,9 @@ class RouteCorridorEngine
             }
         }
 
-        $buffer = $corridor ? $corridor->buffer_width : (float) config('fleet.spatial.corridor_default');
+        $buffer = $corridor instanceof RouteCorridor
+            ? $corridor->buffer_width
+            : (float) config('fleet.spatial.corridor_default');
 
         $position->update(['corridor_distance' => round($minDistance, 1)]);
 

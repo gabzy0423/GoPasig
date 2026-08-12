@@ -72,9 +72,9 @@ class AdminScheduleConflictTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::create([
+        $route = Route::factory()->official()->withUsableVariant()->create([
             'id' => 1,
-            'name' => 'Route A',
+            'name' => 'Route 2',
             'travel_time_minutes' => 30,
             'status' => 'active'
         ]);
@@ -115,6 +115,7 @@ class AdminScheduleConflictTest extends TestCase
         // Attempt to create overlapping schedule with same bus but different driver
         $response = $this->postJson('/admin/api/schedules', [
             'route_id' => $route->id,
+            'route_variant_id' => $route->variants()->sole()->id,
             'bus_plate' => 'PAS-123',
             'driver_id' => $driver2->id,
             'departure_time' => '08:15'
@@ -131,9 +132,9 @@ class AdminScheduleConflictTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::create([
+        $route = Route::factory()->official()->withUsableVariant()->create([
             'id' => 1,
-            'name' => 'Route A',
+            'name' => 'Route 2',
             'travel_time_minutes' => 30,
             'status' => 'active'
         ]);
@@ -182,6 +183,7 @@ class AdminScheduleConflictTest extends TestCase
         // If we set schedule 2 to 08:40, it should conflict with schedule 1 for the driver.
         $response = $this->putJson("/admin/api/schedules/{$schedule2->id}", [
             'route_id' => $route->id,
+            'route_variant_id' => $route->variants()->sole()->id,
             'bus_plate' => 'PAS-222',
             'driver_id' => $driver->id,
             'departure_time' => '08:40'
@@ -198,8 +200,8 @@ class AdminScheduleConflictTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::create([
-            'name' => 'Route A',
+        $route = Route::factory()->official()->withUsableVariant()->create([
+            'name' => 'Route 2',
             'travel_time_minutes' => 30,
             'status' => 'active'
         ]);
@@ -229,6 +231,7 @@ class AdminScheduleConflictTest extends TestCase
 
         $response = $this->postJson('/admin/api/schedules', [
             'route_id' => $route->id,
+            'route_variant_id' => $route->variants()->sole()->id,
             'bus_plate' => $bus->plate_number,
             'driver_id' => $targetDriver->id,
             'departure_time' => '10:00'
@@ -242,8 +245,8 @@ class AdminScheduleConflictTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::create([
-            'name' => 'Route A',
+        $route = Route::factory()->official()->withUsableVariant()->create([
+            'name' => 'Route 2',
             'travel_time_minutes' => 30,
             'status' => 'active'
         ]);
@@ -282,6 +285,7 @@ class AdminScheduleConflictTest extends TestCase
 
         $response = $this->postJson('/admin/api/schedules', [
             'route_id' => $route->id,
+            'route_variant_id' => $route->variants()->sole()->id,
             'bus_plate' => $bus->plate_number,
             'driver_id' => $driver2->id,
             'departure_time' => '08:31'
@@ -298,8 +302,8 @@ class AdminScheduleConflictTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::create([
-            'name' => 'Route A',
+        $route = Route::factory()->official()->withUsableVariant()->create([
+            'name' => 'Route 2',
             'travel_time_minutes' => 30,
             'status' => 'active'
         ]);
@@ -341,6 +345,7 @@ class AdminScheduleConflictTest extends TestCase
         // Attempting to schedule same bus on 2026-06-19 at 00:10 (overlap!)
         $response = $this->postJson('/admin/api/schedules', [
             'route_id' => $route->id,
+            'route_variant_id' => $route->variants()->sole()->id,
             'bus_plate' => $bus->plate_number,
             'driver_id' => $driver2->id,
             'service_date' => '2026-06-19',
@@ -358,8 +363,8 @@ class AdminScheduleConflictTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::create([
-            'name' => 'Route A',
+        $route = Route::factory()->official()->withUsableVariant()->create([
+            'name' => 'Route 2',
             'travel_time_minutes' => 60,
             'status' => 'active'
         ]);
@@ -409,8 +414,8 @@ class AdminScheduleConflictTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::create([
-            'name' => 'Route A',
+        $route = Route::factory()->official()->withUsableVariant()->create([
+            'name' => 'Route 2',
             'travel_time_minutes' => 30,
             'status' => 'active'
         ]);
@@ -448,6 +453,7 @@ class AdminScheduleConflictTest extends TestCase
         // Now we should be able to schedule the same bus and driver at 08:00 without conflicts!
         $response = $this->postJson('/admin/api/schedules', [
             'route_id' => $route->id,
+            'route_variant_id' => $route->variants()->sole()->id,
             'bus_plate' => $bus->plate_number,
             'driver_id' => $driver->id,
             'service_date' => '2026-06-18',

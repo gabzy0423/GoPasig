@@ -67,7 +67,7 @@ class BusController extends Controller
      */
     public function create()
     {
-        $routes = Route::all();
+        $routes = Route::getCanonicalProductionCached();
         // Get all capacity settings from SystemSetting instead of hardcoding
         $defaultCapacity = (int) SystemSetting::get('default_bus_capacity', 45);
         $minCapacity = (int) SystemSetting::get('bus_capacity_min', 10);
@@ -90,7 +90,7 @@ class BusController extends Controller
 
     public function edit(Bus $bus)
     {
-        $routes = Route::all();
+        $routes = Route::getCanonicalProductionCached();
         $drivers = \App\Models\Driver::all();
         $allowedStatuses = array_unique(array_merge([$bus->status], BusStateService::getValidManualTransitions($bus->status)));
         return view('admin.bus.edit', compact('bus', 'routes', 'drivers', 'allowedStatuses'));
@@ -216,7 +216,7 @@ class BusController extends Controller
             'charging_port_type'    => 'required|string|in:CCS2,GB/T,CHAdeMO',
             'max_charging_power_kw' => 'required|numeric|min:10|max:500',
             'capacity'              => "required|integer|min:{$minCapacity}|max:{$maxCapacity}",
-            'route_id'              => 'nullable|exists:routes,id',
+            'route_id'              => ['nullable', 'exists:routes,id', \Illuminate\Validation\Rule::in(Route::getCanonicalProductionCached()->pluck('id')->all())],
             'driver_name'           => 'nullable|string|max:100',
             'status'                => [
                 'required',
@@ -411,7 +411,7 @@ class BusController extends Controller
             ], 403);
         }
         $validated = $request->validate([
-            'route_id' => 'nullable|exists:routes,id',
+            'route_id' => ['nullable', 'exists:routes,id', \Illuminate\Validation\Rule::in(Route::getCanonicalProductionCached()->pluck('id')->all())],
         ]);
 
         $bus->update(['route_id' => $validated['route_id']]);

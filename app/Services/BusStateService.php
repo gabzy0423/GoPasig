@@ -191,15 +191,25 @@ class BusStateService
                     }
                 }
 
-                // Cancel any ongoing/dispatched trips for this bus
-                \App\Models\Trip::where('bus_id', $bus->id)
+                // Cancel and finalize any ongoing/dispatched trips for this bus.
+                $tripsToCancel = \App\Models\Trip::where('bus_id', $bus->id)
                     ->whereIn('status', ['ongoing', 'dispatched'])
                     ->lockForUpdate()
-                    ->update([
+                    ->get();
+
+                $endedAt = now();
+                foreach ($tripsToCancel as $tripToCancel) {
+                    $tripToCancel->update([
                         'status'      => 'cancelled',
                         'gps_session' => 'CLOSED',
-                        'ended_at'    => now(),
+                        'ended_at'    => $endedAt,
                     ]);
+
+                    TripLogService::logTrip($tripToCancel->fresh(), [
+                        'completed_at' => $endedAt,
+                        'status' => 'cancelled',
+                    ]);
+                }
 
                 // Cancel active/pending schedules for this bus
                 \App\Models\Schedule::where('bus_id', $bus->id)

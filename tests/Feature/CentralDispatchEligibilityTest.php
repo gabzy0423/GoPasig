@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Bus;
 use App\Models\Driver;
 use App\Models\Route;
+use App\Models\RouteVariant;
+use App\Models\RouteVariantStop;
 use App\Models\Trip;
 use App\Models\User;
 use App\Services\BusStateService;
@@ -124,8 +126,37 @@ class CentralDispatchEligibilityTest extends TestCase
         $this->actingAsAdmin();
         $bus = Bus::factory()->create(['status' => 'inactive', 'route_id' => null, 'driver_name' => Bus::DEFAULT_DRIVER_NAME]);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available', 'assigned_bus' => null, 'assigned_route' => null]);
-        $route = Route::factory()->create();
-        $trip = SimulationDispatchService::dispatch($bus, $driver, $route);
+        $route = Route::factory()->create([
+            'name' => 'Route 2',
+            'status' => 'Active',
+        ]);
+        $variant = RouteVariant::create([
+            'route_id' => $route->id,
+            'direction' => 'outbound',
+            'origin_name' => 'SPED',
+            'destination_name' => 'Ligaya',
+            'polyline_coordinates' => [[14.5602, 121.0797], [14.6185, 121.0925]],
+            'geometry_version' => 1,
+            'geometry_status' => 'valid',
+            'is_default' => true,
+        ]);
+        RouteVariantStop::create([
+            'route_variant_id' => $variant->id,
+            'name' => 'SPED',
+            'lat' => 14.5602,
+            'lng' => 121.0797,
+            'radius_meters' => 50,
+            'sequence' => 1,
+        ]);
+        RouteVariantStop::create([
+            'route_variant_id' => $variant->id,
+            'name' => 'Ligaya',
+            'lat' => 14.6185,
+            'lng' => 121.0925,
+            'radius_meters' => 50,
+            'sequence' => 2,
+        ]);
+        $trip = SimulationDispatchService::dispatch($bus, $driver, $route, routeVariant: $variant);
 
         app(TripLifecycleService::class)->startTrip($trip);
         app(TripLifecycleService::class)->completeTrip($trip->fresh());

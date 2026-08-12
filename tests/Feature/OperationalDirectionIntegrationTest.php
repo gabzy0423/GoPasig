@@ -23,7 +23,7 @@ class OperationalDirectionIntegrationTest extends TestCase
     public function test_schedule_can_persist_a_valid_route_variant(): void
     {
         $admin = $this->actingAsAdmin();
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $variant = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
@@ -50,8 +50,8 @@ class OperationalDirectionIntegrationTest extends TestCase
     public function test_schedule_rejects_route_variant_from_another_route(): void
     {
         $admin = $this->actingAsAdmin();
-        $route = Route::factory()->create();
-        $otherRoute = Route::factory()->create();
+        $route = Route::factory()->official()->create();
+        $otherRoute = Route::factory()->official('Route 3')->create();
         $otherVariant = $this->variantFor($otherRoute, 'inbound', 'Ligaya', 'SPED');
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
@@ -74,7 +74,7 @@ class OperationalDirectionIntegrationTest extends TestCase
 
     public function test_scheduled_dispatch_propagates_route_variant_to_trip(): void
     {
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $variant = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
@@ -96,7 +96,7 @@ class OperationalDirectionIntegrationTest extends TestCase
 
     public function test_manual_outbound_and_inbound_dispatch_create_directional_trips(): void
     {
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $outbound = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
         $inbound = $this->variantFor($route, 'inbound', 'Ligaya', 'SPED');
 
@@ -124,8 +124,8 @@ class OperationalDirectionIntegrationTest extends TestCase
 
     public function test_variant_and_route_mismatch_is_rejected_for_dispatch(): void
     {
-        $route = Route::factory()->create();
-        $otherRoute = Route::factory()->create();
+        $route = Route::factory()->official()->create();
+        $otherRoute = Route::factory()->official('Route 3')->create();
         $otherVariant = $this->variantFor($otherRoute, 'inbound', 'Ligaya', 'SPED');
 
         $this->expectException(ValidationException::class);
@@ -142,7 +142,7 @@ class OperationalDirectionIntegrationTest extends TestCase
 
     public function test_pending_geometry_cannot_dispatch_by_falling_back_to_another_direction(): void
     {
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
         $pendingInbound = $this->variantFor($route, 'inbound', 'Ligaya', 'SPED', 'pending');
 
@@ -167,7 +167,7 @@ class OperationalDirectionIntegrationTest extends TestCase
 
     public function test_legacy_schedule_and_trip_with_null_variant_still_work(): void
     {
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $bus = Bus::factory()->create(['status' => 'inactive']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'available']);
 
@@ -192,7 +192,7 @@ class OperationalDirectionIntegrationTest extends TestCase
     public function test_active_trip_exposes_direction_metadata_without_bus_owning_direction(): void
     {
         $admin = $this->actingAsAdmin();
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $variant = $this->variantFor($route, 'inbound', 'Ligaya', 'SPED');
         $bus = Bus::factory()->create(['status' => 'operating']);
         $driver = Driver::factory()->create(['status' => 'active', 'operational_status' => 'assigned']);
@@ -218,7 +218,7 @@ class OperationalDirectionIntegrationTest extends TestCase
     public function test_driver_fallback_start_reuses_existing_dispatched_directional_trip(): void
     {
         $user = User::factory()->create(['role' => 'driver']);
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $variant = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
         $bus = Bus::factory()->create(['status' => 'ready', 'route_id' => $route->id]);
         $driver = Driver::factory()->create([
@@ -253,7 +253,7 @@ class OperationalDirectionIntegrationTest extends TestCase
     public function test_driver_fallback_start_rejects_ambiguous_direction_without_creating_trip(): void
     {
         $user = User::factory()->create(['role' => 'driver']);
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
         $this->variantFor($route, 'inbound', 'Ligaya', 'SPED');
         $bus = Bus::factory()->create(['status' => 'ready', 'route_id' => $route->id]);
@@ -274,7 +274,7 @@ class OperationalDirectionIntegrationTest extends TestCase
 
     public function test_directional_dispatch_rejects_route_with_variants_but_no_usable_direction(): void
     {
-        $route = Route::factory()->create();
+        $route = Route::factory()->official()->create();
         $this->variantFor($route, 'outbound', 'SPED', 'Ligaya', 'pending');
         $bus = Bus::factory()->create(['status' => 'inactive']);
 

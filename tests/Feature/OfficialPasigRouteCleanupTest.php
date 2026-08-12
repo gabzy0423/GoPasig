@@ -26,20 +26,20 @@ class OfficialPasigRouteCleanupTest extends TestCase
     {
         $this->seedRoutes();
 
-        $routes = Route::whereIn('name', ['Route 1', 'Route 2', 'Route 3'])->with('variants.stops')->get();
+        $routes = Route::whereIn('name', ['Route 2', 'Route 3', 'Route 4'])->with('variants.stops')->get();
         $this->assertCount(3, $routes);
         $this->assertSame(6, $routes->pluck('variants')->flatten()->count());
         $this->assertSame(82, $routes->pluck('variants')->flatten()->pluck('stops')->flatten()->count());
         $this->assertSame(82, $routes->pluck('variants')->flatten()->pluck('stops')->flatten()->filter(fn ($stop) => in_array($stop->stop_type, ['pickup_point', 'designated_stop'], true))->count());
-        $this->assertSame(20, $routes->firstWhere('name', 'Route 1')->variants->firstWhere('direction', 'outbound')->stops->count());
-        $this->assertSame(18, $routes->firstWhere('name', 'Route 1')->variants->firstWhere('direction', 'inbound')->stops->count());
+        $this->assertSame(20, $routes->firstWhere('name', 'Route 2')->variants->firstWhere('direction', 'outbound')->stops->count());
+        $this->assertSame(18, $routes->firstWhere('name', 'Route 2')->variants->firstWhere('direction', 'inbound')->stops->count());
     }
 
     public function test_official_coordinates_geometry_and_history_are_empty_and_pending(): void
     {
         $this->seedRoutes();
 
-        $official = Route::whereIn('name', ['Route 1', 'Route 2', 'Route 3'])->with('variants.stops')->get();
+        $official = Route::whereIn('name', ['Route 2', 'Route 3', 'Route 4'])->with('variants.stops')->get();
         foreach ($official as $route) {
             $this->assertEmpty($route->polyline_coordinates);
             foreach ($route->variants as $variant) {
@@ -68,7 +68,7 @@ class OfficialPasigRouteCleanupTest extends TestCase
     {
         $this->seedRoutes();
         $admin = User::factory()->create(['role' => 'admin']);
-        $official = Route::where('name', 'Route 1')->firstOrFail();
+        $official = Route::where('name', 'Route 2')->firstOrFail();
 
         $this->assertGreaterThan(0, Route::whereIn('name', ['Route A', 'Route B', 'Route C', 'Route D'])->withCount('stops')->get()->sum('stops_count'));
         $this->assertGreaterThan(0, Route::whereIn('name', ['Route A', 'Route B', 'Route C', 'Route D'])->get()->sum(fn ($route) => count($route->polyline_coordinates ?: [])));
@@ -82,7 +82,7 @@ class OfficialPasigRouteCleanupTest extends TestCase
             'name' => 'Unauthorized official stop',
         ])->assertStatus(422);
 
-        $officialRouteIds = Route::whereIn('name', ['Route 1', 'Route 2', 'Route 3'])->pluck('id');
+        $officialRouteIds = Route::whereIn('name', ['Route 2', 'Route 3', 'Route 4'])->pluck('id');
         $this->assertSame(82, RouteVariantStop::whereIn('route_variant_id', RouteVariant::whereIn('route_id', $officialRouteIds)->pluck('id'))->count());
     }
 }

@@ -10,6 +10,7 @@ use App\Data\TripProgressResult;
 use App\Events\StopReached;
 use App\Events\StopDeparted;
 use App\Events\TripCompleted;
+use App\Services\TripLifecycleService;
 
 class TripProgressService
 {
@@ -69,7 +70,7 @@ class TripProgressService
                 event(new StopReached($tripId, $legacyStopId ?? $variantStopId, 'GPS'));
 
                 if ($progress->completed_stops_count === $totalStops) {
-                    $trip->update(['status' => 'completed', 'ended_at' => now()]);
+                    app(TripLifecycleService::class)->completeTrip($trip);
                     event(new TripCompleted($tripId));
                 }
 

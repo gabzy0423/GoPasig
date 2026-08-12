@@ -7,9 +7,10 @@ let charts = {};
 let analyticsEventsBound = false;
 
 // Dynamic data variables with fallbacks
-// Starts empty — populated exclusively by loadDatabaseAnalyticsData() from /admin/api/analytics.
+// Starts empty - populated exclusively by loadDatabaseAnalyticsData() from /admin/api/analytics.
 // No fake fallback data: if the DB is empty, the UI shows an empty-state message.
 let tripData = [];
+let peakLoadTimelineData = [];
 
 let busCardsData = []; // Populated from DB via loadDatabaseAnalyticsData()
 
@@ -26,58 +27,65 @@ let predictionRouteData = {};
 
 let isAnalyticsDatabaseLoaded = false;
 
+function applyAnalyticsPayload(data) {
+    if (!data || !data.success) return false;
+
+    kpisData = data.kpis || null;
+    heatmapData = data.heatmap || null;
+    tripData = Array.isArray(data.tripPaxTable) ? data.tripPaxTable : [];
+    peakLoadTimelineData = Array.isArray(data.peakLoadTimeline) ? data.peakLoadTimeline : [];
+    busCardsData = Array.isArray(data.busSummaryCards) ? data.busSummaryCards : [];
+    forecastData = Array.isArray(data.forecastTable) ? data.forecastTable : [];
+    driverPerformanceData = Array.isArray(data.driverPerformance) ? data.driverPerformance : [];
+    routeComparisonData = Array.isArray(data.routeComparison) ? data.routeComparison : [];
+    stopBoardingData = Array.isArray(data.stopBoarding) ? data.stopBoarding : [];
+    hourlyRidershipData = Array.isArray(data.hourlyRidership) ? data.hourlyRidership : [];
+    historicalTrendData = Array.isArray(data.historicalTrend) ? data.historicalTrend : [];
+
+    // Keep legacy window consumers in sync with the shared analytics state.
+    window.kpisData = kpisData;
+    window.heatmapData = heatmapData;
+    window.tripData = tripData;
+    window.peakLoadTimelineData = peakLoadTimelineData;
+    window.busCardsData = busCardsData;
+    window.busSummaryCardsData = busCardsData;
+    window.forecastData = forecastData;
+    window.driverPerformanceData = driverPerformanceData;
+    window.routeComparisonData = routeComparisonData;
+    window.stopBoardingData = stopBoardingData;
+    window.hourlyRidershipData = hourlyRidershipData;
+    window.historicalTrendData = historicalTrendData;
+    window.busCapacityLimit = data.busCapacityLimit || 45;
+
+    // Forecast recommendation cards stay neutral until the demand/TripLog foundation is reliable.
+    predictionRouteData = {
+        all: {
+            vol: 'No data',
+            rec: 'No recommendation data',
+            busiest: 'No reliable forecast data'
+        }
+    };
+
+    routeComparisonData.forEach(r => {
+        predictionRouteData[r.route] = {
+            vol: 'No data',
+            rec: 'No recommendation data',
+            busiest: 'No reliable forecast data'
+        };
+    });
+
+    isAnalyticsDatabaseLoaded = true;
+
+    return true;
+}
+
 async function loadDatabaseAnalyticsData() {
     try {
         const url = (window.GoPasigConfig && window.GoPasigConfig.analyticsUrl) ? window.GoPasigConfig.analyticsUrl : '/admin/api/analytics';
         const response = await fetch(url);
         const data = await response.json();
 
-        if (data && data.success) {
-            // Populate our globals
-            kpisData = data.kpis;
-            heatmapData = data.heatmap;
-
-            if (data.tripPaxTable && data.tripPaxTable.length > 0) {
-                tripData = data.tripPaxTable;
-            }
-            if (data.busSummaryCards && data.busSummaryCards.length > 0) {
-                busCardsData = data.busSummaryCards;
-            }
-            if (data.forecastTable && data.forecastTable.length > 0) {
-                forecastData = data.forecastTable;
-            }
-            driverPerformanceData = data.driverPerformance || [];
-            routeComparisonData = data.routeComparison || [];
-            stopBoardingData = data.stopBoarding || [];
-            hourlyRidershipData = data.hourlyRidership || [];
-            historicalTrendData = data.historicalTrend || [];
-
-            // Build predictionRouteData
-            const topStopAll = stopBoardingData[0]?.name || 'Pasig City Hall';
-
-
-            const topStopBoardingCount = stopBoardingData[0]?.boarding ?? stopBoardingData[0]?.boarding_count ?? null;
-            const topStopPeakHour = kpisData.peak_hour || 'N/A';
-            const topStopPaxLabel = topStopBoardingCount !== null ? `~${topStopBoardingCount} passengers` : 'No data';
-
-            predictionRouteData = {
-                all: {
-                    vol: `${kpisData.total_pax_today || '0'} pax / day`,
-                    rec: `${kpisData.trips_scheduled || '0'} recommended`,
-                    busiest: `Expected highest boarding: ${topStopAll} · ${topStopPeakHour} · ${topStopPaxLabel}`
-                }
-            };
-
-            routeComparisonData.forEach(r => {
-                const estPeakPax = Math.round(r.pax * 0.15 || 30);
-                predictionRouteData[r.route] = {
-                    vol: `${r.pax.toLocaleString()} pax / day`,
-                    rec: `${r.trips} recommended`,
-                    busiest: `Expected highest boarding: ${r.busiestStop || 'SPED Terminal'} · ${r.peakHour || '7–8 AM'} · ~${estPeakPax} passengers`
-                };
-            });
-
-            isAnalyticsDatabaseLoaded = true;
+        if (applyAnalyticsPayload(data)) {
             console.log("Analytics Controller data successfully fetched!");
 
             // 1. Update KPI widgets

@@ -64,7 +64,7 @@ var conflictsList = window.conflictsList;
 
 // Global State
 let activeRoutesTab = 'schedule';
-let selectedRouteId = '1';
+let selectedRouteId = null;
 let isWeekViewActive = true;
 let isSuspendedRoutesShown = false;
 let currentEditingScheduleId = null;
@@ -108,6 +108,30 @@ function isDirectionAwareRouteRecord(route) {
     return Array.isArray(route?.variants) && route.variants.some(v => v.direction === 'inbound');
 }
 
+function canonicalRoutes() {
+    return (typeof routesDataDb === 'undefined' ? [] : routesDataDb)
+        .filter(route => isDirectionAwareRouteRecord(route));
+}
+
+function ensureSelectedCanonicalRoute() {
+    const routes = canonicalRoutes();
+    if (routes.length === 0) return;
+
+    if (!selectedRouteId || !routes.some(route => String(route.id) === String(selectedRouteId))) {
+        selectedRouteId = String(routes[0].id);
+        if (typeof selectedRouteVariantId !== 'undefined') selectedRouteVariantId = null;
+    }
+}
+
+function defaultOutboundVariant(route) {
+    const variants = route?.variants || [];
+    return variants.find(v => v.direction === 'outbound' && v.is_default)
+        || variants.find(v => v.direction === 'outbound')
+        || variants.find(v => v.is_default)
+        || variants[0]
+        || null;
+}
+
 function getActiveVariantForRoute(routeId) {
     const route = routesDataDb.find(r => r.id.toString() === routeId.toString());
     if (!isDirectionAwareRouteRecord(route)) return null;
@@ -115,12 +139,12 @@ function getActiveVariantForRoute(routeId) {
         const selected = selectedVariantForGeometry();
         if (selected && String(selected.route_id) === String(routeId)) return selected;
     }
-    return route.variants.find(v => v.is_default) || route.variants.find(v => v.direction === 'outbound') || null;
+    return defaultOutboundVariant(route);
 }
 
 function isUsableVariantGeometry(variant) {
     return !!variant &&
-        ['authoritative', 'approved', 'verified', 'valid'].includes(String(variant.geometry_status || '').toLowerCase()) &&
+        ['authoritative', 'approved', 'verified', 'valid', 'schematic'].includes(String(variant.geometry_status || '').toLowerCase()) &&
         Array.isArray(variant.polyline_coordinates) &&
         variant.polyline_coordinates.length >= 2;
 }
@@ -133,65 +157,58 @@ function variantDistanceLabel(variant) {
 
 function syncRoutesWithDatabase() {
     if (typeof routesDataDb === 'undefined' || routesDataDb.length === 0) return;
+    ensureSelectedCanonicalRoute();
 
-    routesData = routesDataDb.map(route => {
+    routesData = canonicalRoutes().map((route, index) => {
         const idStr = route.id.toString();
         const color = routeColors[idStr] || '#003F87';
         const status = normalizeRouteStatus(route.status);
         const directionAware = isDirectionAwareRouteRecord(route);
         const variants = route.variants || [];
-        const legacyStops = route.stops || [];
         const stopSummary = directionAware
-            ? variants.map(v => (v.direction === 'outbound' ? 'Outbound ' : 'Inbound ') + ((v.stops || []).length)).join(' / ')
-            : legacyStops.length + ' stops';
+            ? variants.map(v => (v.direction === 'outbound' ? 'OUT ' : 'IN ') + ((v.stops || []).length)).join(' / ')
+            : 'No official variants';
         const assigned = fleetData.filter(b => b.route === idStr).map(b => b.plate);
-        const avgPax = route.avg_passengers || 120;
-        const distance = directionAware
-            ? 'Pending / unavailable'
-            : calculatePolylineDistance(route.polyline_coordinates);
+        const defaultVariant = defaultOutboundVariant(route);
+        const distance = defaultVariant ? variantDistanceLabel(defaultVariant) : 'Pending / unavailable';
 
-        let busiestStop = 'None';
-        if (!directionAware && legacyStops.length > 0) {
-            busiestStop = legacyStops[legacyStops.length - 1].name;
-        }
+        const defaultStops = (defaultVariant?.stops || []).slice().sort((a, b) => a.sequence - b.sequence);
+        const busiestStop = defaultStops.length ? defaultStops[defaultStops.length - 1].name : 'None';
 
         let peakHours = 'Rush Hours (05:30-09:00 AM, 03:00-06:30 PM)';
-        if (route.id == 1) peakHours = 'All Day (Mon-Fri)';
+        if (route.name === 'Route 1') peakHours = 'All Day (Mon-Fri)';
+
+        const palette = [
+            { bg: '#E6F1FB', textColor: '#0C447C', opacityBg: 'rgba(0, 63, 135, 0.10)' },
+            { bg: '#EAF3DE', textColor: '#3B6D11', opacityBg: 'rgba(59, 109, 17, 0.10)' },
+            { bg: '#FAEEDA', textColor: '#854F0B', opacityBg: 'rgba(133, 79, 11, 0.10)' },
+        ];
+        const tone = palette[index % palette.length];
 
         return {
             id: idStr,
             name: route.name,
             endpoints: route.description || route.name,
             status,
-            stopsCount: directionAware ? variants.reduce((max, v) => Math.max(max, (v.stops || []).length), 0) : legacyStops.length,
+            stopsCount: directionAware ? variants.reduce((max, v) => Math.max(max, (v.stops || []).length), 0) : 0,
             stopSummary,
             distance,
             busesCount: assigned.length,
-            avgPax,
             peakHours,
             busiestStop,
             color,
-            bg: route.id == 1 ? '#E6F1FB' : (route.id == 2 ? '#EAF3DE' : (route.id == 3 ? '#FAEEDA' : '#FCEBEB')),
-            textColor: route.id == 1 ? '#0C447C' : (route.id == 2 ? '#3B6D11' : (route.id == 3 ? '#854F0B' : '#A32D2D')),
-            opacityBg: route.id == 1 ? 'rgba(0, 63, 135, 0.10)' : (route.id == 2 ? 'rgba(59, 109, 17, 0.10)' : (route.id == 3 ? 'rgba(133, 79, 11, 0.10)' : 'rgba(226, 75, 74, 0.10)')),
+            bg: tone.bg,
+            textColor: tone.textColor,
+            opacityBg: tone.opacityBg,
             assignedBuses: assigned
         };
     });
 
     stopsData = {};
-    routesDataDb.forEach(route => {
+    canonicalRoutes().forEach(route => {
         const idStr = route.id.toString();
-        stopsData[idStr] = (route.stops || []).map((stop, index) => ({
-            id: stop.id,
-            name: stop.name,
-            landmark: index === 0 ? 'origin' : (index === route.stops.length - 1 ? 'terminus' : 'stop'),
-            boarding: 15 + index * 5,
-            alighting: 10 + index * 5,
-            dwell: '-',
-            status: index === 0 ? 'served' : (index === route.stops.length - 1 ? 'terminus' : 'current'),
-            lat: Number(stop.lat),
-            lng: Number(stop.lng)
-        }));
+        const variant = defaultOutboundVariant(route);
+        stopsData[idStr] = (variant?.stops || []).slice().sort((a, b) => a.sequence - b.sequence);
     });
 }
 async function initRoutesDashboard() {
@@ -532,6 +549,8 @@ function renderRoutesTab() {
 function renderRouteList() {
     const routeCardsContainer = document.getElementById('rm-route-cards-container');
     if (!routeCardsContainer) return;
+    const addRouteButton = document.querySelector('[onclick="addNewRouteStub()"]');
+    if (addRouteButton) addRouteButton.classList.add('hidden');
 
     // Filter inactive routes if hidden
     const visibleRoutes = isSuspendedRoutesShown ? routesData : routesData.filter(r => r.status === 'Active');
@@ -559,7 +578,6 @@ function renderRouteList() {
                     <span class="rm-rc-stat-item"><i class="ti ti-road"></i> ${route.distance}</span>
                     <span class="rm-rc-stat-item"><i class="ti ti-bus"></i> ${route.busesCount} buses</span>
                 </div>
-                <div class="rm-rc-btm" style="color:${route.textColor};">Avg ${route.avgPax} pax/trip · Peak: ${route.peakHours}</div>
             </div>
         `;
     }).join('');
@@ -567,6 +585,7 @@ function renderRouteList() {
 
 function selectRoute(routeId) {
     selectedRouteId = routeId;
+    if (typeof selectedRouteVariantId !== 'undefined') selectedRouteVariantId = null;
     renderRouteList();
     renderRouteDetailPanel();
 }
@@ -676,19 +695,22 @@ function renderRouteDetailPanel() {
 
 function getRouteEditorStops(routeId) {
     const variant = getActiveVariantForRoute(routeId);
-    if (variant) {
-        return (variant.stops || []).slice().sort((a, b) => a.sequence - b.sequence).map((stop, index, stops) => ({
-            id: stop.id,
-            name: stop.name,
-            landmark: index === 0 ? 'origin' : (index === stops.length - 1 ? 'terminus' : 'stop'),
-            boarding: '-',
-            alighting: '-',
-            dwell: '-',
-            status: stop.coordinate_status || 'pending',
-            routeVariantStop: true
-        }));
-    }
-    return stopsData[routeId] || [];
+    if (!variant) return [];
+
+    return (variant.stops || []).slice().sort((a, b) => a.sequence - b.sequence).map((stop, index, stops) => ({
+        id: stop.id,
+        name: stop.name,
+        landmark: index === 0 ? 'origin' : (index === stops.length - 1 ? 'terminus' : 'stop'),
+        boarding: '-',
+        alighting: '-',
+        dwell: '-',
+        status: stop.coordinate_status || 'pending',
+        sequence: stop.sequence,
+        stop_type: stop.stop_type,
+        routeVariantStop: true,
+        lat: Number(stop.lat),
+        lng: Number(stop.lng)
+    }));
 }
 
 function renderStopTimeline(routeId) {
@@ -1037,24 +1059,29 @@ function renderScheduleRouteMap() {
     activeRoutes.forEach(route => {
         const routeId = route.id.toString();
         const strokeColor = routeColors[routeId] || '#003F87';
+        const variants = route.variants || [];
 
-        if (route.polyline_coordinates && route.polyline_coordinates.length > 0) {
-            const polyline = L.polyline(route.polyline_coordinates, {
-                color: strokeColor,
-                weight: 4,
-                opacity: 0.82
-            }).bindTooltip(route.name, {
-                direction: 'top',
-                sticky: true,
-                className: 'font-sans font-bold text-[10px] px-1.5 py-0.5 rounded shadow-sm border border-slate-100'
-            }).addTo(scheduleRouteMapInstance);
+        variants.forEach(variant => {
+            const geometry = isUsableVariantGeometry(variant) ? variant.polyline_coordinates : [];
+            const direction = String(variant.direction || '').toLowerCase();
 
-            scheduleRouteMapLayers.push(polyline);
-            bounds.push(...route.polyline_coordinates);
-        }
+            if (geometry.length > 1) {
+                const polyline = L.polyline(geometry, {
+                    color: strokeColor,
+                    weight: 4,
+                    opacity: 0.82,
+                    dashArray: direction.includes('in') ? '8 7' : null
+                }).bindTooltip(route.name + ' ' + (variant.direction || ''), {
+                    direction: 'top',
+                    sticky: true,
+                    className: 'font-sans font-bold text-[10px] px-1.5 py-0.5 rounded shadow-sm border border-slate-100'
+                }).addTo(scheduleRouteMapInstance);
 
-        if (route.stops && route.stops.length > 0) {
-            route.stops.forEach(stop => {
+                scheduleRouteMapLayers.push(polyline);
+                bounds.push(...geometry);
+            }
+
+            (variant.stops || []).forEach(stop => {
                 const lat = parseFloat(stop.lat);
                 const lng = parseFloat(stop.lng);
                 if (Number.isNaN(lat) || Number.isNaN(lng)) return;
@@ -1065,7 +1092,7 @@ function renderScheduleRouteMap() {
                     fillOpacity: 1,
                     color: strokeColor,
                     weight: 2
-                }).bindTooltip(stop.name, {
+                }).bindTooltip((variant.direction || '').toUpperCase() + ' ' + stop.sequence + '. ' + stop.name, {
                     direction: 'top',
                     className: 'font-sans font-bold text-[9px] px-1.5 py-0.5 rounded shadow-sm border border-slate-100'
                 }).addTo(scheduleRouteMapInstance);
@@ -1073,7 +1100,7 @@ function renderScheduleRouteMap() {
                 scheduleRouteMapLayers.push(marker);
                 bounds.push([lat, lng]);
             });
-        }
+        });
     });
 
     if (bounds.length > 0) {
@@ -1092,9 +1119,8 @@ function renderRouteMap(routeId) {
 
     const route = routesDataDb.find(r => r.id.toString() === routeId.toString());
     const activeVariant = getActiveVariantForRoute(routeId);
-    const legacyStops = stopsData[routeId] || [];
-    if (!route || (!activeVariant && legacyStops.length === 0)) {
-        container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--color-text-secondary);">No map available.</div>';
+    if (!route || !activeVariant) {
+        container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--color-text-secondary);">No official variant map available.</div>';
         return;
     }
     if (typeof L === 'undefined') {
@@ -1133,9 +1159,7 @@ function renderRouteMap(routeId) {
     }
 
     const bounds = [];
-    const geometry = activeVariant
-        ? (isUsableVariantGeometry(activeVariant) ? activeVariant.polyline_coordinates : [])
-        : (Array.isArray(route.polyline_coordinates) ? route.polyline_coordinates : []);
+    const geometry = isUsableVariantGeometry(activeVariant) ? activeVariant.polyline_coordinates : [];
 
     if (geometry.length > 1) {
         routePreviewPolyline = L.polyline(geometry, {
@@ -1146,13 +1170,10 @@ function renderRouteMap(routeId) {
         bounds.push(...geometry);
     }
 
-    const stops = activeVariant
-        ? (activeVariant.stops || []).filter(stop =>
-            stop.coordinate_status === 'verified' &&
-            Number.isFinite(Number(stop.lat)) &&
-            Number.isFinite(Number(stop.lng))
-        )
-        : legacyStops.filter(stop => Number.isFinite(Number(stop.lat)) && Number.isFinite(Number(stop.lng)));
+    const stops = (activeVariant.stops || []).filter(stop =>
+        Number.isFinite(Number(stop.lat)) &&
+        Number.isFinite(Number(stop.lng))
+    );
 
     stops.forEach(stop => {
         const point = [Number(stop.lat), Number(stop.lng)];
@@ -1465,25 +1486,6 @@ function reScanRoutesConflicts() {
         }
     }
 
-    // 2. GAP CHECK: Route C (ID 3) no coverage 1:00 to 4:00 PM
-    const routeCTrips = schedulesData.filter(s => s.routeId === '3' || s.routeId === 'C');
-    const hasGapC = !routeCTrips.some(s => {
-        const hour = parseInt(s.time.split(':')[0]);
-        return hour >= 13 && hour <= 16;
-    });
-
-    if (hasGapC) {
-        conflictsList.push({
-            id: 'gap-c-afternoon',
-            type: 'Scheduling gap',
-            severity: 'Medium',
-            entityName: 'Route C — no coverage 1:00–4:00 PM',
-            description: 'No bus assigned on Route C between 1:00 PM and 4:00 PM. Historical data shows avg 98 pax/trip during this period.',
-            affectedIds: [],
-            metaText: 'Route C · 1:00–4:00 PM'
-        });
-    }
-
     // Re-render display outputs
     renderConflictLists();
     
@@ -1754,7 +1756,7 @@ async function applyConflictResolution() {
 
 
 // ── ADD STOPS MODAL FLOW ────────────────────────────────────
-let activeStopAddingRouteId = 'A';
+let activeStopAddingRouteId = null;
 
 function openAddStopToRouteModal() {
     activeStopAddingRouteId = selectedRouteId;
@@ -1871,6 +1873,3 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadDatabaseSchedulesData();
     reScanRoutesConflicts();
 });
-
-
-

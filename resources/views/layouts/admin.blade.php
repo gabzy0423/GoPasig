@@ -38,6 +38,7 @@
     <script src="{{ asset('js/admin-dashboard/buses.js') }}?v={{ time() }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/dispatch.js') }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/maintenance.js') }}" defer></script>
+    <script src="{{ asset('js/route-map-ux.js') }}?v={{ filemtime(public_path('js/route-map-ux.js')) }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/fleet-map.js') }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/overview-map-simulation.js') }}?v={{ time() }}" defer></script>
     <script src="{{ asset('js/admin-dashboard/analytics-data.js') }}" defer></script>

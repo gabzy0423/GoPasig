@@ -10,6 +10,25 @@ use Carbon\Carbon;
 
 class DriverPerformanceService
 {
+    /**
+     * Calculate the report-only operational score.
+     *
+     * Trip cancellation is intentionally excluded because the cause may be
+     * vehicle, maintenance, system, or administrative-related. Only the
+     * existing qualifying incident count affects the score.
+     */
+    public static function calculateOperationalScore(int $operationalTrips, int $qualifyingIncidents): ?int
+    {
+        if ($operationalTrips <= 0 && $qualifyingIncidents <= 0) {
+            return null;
+        }
+
+        $penalty = self::incidentPenalty();
+        $score = 100 - (max(0, $qualifyingIncidents) * $penalty);
+
+        return max(0, min(100, $score));
+    }
+
     public static function calculateScore(int $driverId, Carbon $start, Carbon $end, float $baseScore = null): int
     {
         if (!Driver::find($driverId)) {

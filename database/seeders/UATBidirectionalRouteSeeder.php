@@ -214,21 +214,22 @@ class UATBidirectionalRouteSeeder
      */
     public static function cleanup(): void
     {
-        $route = Route::where('name', self::ROUTE_NAME)->first();
-        if (!$route) {
-            return;
+        $route = Route::withTrashed()->where('name', self::ROUTE_NAME)->first();
+        if ($route) {
+            $variantIds = RouteVariant::where('route_id', $route->id)->pluck('id');
+            RouteVariantStop::whereIn('route_variant_id', $variantIds)->delete();
+            RouteVariant::whereIn('id', $variantIds)->delete();
+            Schedule::where('route_id', $route->id)->delete();
+            Trip::where('route_id', $route->id)->delete();
+            Stop::where('route_id', $route->id)->delete();
+
+            $route->forceDelete();
         }
 
-        $variantIds = RouteVariant::where('route_id', $route->id)->pluck('id');
-        RouteVariantStop::whereIn('route_variant_id', $variantIds)->delete();
-        RouteVariant::whereIn('id', $variantIds)->delete();
-        Schedule::where('route_id', $route->id)->delete();
-        Trip::where('route_id', $route->id)->delete();
-        Stop::where('route_id', $route->id)->delete();
-        
-        $route->delete();
-
         Bus::whereIn('plate_number', ['PAS-UAT1', 'PAS-UAT2'])->delete();
-        Driver::whereIn('license_number', ['UAT-LIC-001', 'UAT-LIC-002'])->delete();
+        Driver::where(function ($query) {
+            $query->whereIn('license_number', ['UAT-LIC-001', 'UAT-LIC-002'])
+                ->orWhereIn('emp_id', ['EMP-UAT1', 'EMP-UAT2']);
+        })->delete();
     }
 }

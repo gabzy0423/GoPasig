@@ -63,7 +63,7 @@ class Phase3DataQualityTest extends TestCase
     {
         $result = ValidationService::validateGPSCoordinates(NAN, 120.0);
         $this->assertFalse($result['valid']);
-        $this->assertStringContainsString('invalid', strtolower($result['message']));
+        $this->assertStringContainsString('out of bounds', strtolower($result['message']));
     }
 
     /** @test */

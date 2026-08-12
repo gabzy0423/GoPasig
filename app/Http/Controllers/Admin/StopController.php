@@ -33,7 +33,10 @@ class StopController extends Controller
         $routeId = $validated['route_id'];
         $officialRoute = Route::findOrFail($routeId);
         if ($this->isOfficialReferenceRoute($officialRoute)) {
-            return response()->json(['success' => false, 'message' => 'Official Route 1/2/3 stop definitions are fixed reference data.'], 422);
+            return response()->json(['success' => false, 'message' => 'Official production route stop definitions are fixed reference data.'], 422);
+        }
+        if ($this->isRetiredLegacyRoute($officialRoute)) {
+            return response()->json(['success' => false, 'message' => 'Legacy Route A-D stop definitions are historical-only.'], 422);
         }
         $routeDefaults = DefaultRouteSetting::first();
         $defaultOriginLabel = $routeDefaults?->default_origin_label
@@ -117,7 +120,10 @@ class StopController extends Controller
     {
         $route = $route ?? $stop->route;
         if ($this->isOfficialReferenceRoute($route)) {
-            return response()->json(['success' => false, 'message' => 'Official Route 1/2/3 stop definitions are fixed reference data.'], 422);
+            return response()->json(['success' => false, 'message' => 'Official production route stop definitions are fixed reference data.'], 422);
+        }
+        if ($this->isRetiredLegacyRoute($route)) {
+            return response()->json(['success' => false, 'message' => 'Legacy Route A-D stop definitions are historical-only.'], 422);
         }
         // Admin only
         if (auth()->user()->role !== 'admin') {
@@ -162,7 +168,10 @@ class StopController extends Controller
     {
         $route = $route ?? $stop->route;
         if ($this->isOfficialReferenceRoute($route)) {
-            return response()->json(['success' => false, 'message' => 'Official Route 1/2/3 stop definitions are fixed reference data.'], 422);
+            return response()->json(['success' => false, 'message' => 'Official production route stop definitions are fixed reference data.'], 422);
+        }
+        if ($this->isRetiredLegacyRoute($route)) {
+            return response()->json(['success' => false, 'message' => 'Legacy Route A-D stop definitions are historical-only.'], 422);
         }
         // Admin only
         if (auth()->user()->role !== 'admin') {
@@ -208,6 +217,10 @@ class StopController extends Controller
     }
     private function isOfficialReferenceRoute(?Route $route): bool
     {
-        return $route && in_array($route->name, ['Route 1', 'Route 2', 'Route 3'], true);
+        return $route && $route->isCanonicalProduction();
+    }
+    private function isRetiredLegacyRoute(?Route $route): bool
+    {
+        return $route && in_array($route->name, ['Route A', 'Route B', 'Route C', 'Route D'], true);
     }
 }

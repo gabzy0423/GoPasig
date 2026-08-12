@@ -52,6 +52,7 @@
         <script src="{{ asset('js/shared/ui-feedback.js') }}?v={{ filemtime(public_path('js/shared/ui-feedback.js')) }}" defer></script>
         <script src="{{ asset('js/fleet-dashboard/request-lifecycle.js') }}?v={{ filemtime(public_path('js/fleet-dashboard/request-lifecycle.js')) }}" defer></script>
         <script src="{{ asset('js/fleet-dashboard/navigation.js') }}?v={{ filemtime(public_path('js/fleet-dashboard/navigation.js')) }}" defer></script>
+        <script src="{{ asset('js/route-map-ux.js') }}?v={{ filemtime(public_path('js/route-map-ux.js')) }}" defer></script>
         <script src="{{ asset('js/fleet-dashboard/overview.js') }}?v={{ filemtime(public_path('js/fleet-dashboard/overview.js')) }}" defer></script>
     @endif
 </body>

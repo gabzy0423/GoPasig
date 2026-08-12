@@ -40,7 +40,8 @@
             'color' => $r->color ?: '#003F87',
             'coords' => ($mapGeometry = $routeMapGeometry->forRoute($r, $activeTripsForMap))['polyline_coordinates'],
             'geometry_source' => $mapGeometry['source'],
-            'geometry_status' => $mapGeometry['geometry_status']
+            'geometry_status' => $mapGeometry['geometry_status'],
+            'variant_geometries' => $mapGeometry['variant_geometries']
         ];
     });
 @endphp

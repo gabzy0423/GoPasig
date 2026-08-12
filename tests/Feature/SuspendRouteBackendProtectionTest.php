@@ -32,10 +32,7 @@ class SuspendRouteBackendProtectionTest extends TestCase
             'role' => 'admin',
         ]);
 
-        $this->route = Route::create([
-            'name' => 'Route 1',
-            'status' => 'Active',
-        ]);
+        $this->route = Route::factory()->official()->withUsableVariant()->create();
 
         $this->bus = Bus::create([
             'plate_number' => 'PASIG-001',
@@ -75,7 +72,7 @@ class SuspendRouteBackendProtectionTest extends TestCase
         ]);
 
         $this->expectException(RouteSuspendedException::class);
-        $this->expectExceptionMessage('Dispatch Denied: Route Route 1 is currently suspended by an active Service Alert');
+        $this->expectExceptionMessage('Dispatch Denied: Route Route 2 is currently suspended by an active Service Alert');
 
         SimulationDispatchService::dispatch($this->bus, $this->driver, $this->route, $this->admin->id);
     }
@@ -112,6 +109,7 @@ class SuspendRouteBackendProtectionTest extends TestCase
 
         $schedule = Schedule::create([
             'route_id' => $this->route->id,
+            'route_variant_id' => $this->route->variants()->sole()->id,
             'bus_id' => $this->bus->id,
             'driver_id' => $this->driver->id,
             'departure_time' => '08:00:00',

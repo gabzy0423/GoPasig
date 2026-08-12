@@ -56,6 +56,9 @@
                                         <span class="text-[12px] font-semibold {{ $direction['status_label'] === 'Active' ? 'text-[#0F6E56] bg-[#E1F5EE]' : ($direction['status_label'] === 'Inactive' ? 'text-slate-500 bg-slate-100' : 'text-[#854F0B] bg-[#FAEEDA]') }} px-2 py-0.5 rounded-full">
                                             {{ $direction['status_label'] }}
                                         </span>
+                                        <span class="text-[12px] font-semibold {{ $direction['is_operating_now'] ? 'text-[#0F6E56] bg-[#E1F5EE]' : (str_starts_with($direction['operating_status_label'], 'Starts in') ? 'text-[#854F0B] bg-[#FAEEDA]' : 'text-slate-500 bg-slate-100') }} px-2 py-0.5 rounded-full">
+                                            {{ $direction['operating_status_label'] }}
+                                        </span>
                                     </div>
                                     <div class="text-[14px] font-semibold text-slate-800 leading-snug">
                                         {{ $direction['origin'] }} &rarr; {{ $direction['destination'] }}
@@ -76,6 +79,18 @@
                                 </div>
 
                                 <div class="flex flex-col gap-2 text-[12.5px] text-slate-600 font-medium">
+                                    @if(count($direction['service_windows']) > 1)
+                                        <div class="flex flex-col gap-1.5 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                                            <div class="text-[10px] font-bold uppercase tracking-[0.05em] text-slate-400">Operating Windows</div>
+                                            @foreach($direction['service_windows'] as $index => $window)
+                                                <div class="flex items-center justify-between gap-3 text-[12px] font-semibold text-slate-700">
+                                                    <span>Window {{ $index + 1 }}</span>
+                                                    <span class="text-[#003F87]">{{ $window['first_trip_time'] }} - {{ $window['last_trip_time'] }}</span>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    @endif
+
                                     <div class="flex items-start gap-2">
                                         <i class="ti ti-calendar-week text-slate-400 mt-0.5"></i>
                                         <span>Service Days: <strong class="text-slate-700">{{ $direction['service_days_label'] }}</strong></span>

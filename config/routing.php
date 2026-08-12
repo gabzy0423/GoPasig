@@ -12,6 +12,15 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Route Generation Maintenance Mode
+    |--------------------------------------------------------------------------
+    | Hidden by default. Enable only when admins intentionally need backend
+    | route/variant geometry generation and provider telemetry tooling.
+    */
+    'route_generation_maintenance_enabled' => env('ROUTE_GENERATION_MAINTENANCE_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Geometry Cache TTL
     |--------------------------------------------------------------------------
     | Duration in seconds for polyline and metrics cache entries.

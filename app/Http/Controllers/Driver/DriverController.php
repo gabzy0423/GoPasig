@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Driver;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use App\Models\Driver;
 use App\Models\Bus;
 use App\Models\Route;
 use App\Models\Trip;
+use App\Models\TripPassengerEvent;
 use App\Models\User;
 use App\Models\Schedule;
 use App\Models\ServiceAlert;
@@ -194,11 +196,35 @@ class DriverController extends Controller
             }
         }
 
-        $nextTripPreview = [
-            'available' => false,
-            'label' => 'No upcoming trips scheduled',
-            'message' => 'No upcoming dispatches available.',
-        ];
+        $nextTripPreview = $this->buildNextTripPreview(
+            $driver,
+            $bus,
+            $route,
+            $activeTrip,
+            $lastCompletedTrip
+        );
+
+        $developerGpsPresets = [];
+        if (config('app.env') === 'local' && $activeTrip?->status === 'ongoing') {
+            $coordinateStops = $tripOrderedStops
+                ->filter(fn ($stop) => $stop->lat !== null && $stop->lng !== null)
+                ->values();
+            $stopCount = $coordinateStops->count();
+            $developerGpsPresets = $coordinateStops
+                ->map(function ($stop, $index) use ($stopCount) {
+                    $role = $index === 0
+                        ? 'Origin'
+                        : ($index === $stopCount - 1 ? 'Destination' : 'Stop ' . $stop->sequence);
+
+                    return [
+                        'label' => $role . ' - ' . $stop->name,
+                        'name' => $stop->name,
+                        'lat' => (float) $stop->lat,
+                        'lng' => (float) $stop->lng,
+                    ];
+                })
+                ->all();
+        }
 
         $supervisorContact = $this->getFleetSupervisorContact();
         $dispatcherName = $supervisorContact['name'];
@@ -217,7 +243,8 @@ class DriverController extends Controller
             'supervisorContact',
             'dispatcherName',
             'dispatcherRole',
-            'gpsCoords'
+            'gpsCoords',
+            'developerGpsPresets'
         ));
     }
 
@@ -302,9 +329,10 @@ class DriverController extends Controller
                         ->first();
 
                     if (!$trip) {
-                        $routeId = (int) $driver->assigned_route;
-                        $route = \App\Models\Route::findOrFail($routeId);
-                        $trip = \App\Services\TripService::startTrip($bus, $driver, $route, $bus->passengers ?: 0);
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'No dispatched official trip is assigned. Contact your dispatcher.',
+                        ], 422);
                     }
 
                     try {
@@ -365,6 +393,211 @@ class DriverController extends Controller
             }
         }
         return response()->json(['success' => false, 'message' => 'No active bus assigned.'], 400);
+    }
+
+    /**
+     * Start the next point-to-point leg on the retained bus/driver assignment.
+     *
+     * A completed leg is the hand-off boundary: the previous Trip remains
+     * immutable, while this action creates one opposite-direction Trip and
+     * starts it through the normal lifecycle service.
+     */
+    public function startNextTrip(Request $request, \App\Services\TripLifecycleService $tripLifecycleService)
+    {
+        $driver = Driver::where('user_id', Auth::id())->first();
+
+        if (! $driver || ! $driver->assigned_bus || ! $driver->assigned_route) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No retained bus and route assignment is available for the next trip.',
+            ], 400);
+        }
+
+        try {
+            $result = DB::transaction(function () use ($driver, $tripLifecycleService) {
+                $lockedDriver = Driver::whereKey($driver->id)->lockForUpdate()->firstOrFail();
+                $bus = Bus::where('plate_number', $lockedDriver->assigned_bus)
+                    ->lockForUpdate()
+                    ->first();
+                $route = Route::find($lockedDriver->assigned_route);
+
+                if (! $bus || ! $route) {
+                    throw new \RuntimeException('The retained bus or route assignment could not be found.');
+                }
+
+                $context = $this->resolveNextTripContext($lockedDriver, $bus, $route);
+                $trip = \App\Services\TripService::startTrip(
+                    $bus,
+                    $lockedDriver,
+                    $route,
+                    (int) ($bus->passengers ?: 0),
+                    $context['variant'],
+                    $context['schedule']
+                );
+
+                $tripLifecycleService->startTrip($trip->fresh(['bus', 'driver']));
+                $trip->refresh()->load(['routeVariant', 'bus', 'driver']);
+
+                return [
+                    'trip_id' => $trip->id,
+                    'route_id' => $trip->route_id,
+                    'route_variant_id' => $trip->route_variant_id,
+                    'direction' => $trip->routeVariant?->direction,
+                    'status' => $trip->status,
+                    'schedule_id' => $trip->schedule_id,
+                    'bus_id' => $trip->bus_id,
+                    'driver_id' => $trip->driver_id,
+                ];
+            });
+
+            return response()->json(['success' => true, ...$result]);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $message = collect($exception->errors())->flatten()->first() ?: $exception->getMessage();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot start next trip: ' . $message,
+            ], 422);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot start next trip: ' . $exception->getMessage(),
+            ], 422);
+        }
+    }
+
+    private function buildNextTripPreview(
+        ?Driver $driver,
+        ?Bus $bus,
+        ?Route $route,
+        ?Trip $activeTrip,
+        ?Trip $lastCompletedTrip
+    ): array {
+        $preview = [
+            'available' => false,
+            'label' => 'No upcoming trips scheduled',
+            'message' => 'No upcoming dispatches available.',
+        ];
+
+        if (! $driver || ! $bus || ! $route || $activeTrip || ! $lastCompletedTrip) {
+            return $preview;
+        }
+
+        try {
+            $context = $this->resolveNextTripContext($driver, $bus, $route);
+            $variant = $context['variant'];
+            $label = app(\App\Services\RouteVariantSelectionService::class)->label($variant);
+
+            if ($context['schedule']) {
+                $label .= ' · ' . substr((string) $context['schedule']->departure_time, 0, 5);
+            }
+
+            return [
+                'available' => true,
+                'label' => $label,
+                'message' => 'Trip completed — ready for next trip.',
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'available' => false,
+                'label' => 'No upcoming trips scheduled',
+                'message' => 'Next trip unavailable: ' . $exception->getMessage(),
+            ];
+        }
+    }
+
+    private function resolveNextTripContext(Driver $driver, Bus $bus, Route $route): array
+    {
+        if ($driver->status !== 'active') {
+            throw new \RuntimeException('Driver is not active.');
+        }
+
+        if ($driver->assigned_bus !== $bus->plate_number || (int) $driver->assigned_route !== (int) $route->id) {
+            throw new \RuntimeException('Driver, bus, and route assignments are inconsistent.');
+        }
+
+        if ($bus->status !== 'ready') {
+            throw new \RuntimeException('Bus is not ready for the next leg.');
+        }
+
+        if ($driver->operational_status !== 'assigned') {
+            throw new \RuntimeException('Driver is not ready for the next leg.');
+        }
+
+        $routeEligibility = \App\Services\CentralDispatchEligibilityService::route($route);
+        if (! $routeEligibility['eligible']) {
+            throw new \RuntimeException($routeEligibility['reason']);
+        }
+
+        $activeTripExists = Trip::query()
+            ->where(function ($query) use ($driver, $bus) {
+                $query->where('driver_id', $driver->id)
+                    ->orWhere('bus_id', $bus->id);
+            })
+            ->whereIn('status', ['dispatched', 'ongoing'])
+            ->exists();
+
+        if ($activeTripExists) {
+            throw new \RuntimeException('A dispatched or ongoing trip already exists for this driver or bus.');
+        }
+
+        $previousTrip = Trip::query()
+            ->where('driver_id', $driver->id)
+            ->where('bus_id', $bus->id)
+            ->where('route_id', $route->id)
+            ->where('status', 'completed')
+            ->with('routeVariant')
+            ->latest('ended_at')
+            ->latest('id')
+            ->first();
+
+        if (! $previousTrip) {
+            throw new \RuntimeException('No completed leg is available to resolve the next direction.');
+        }
+
+        if (! $previousTrip->routeVariant) {
+            throw new \RuntimeException('The completed leg has no stored route direction.');
+        }
+
+        $hasMajorIncident = \App\Models\Incident::query()
+            ->where('trip_id', $previousTrip->id)
+            ->whereIn('status', ['reported', 'under_review'])
+            ->get()
+            ->contains(fn ($incident) =>
+                \App\Models\Incident::isBreakdown($incident->type)
+                || \App\Models\Incident::isAccident($incident->type)
+            );
+
+        if ($hasMajorIncident) {
+            throw new \RuntimeException('An unresolved breakdown or accident blocks the next leg.');
+        }
+
+        $variant = app(\App\Services\RouteVariantSelectionService::class)
+            ->resolveOppositeForNextTrip($route, $previousTrip->routeVariant);
+
+        if (! $variant) {
+            throw new \RuntimeException('No usable opposite direction is available.');
+        }
+
+        $matchingSchedules = Schedule::query()
+            ->where('route_id', $route->id)
+            ->where('route_variant_id', $variant->id)
+            ->where('bus_id', $bus->id)
+            ->where('driver_id', $driver->id)
+            ->whereDate('service_date', now('Asia/Manila')->toDateString())
+            ->where('status', '!=', Schedule::STATUS_CANCELLED)
+            ->whereDoesntHave('trip')
+            ->orderBy('departure_time')
+            ->get();
+
+        if ($matchingSchedules->count() > 1) {
+            throw new \RuntimeException('multiple matching return Schedules exist. Dispatcher review is required.');
+        }
+
+        return [
+            'variant' => $variant,
+            'schedule' => $matchingSchedules->first(),
+        ];
     }
 
     /**
@@ -456,16 +689,33 @@ class DriverController extends Controller
                 }
 
                 $change = (int)$request->input('change', 0);
-                $newPax = max(0, min($bus->capacity, $bus->passengers + $change));
+                $currentPax = (int) $bus->passengers;
+                $newPax = max(0, min($bus->capacity, $currentPax + $change));
+                $acceptedDelta = abs($newPax - $currentPax);
                 $bus->update(['passengers' => $newPax]);
 
-                if ($change > 0) {
-                    $driver->increment('pax_today', $change);
+                if ($acceptedDelta > 0 && $change > 0) {
+                    $driver->increment('pax_today', $acceptedDelta);
                 }
 
                 $currentPeak = (int) ($ongoingTrip->peak_passengers ?? 0);
                 if ($newPax > $currentPeak) {
                     \App\Services\TripService::updatePeakPassengers($ongoingTrip, $newPax);
+                }
+
+                if ($acceptedDelta > 0) {
+                    TripPassengerEvent::create([
+                        'trip_id' => $ongoingTrip->id,
+                        'driver_id' => $driver->id,
+                        'bus_id' => $bus->id,
+                        'route_id' => $ongoingTrip->route_id,
+                        'event_type' => $change > 0
+                            ? TripPassengerEvent::TYPE_BOARDED
+                            : TripPassengerEvent::TYPE_ALIGHTED,
+                        'passenger_delta' => $acceptedDelta,
+                        'onboard_after' => $newPax,
+                        'recorded_at' => now(),
+                    ]);
                 }
 
                 return response()->json(['success' => true, 'passengers' => $newPax, 'pax_today' => $driver->pax_today]);
@@ -494,7 +744,110 @@ class DriverController extends Controller
             }
         }
         return response()->json(['success' => false, 'message' => 'No active bus assigned.'], 400);
-    }    /**
+    }
+
+    /**
+     * Apply one local-only developer coordinate to the driver's operating bus.
+     * This intentionally bypasses GPSLog/telemetry history so UAT movement does
+     * not become production-looking GPS analytics data.
+     */
+    public function updateDeveloperGPS(Request $request)
+    {
+        if (config('app.env') !== 'local') {
+            return response()->json(['success' => false, 'message' => 'Developer GPS is available only locally.'], 404);
+        }
+
+        $validated = $request->validate([
+            'lat' => 'required|numeric|between:-90,90',
+            'lng' => 'required|numeric|between:-180,180',
+            'speed' => 'nullable|numeric|min:0|max:60',
+            'heading' => 'nullable|numeric|between:0,360',
+            'accuracy' => 'nullable|numeric|min:0|max:50',
+            'next_stop' => 'nullable|string|max:255',
+            'eta' => 'nullable|integer|min:0|max:1440',
+        ]);
+
+        $driver = Driver::where('user_id', Auth::id())->first();
+        $bus = $driver?->assigned_bus
+            ? Bus::where('plate_number', $driver->assigned_bus)->first()
+            : null;
+
+        if (! $driver || ! $bus) {
+            return response()->json(['success' => false, 'message' => 'No assigned bus.'], 400);
+        }
+
+        $trip = Trip::query()
+            ->where('driver_id', $driver->id)
+            ->where('bus_id', $bus->id)
+            ->where('status', 'ongoing')
+            ->where('gps_session', 'ACTIVE')
+            ->first();
+
+        if (! $trip) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Start a real operating trip before using Developer GPS.',
+            ], 409);
+        }
+
+        if (! Route::publicCommuterActiveService()->whereKey($trip->route_id)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Developer GPS is limited to official active commuter routes.',
+            ], 422);
+        }
+
+        $lat = (float) $validated['lat'];
+        $lng = (float) $validated['lng'];
+        $speed = (float) ($validated['speed'] ?? 0);
+        $nextStop = $validated['next_stop'] ?? null;
+        $eta = array_key_exists('eta', $validated) ? (int) $validated['eta'] : null;
+
+        DB::transaction(function () use ($bus, $trip, $lat, $lng, $speed, $validated, $nextStop, $eta) {
+            $bus->update([
+                'lat' => $lat,
+                'lng' => $lng,
+                'speed' => $speed,
+                'next_stop' => $nextStop ?: $bus->next_stop,
+                'eta' => $eta ?? $bus->eta,
+            ]);
+
+            \App\Models\VehiclePosition::updateOrCreate(
+                ['bus_id' => $bus->id],
+                [
+                    'trip_id' => $trip->id,
+                    'lat' => $lat,
+                    'lng' => $lng,
+                    'heading' => $validated['heading'] ?? null,
+                    'speed' => $speed,
+                    'last_updated_at' => now(),
+                    'gps_quality_state' => 'DEVELOPER',
+                    'gps_quality_reason' => 'Local developer GPS UAT',
+                    'gps_quality_updated_at' => now(),
+                    'gps_fix_age_seconds' => 0,
+                    'last_gps_fix_at' => now(),
+                ]
+            );
+        });
+
+        Cache::forget('commuter_active_buses_list');
+        Cache::forget('commuter_dashboard_aggregate');
+        Cache::forget('commuter_route_stops_aggregate');
+
+        return response()->json([
+            'success' => true,
+            'source' => 'developer',
+            'message' => 'Developer GPS location applied locally.',
+            'trip_id' => $trip->id,
+            'bus_id' => $bus->id,
+            'lat' => $lat,
+            'lng' => $lng,
+            'next_stop' => $nextStop ?: $bus->next_stop,
+            'eta' => $eta ?? $bus->eta,
+        ]);
+    }
+
+    /**
      * Receive GPS telemetry coordinates, validate request, and queue processing.
      * [GPS_TRACE] TEMPORARY INSTRUMENTATION — REMOVE AFTER INVESTIGATION
      */

@@ -32,7 +32,7 @@ class HardcodedTerminalTest extends TestCase
     {
         return Route::create([
             'id'                   => 1,
-            'name'                 => 'Route A',
+            'name'                 => 'Route Terminal Test',
             'description'          => 'SPED to City Hall',
             'polyline_coordinates' => [[14.5593, 121.0805]],
             'status'               => 'Active',

@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Driver;
 use App\Models\SystemSetting;
-use App\Services\CentralDispatchEligibilityService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
+use App\Models\Trip;
+use App\Services\AdminDriverManagementService;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class DriverController extends Controller
 {
@@ -40,38 +42,14 @@ class DriverController extends Controller
     /**
      * Display a listing of drivers and associated stats.
      */
-    public function index()
+    public function index(AdminDriverManagementService $driverManagement)
     {
-        $drivers = Driver::orderBy('created_at', 'desc')->get();
-
-        $drivers->each(function ($driver) {
-            $eligibility = CentralDispatchEligibilityService::driver($driver);
-            $driver->dispatch_eligible = $eligibility['eligible'];
-            $driver->dispatch_reason = $eligibility['reason'];
-        });
-
-        // Calculate Stats
-        $onDuty = Driver::where('status', 'active')->count();
-        $offDuty = Driver::where('status', 'inactive')->count();
-        $suspended = Driver::where('status', 'suspended')->count();
-
-        // License Expiring in <= threshold days (Urgent or Expired)
-        $today = Carbon::today();
-        $thresholdDays = (int) SystemSetting::get('license_expiry_warning_threshold_days', 30);
-        $thresholdDate = Carbon::today()->addDays($thresholdDays);
-        $expiring = Driver::whereBetween('license_expiry', [$today->toDateString(), $thresholdDate->toDateString()])
-            ->orWhere('license_expiry', '<', $today->toDateString())
-            ->count();
+        $payload = $driverManagement->build();
 
         return response()->json([
             'success' => true,
-            'drivers' => $drivers,
-            'stats' => [
-                'on_duty' => $onDuty,
-                'off_duty' => $offDuty,
-                'suspended' => $suspended,
-                'expiring' => $expiring,
-            ]
+            'drivers' => $payload['drivers'],
+            'stats' => $payload['stats'],
         ]);
     }
 
@@ -204,23 +182,33 @@ class DriverController extends Controller
             ], 422);
         }
 
-        $driver->update([
-            'first_name' => $request->first_name,
-            'last_name' => $request->last_name,
-            'license_number' => $request->license_number,
-            'license_expiry' => $request->license_expiry,
-            'status' => $request->status,
-            'contact_number' => $request->contact_number,
-            'address' => $request->address,
-            'emergency_contact' => $request->emergency_contact,
-        ]);
+        $driver = DB::transaction(function () use ($driver, $request) {
+            $lockedDriver = Driver::query()->whereKey($driver->id)->lockForUpdate()->firstOrFail();
+            $hasActiveTrip = $this->hasActiveTrip($lockedDriver);
 
-        // Keep the linked users record in sync with the driver's display name
-        if ($driver->user_id) {
-            \App\Models\User::where('id', $driver->user_id)->update([
-                'name' => trim($request->first_name . ' ' . $request->last_name),
+            if ($hasActiveTrip && $request->status !== $lockedDriver->status) {
+                abort(422, 'Cannot change driver employment status while a dispatched or ongoing trip is active. End or cancel the trip first.');
+            }
+
+            $lockedDriver->update([
+                'first_name' => $request->first_name,
+                'last_name' => $request->last_name,
+                'license_number' => $request->license_number,
+                'license_expiry' => $request->license_expiry,
+                'status' => $request->status,
+                'contact_number' => $request->contact_number,
+                'address' => $request->address,
+                'emergency_contact' => $request->emergency_contact,
             ]);
-        }
+
+            if ($lockedDriver->user_id) {
+                \App\Models\User::where('id', $lockedDriver->user_id)->update([
+                    'name' => trim($request->first_name . ' ' . $request->last_name),
+                ]);
+            }
+
+            return $lockedDriver->fresh();
+        });
 
         return response()->json([
             'success' => true,
@@ -282,15 +270,25 @@ class DriverController extends Controller
      */
     public function toggleSuspend(Driver $driver)
     {
-        $willSuspend = $driver->status !== 'suspended';
-        if ($willSuspend) {
-            $driver->previous_status = $driver->status;
-            $driver->status = 'suspended';
-        } else {
-            $driver->status = $driver->previous_status ?: 'inactive';
-            $driver->previous_status = null;
-        }
-        $driver->save();
+        [$driver, $willSuspend] = DB::transaction(function () use ($driver) {
+            $lockedDriver = Driver::query()->whereKey($driver->id)->lockForUpdate()->firstOrFail();
+
+            if ($this->hasActiveTrip($lockedDriver)) {
+                abort(422, 'Cannot suspend or reinstate a driver while a dispatched or ongoing trip is active. End or cancel the trip first.');
+            }
+
+            $willSuspend = $lockedDriver->status !== 'suspended';
+            if ($willSuspend) {
+                $lockedDriver->previous_status = $lockedDriver->status;
+                $lockedDriver->status = 'suspended';
+            } else {
+                $lockedDriver->status = $lockedDriver->previous_status ?: 'inactive';
+                $lockedDriver->previous_status = null;
+            }
+            $lockedDriver->save();
+
+            return [$lockedDriver->fresh(), $willSuspend];
+        });
 
         $action = $willSuspend ? 'suspended' : 'unsuspended';
         return response()->json([
@@ -298,5 +296,13 @@ class DriverController extends Controller
             'message' => "Driver {$driver->first_name} {$driver->last_name} {$action} successfully!",
             'driver' => $driver
         ]);
+    }
+
+    private function hasActiveTrip(Driver $driver): bool
+    {
+        return Trip::query()
+            ->where('driver_id', $driver->id)
+            ->whereIn('status', ['dispatched', 'ongoing'])
+            ->exists();
     }
 }

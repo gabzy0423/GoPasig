@@ -207,7 +207,7 @@ class DriverStartNextTripTest extends TestCase
             'email' => 'phase2.uat.driver@gopasig.test',
         ]);
         $route = Route::factory()->create([
-            'name' => 'PHASE2-UAT Point-to-Point A-B',
+            'name' => 'Route 2',
             'polyline_coordinates' => [[14.5593000, 121.0805000], [14.5603000, 121.0815000]],
         ]);
         $outbound = $this->variantFor($route, 'outbound', 'PHASE2-UAT Point A', 'PHASE2-UAT Point B');
@@ -484,10 +484,10 @@ class DriverStartNextTripTest extends TestCase
         $this->assertSame(1, count($matches[0]));
         $response->assertSee('id="btn-toggle-tracking"', false);
         $response->assertDontSee('btn-start-next-trip');
-        $response->assertSee('Trip completed — ready for next trip', false);
+        $response->assertSee('Trip completed â€” ready for next trip', false);
         $response->assertSee('No active next-stop tracking between legs.');
         $response->assertSee('data-inactive-stop-label', false);
-        $this->assertDoesNotMatchRegularExpression('/id="active-stop-label"[^>]*>\s*Trip completed — ready for next trip/s', $html);
+        $this->assertDoesNotMatchRegularExpression('/id="active-stop-label"[^>]*>\s*Trip completed â€” ready for next trip/s', $html);
         $response->assertDontSee('Not Dispatched yet');
         $response->assertDontSee('5 mins');
         $response->assertSee("fetch(\"" . route('driver.trip.next') . "\"", false);
@@ -567,7 +567,7 @@ class DriverStartNextTripTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'driver']);
         $route = Route::factory()->create([
-            'name' => 'PHASE2-UAT Point-to-Point A-B',
+            'name' => 'Route 2',
             'polyline_coordinates' => [[14.5593000, 121.0805000], [14.5603000, 121.0815000]],
         ]);
         $outbound = $this->variantFor($route, 'outbound', 'PHASE2-UAT Point A', 'PHASE2-UAT Point B');
@@ -594,7 +594,7 @@ class DriverStartNextTripTest extends TestCase
     private function completedScheduledAssignment(array $options = []): array
     {
         $user = User::factory()->create(['role' => 'driver']);
-        $route = Route::factory()->create();
+        $route = Route::factory()->create(['name' => 'Route 2']);
         $outbound = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
         $inbound = $this->variantFor($route, 'inbound', 'Ligaya', 'SPED');
         $bus = Bus::factory()->create(['status' => 'inactive']);
@@ -635,7 +635,7 @@ class DriverStartNextTripTest extends TestCase
     private function completedAssignment(string $previousDirection, bool $withOpposite = true, string $oppositeStatus = 'valid'): array
     {
         $user = User::factory()->create(['role' => 'driver']);
-        $route = Route::factory()->create();
+        $route = Route::factory()->create(['name' => 'Route 2']);
         $outbound = $this->variantFor($route, 'outbound', 'SPED', 'Ligaya');
         $inbound = $withOpposite ? $this->variantFor($route, 'inbound', 'Ligaya', 'SPED', $oppositeStatus) : null;
         $previousVariant = $previousDirection === 'outbound' ? $outbound : $inbound;

@@ -69,47 +69,7 @@ function initAnalyticsDashboard() {
                     }
                 },
                 plugins: {
-                    legend: { display: false },
-                    annotation: {
-                        annotations: {
-                            amPeak: {
-                                type: 'box',
-                                xMin: 1.5,
-                                xMax: 2.5,
-                                yMin: 0,
-                                backgroundColor: 'rgba(0, 63, 135, 0.06)',
-                                borderWidth: 0,
-                                label: {
-                                    display: true,
-                                    content: 'AM Peak · 322 pax',
-                                    position: 'start',
-                                    yAlign: 'top',
-                                    font: { size: 10, weight: 'bold', family: 'Plus Jakarta Sans' },
-                                    color: '#003F87',
-                                    backgroundColor: 'rgba(230, 241, 251, 0.95)',
-                                    padding: 4
-                                }
-                            },
-                            pmPeak: {
-                                type: 'box',
-                                xMin: 11.5,
-                                xMax: 12.5,
-                                yMin: 0,
-                                backgroundColor: 'rgba(0, 63, 135, 0.06)',
-                                borderWidth: 0,
-                                label: {
-                                    display: true,
-                                    content: 'PM Peak · 298 pax',
-                                    position: 'start',
-                                    yAlign: 'top',
-                                    font: { size: 10, weight: 'bold', family: 'Plus Jakarta Sans' },
-                                    color: '#003F87',
-                                    backgroundColor: 'rgba(230, 241, 251, 0.95)',
-                                    padding: 4
-                                }
-                            }
-                        }
-                    }
+                    legend: { display: false }
                 }
             }
         });
@@ -127,7 +87,7 @@ function initAnalyticsDashboard() {
     if (hasDoughnutData && document.getElementById('route-doughnut-chart')) {
         let doughnutLabels = routeComparisonData.map(r => r.route);
         let doughnutColors = routeComparisonData.map((r, idx) => r.color || ['#003F87', '#639922', '#BA7517', '#E24B4A'][idx % 4]);
-        let doughnutData = routeComparisonData.map(r => r.pax);
+        let doughnutData = routeComparisonData.map(r => r.tripsRun ?? r.trips ?? 0);
 
         const ctxDoughnut = document.getElementById('route-doughnut-chart').getContext('2d');
         charts['doughnut'] = new Chart(ctxDoughnut, {
@@ -217,7 +177,7 @@ function initAnalyticsDashboard() {
                         const val = data.datasets[0].data[index];
                         const color = data.datasets[0].backgroundColor[index];
                         ctx.fillStyle = color;
-                        ctx.fillText(val + ' pax', bar.x + 8, bar.y);
+                        ctx.fillText(val + ' requests', bar.x + 8, bar.y);
                     });
                     ctx.restore();
                 }
@@ -231,10 +191,11 @@ function initAnalyticsDashboard() {
         delete charts['timeline'];
     }
 
-    const hasTimelineData = (typeof tripData !== 'undefined' && tripData && tripData.length > 0);
+    const hasTimelineData = (typeof peakLoadTimelineData !== 'undefined' && peakLoadTimelineData && peakLoadTimelineData.length > 0);
     showChartEmptyState('pax-load-timeline-chart', !hasTimelineData);
 
     if (hasTimelineData && document.getElementById('pax-load-timeline-chart')) {
+        const timelineTrips = peakLoadTimelineData;
         const timelineLabels = ["5 AM", "6 AM", "7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
         let timelineDatasets = [];
 
@@ -245,10 +206,10 @@ function initAnalyticsDashboard() {
             { color: '#E24B4A', style: 'rectRot', dash: [10, 5], radius: 5 }
         ];
 
-        // Helper function to extract and format 12-hour display hour (e.g. "5 AM", "12 PM", "1 PM") from depTime (e.g. "5:00 AM", "13:15" or "1:30 PM")
-        function getHourLabelFromDepTime(depTimeStr) {
-            if (!depTimeStr) return null;
-            const match = depTimeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+        // Extract a 12-hour display label from the API's formatted startedAt value.
+        function getHourLabelFromTime(timeString) {
+            if (!timeString) return null;
+            const match = timeString.match(/(\d+):(\d+)\s*(AM|PM)?/i);
             if (!match) return null;
             let hour = parseInt(match[1]);
             const ampm = match[3] ? match[3].toUpperCase() : null;
@@ -266,18 +227,20 @@ function initAnalyticsDashboard() {
         }
 
         // Group by bus plate
-        const activePlates = [...new Set(tripData.map(t => t.plate))].slice(0, 4);
+        const activePlates = [...new Set(timelineTrips.map(t => t.plate))].slice(0, 4);
 
         activePlates.forEach((plate, i) => {
             const config = timelineConfig[i] || timelineConfig[0];
             const dataPoints = timelineLabels.map(hourStr => {
-                const trip = tripData.find(t => {
+                const matchingTrips = timelineTrips.filter(t => {
                     if (t.plate !== plate) return false;
-                    const parsedHr = getHourLabelFromDepTime(t.depTime);
+                    const parsedHr = getHourLabelFromTime(t.startedAt);
                     return parsedHr === hourStr;
                 });
-                if (trip) return trip.peakLoad;
-                return null;
+
+                if (matchingTrips.length === 0) return null;
+
+                return Math.max(...matchingTrips.map(trip => Number(trip.peakLoad) || 0));
             });
 
             timelineDatasets.push({
@@ -296,6 +259,11 @@ function initAnalyticsDashboard() {
 
         const ctxTimeline = document.getElementById('pax-load-timeline-chart').getContext('2d');
         const dynamicCapacity = typeof busCapacityLimit !== 'undefined' ? busCapacityLimit : 45;
+        const peakLoads = timelineTrips
+            .map(trip => Number(trip.peakLoad))
+            .filter(load => Number.isFinite(load));
+        const maxPeakLoad = peakLoads.length > 0 ? Math.max(...peakLoads) : 0;
+        const chartMax = Math.ceil(Math.max(50, dynamicCapacity, maxPeakLoad) / 10) * 10;
         charts['timeline'] = new Chart(ctxTimeline, {
             type: 'line',
             data: {
@@ -312,7 +280,7 @@ function initAnalyticsDashboard() {
                     },
                     y: {
                         min: 0,
-                        max: 50,
+                        max: chartMax,
                         ticks: { stepSize: 10, font: { family: 'Plus Jakarta Sans', size: 10, weight: '600' } },
                         grid: { color: '#F1F5F9' }
                     }
@@ -357,10 +325,11 @@ function initAnalyticsDashboard() {
     if (hasTrendData && document.getElementById('historical-trend-chart')) {
         let trendLabels = historicalTrendData.map(d => d.label);
         let trendDatasets = [];
-        let todayPax = 1284;
+        let todayPax = null;
 
         if (typeof kpisData !== 'undefined' && kpisData && kpisData.total_pax_today) {
-            todayPax = parseInt(kpisData.total_pax_today.replace(/,/g, '')) || 1284;
+            const parsedTodayPax = parseInt(String(kpisData.total_pax_today).replace(/,/g, ''));
+            todayPax = Number.isFinite(parsedTodayPax) ? parsedTodayPax : null;
         }
 
         // Dynamic datasets builder
@@ -427,7 +396,7 @@ function initAnalyticsDashboard() {
                 plugins: {
                     legend: { display: false },
                     annotation: {
-                        annotations: {
+                        annotations: todayPax === null ? {} : {
                             todayLine: {
                                 type: 'line',
                                 yMin: todayPax,
@@ -458,7 +427,6 @@ function initAnalyticsDashboard() {
         analyticsEventsBound = true;
     }
 }
-
 /**
  * Overlay empty states dynamically on chart containers when database data is missing.
  */

@@ -63,6 +63,53 @@ class AdminDriverCreateEditShowTest extends TestCase
         $response->assertRedirect('/admin/dashboard#drivers-show-' . $driver->id);
     }
 
+    public function test_direct_driver_show_hash_waits_for_the_driver_module_before_binding_data(): void
+    {
+        $navigationScript = file_get_contents(public_path('js/admin-dashboard/navigation.js'));
+
+        $this->assertStringContainsString('let pendingDriverShowId = null;', $navigationScript);
+        $this->assertStringContainsString('function openDriverShowHashRoute(driverId)', $navigationScript);
+        $this->assertStringContainsString('pendingDriverShowId = driverId;', $navigationScript);
+        $this->assertStringContainsString('function resolvePendingDriverShowRoute()', $navigationScript);
+        $this->assertStringContainsString(
+            "document.addEventListener('DOMContentLoaded', resolvePendingDriverShowRoute, { once: true })",
+            $navigationScript
+        );
+        $this->assertStringContainsString(
+            "window.addEventListener('driver-management-module-ready', resolvePendingDriverShowRoute)",
+            $navigationScript
+        );
+        $this->assertStringContainsString("window.addEventListener('load', resolvePendingDriverShowRoute)", $navigationScript);
+
+        $driversScript = file_get_contents(public_path('js/admin-dashboard/drivers.js'));
+        $this->assertStringContainsString(
+            "window.dispatchEvent(new CustomEvent('driver-management-module-ready'))",
+            $driversScript
+        );
+    }
+
+    public function test_driver_profile_output_actions_are_scoped_to_the_current_driver(): void
+    {
+        $showView = file_get_contents(resource_path('views/admin/drivers/show.blade.php'));
+        $driversScript = file_get_contents(public_path('js/admin-dashboard/drivers.js'));
+
+        $this->assertStringNotContainsString('onclick="window.print(); return false;"', $showView);
+        $this->assertStringNotContainsString('onclick="exportDriversCSV(); return false;"', $showView);
+        $this->assertStringContainsString('printCurrentDriverProfile()', $showView);
+        $this->assertStringContainsString('exportCurrentDriverHistoryCSV()', $showView);
+        $this->assertStringContainsString('exportCurrentDriverReportCSV()', $showView);
+        $this->assertStringContainsString('Export Recent History', $showView);
+        $this->assertStringContainsString('printing-driver-profile', $showView);
+
+        $this->assertStringContainsString('function getCurrentDriverProfileForOutput()', $driversScript);
+        $this->assertStringContainsString('function exportCurrentDriverHistoryCSV()', $driversScript);
+        $this->assertStringContainsString('function exportCurrentDriverReportCSV()', $driversScript);
+        $this->assertStringContainsString('function printCurrentDriverProfile()', $driversScript);
+        $this->assertStringContainsString("['Date', 'Trip ID', 'Bus', 'Route', 'Recorded Boarded', 'Status']", $driversScript);
+        $this->assertStringContainsString('driverTripHistoryRows(driver)', $driversScript);
+        $this->assertStringContainsString('Recent Trip History (Latest 10)', $driversScript);
+    }
+
     public function test_admin_can_access_driver_edit_page(): void
     {
         $this->actingAsAdmin();

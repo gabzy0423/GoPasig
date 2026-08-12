@@ -23,7 +23,25 @@ class AdminDispatchTest extends TestCase
         $this->actingAs($user);
         return $user;
     }
- 
+
+    private function attachDispatchableVariant(Route $route): RouteVariant
+    {
+        $variant = RouteVariant::create([
+            'route_id' => $route->id,
+            'direction' => 'outbound',
+            'origin_name' => 'Terminal A',
+            'destination_name' => 'Terminal B',
+            'polyline_coordinates' => [[14.5690, 121.0680], [14.5760, 121.0850]],
+            'geometry_status' => 'valid',
+            'is_default' => true,
+        ]);
+
+        RouteVariantStop::create(['route_variant_id' => $variant->id, 'name' => 'Terminal A', 'lat' => 14.5690, 'lng' => 121.0680, 'sequence' => 1]);
+        RouteVariantStop::create(['route_variant_id' => $variant->id, 'name' => 'Terminal B', 'lat' => 14.5760, 'lng' => 121.0850, 'sequence' => 2]);
+
+        return $variant;
+    }
+
     public function test_admin_can_access_dispatch_dashboard(): void
     {
         $this->actingAsAdmin();
@@ -38,11 +56,12 @@ class AdminDispatchTest extends TestCase
         $this->actingAsAdmin();
  
         $route = Route::create([
-            'name' => 'Route A',
-            'description' => 'Test Route A Description',
+            'name' => 'Route 2',
+            'description' => 'Test Route 2 Description',
             'polyline_coordinates' => [[14.5690, 121.0680]],
             'status' => 'Active',
         ]);
+        $this->attachDispatchableVariant($route);
  
         $bus = Bus::create([
             'plate_number' => 'PAS-123',
@@ -72,16 +91,8 @@ class AdminDispatchTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
-        RouteVariant::create([
-            'route_id' => $route->id,
-            'direction' => 'outbound',
-            'origin_name' => 'Terminal A',
-            'destination_name' => 'Terminal B',
-            'polyline_coordinates' => [[14.5690, 121.0680], [14.5760, 121.0850]],
-            'geometry_status' => 'valid',
-            'is_default' => true,
-        ]);
+        $route = Route::create(['name' => 'Route 2', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $this->attachDispatchableVariant($route);
 
         Livewire::test('admin.dispatch-builder')
             ->set('selectedRoute', $route->id)
@@ -97,11 +108,12 @@ class AdminDispatchTest extends TestCase
         $this->actingAsAdmin();
 
         $route = Route::create([
-            'name' => 'Route A',
-            'description' => 'Test Route A Description',
+            'name' => 'Route 2',
+            'description' => 'Test Route 2 Description',
             'polyline_coordinates' => [[14.5690, 121.0680]],
             'status' => 'Active',
         ]);
+        $this->attachDispatchableVariant($route);
 
         $bus = Bus::create([
             'plate_number' => 'PAS-123',
@@ -126,7 +138,7 @@ class AdminDispatchTest extends TestCase
         $component = Livewire::test('admin.dispatch-builder')
             ->set('selectedRoute', $route->id)
             ->assertSet('selectedRoute', $route->id)
-            ->assertSee('Route A')
+            ->assertSee('Route 2')
             ->assertSee('Route selected')
             ->set('selectedBusId', $bus->id)
             ->assertSet('selectedBusId', $bus->id)
@@ -148,7 +160,8 @@ class AdminDispatchTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $route = Route::create(['name' => 'Route 2', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $this->attachDispatchableVariant($route);
         $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
         $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
 
@@ -168,7 +181,7 @@ class AdminDispatchTest extends TestCase
         $this->actingAsAdmin();
 
         $route = Route::create([
-            'name' => 'Route A',
+            'name' => 'Route 2',
             'description' => 'Variant Test Route',
             'polyline_coordinates' => [[14.5690, 121.0680], [14.5760, 121.0850]],
             'status' => 'Active',
@@ -199,7 +212,8 @@ class AdminDispatchTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $route = Route::create(['name' => 'Route 2', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $this->attachDispatchableVariant($route);
         $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'operating', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
         $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
 
@@ -217,8 +231,10 @@ class AdminDispatchTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $routeA = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
-        $routeB = Route::create(['name' => 'Route B', 'polyline_coordinates' => [[14.5700, 121.0690]], 'status' => 'Active']);
+        $routeA = Route::create(['name' => 'Route 2', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $this->attachDispatchableVariant($routeA);
+        $routeB = Route::create(['name' => 'Route 3', 'polyline_coordinates' => [[14.5700, 121.0690]], 'status' => 'Active']);
+        $this->attachDispatchableVariant($routeB);
         $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
         $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
 
@@ -238,11 +254,12 @@ class AdminDispatchTest extends TestCase
         $this->actingAsAdmin();
  
         $route = Route::create([
-            'name' => 'Route A',
-            'description' => 'Test Route A Description',
+            'name' => 'Route 2',
+            'description' => 'Test Route 2 Description',
             'polyline_coordinates' => [[14.5690, 121.0680]],
             'status' => 'Active',
         ]);
+        $this->attachDispatchableVariant($route);
  
         $bus = Bus::create([
             'plate_number' => 'PAS-123',
@@ -314,11 +331,12 @@ class AdminDispatchTest extends TestCase
         $this->actingAs($user);
  
         $route = Route::create([
-            'name' => 'Route A',
-            'description' => 'Test Route A Description',
+            'name' => 'Route 2',
+            'description' => 'Test Route 2 Description',
             'polyline_coordinates' => [[14.5690, 121.0680]],
             'status' => 'Active',
         ]);
+        $this->attachDispatchableVariant($route);
  
         $driver = Driver::create([
             'user_id' => $user->id,
@@ -382,11 +400,12 @@ class AdminDispatchTest extends TestCase
         $this->actingAs($user);
  
         $route = Route::create([
-            'name' => 'Route A',
-            'description' => 'Test Route A Description',
+            'name' => 'Route 2',
+            'description' => 'Test Route 2 Description',
             'polyline_coordinates' => [[14.5690, 121.0680]],
             'status' => 'Active',
         ]);
+        $this->attachDispatchableVariant($route);
  
         $driver = Driver::create([
             'user_id' => $user->id,
@@ -475,7 +494,8 @@ class AdminDispatchTest extends TestCase
     public function test_confirmation_checkbox_is_enforced(): void
     {
         $this->actingAsAdmin();
-        $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $route = Route::create(['name' => 'Route 2', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $this->attachDispatchableVariant($route);
         $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
         $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
  
@@ -525,7 +545,8 @@ class AdminDispatchTest extends TestCase
     public function test_auto_refresh_invalidates_stale_selections(): void
     {
         $this->actingAsAdmin();
-        $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $route = Route::create(['name' => 'Route 2', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $this->attachDispatchableVariant($route);
         $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680]);
         $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
  
@@ -573,7 +594,8 @@ class AdminDispatchTest extends TestCase
     public function test_success_flow_resets_the_form(): void
     {
         $this->actingAsAdmin();
-        $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $route = Route::create(['name' => 'Route 2', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Active']);
+        $this->attachDispatchableVariant($route);
         $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
         $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
  
@@ -593,7 +615,8 @@ class AdminDispatchTest extends TestCase
     public function test_user_friendly_exception_messages_caught(): void
     {
         $this->actingAsAdmin();
-        $route = Route::create(['name' => 'Route A', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Suspended']);
+        $route = Route::create(['name' => 'Route 2', 'polyline_coordinates' => [[14.5690, 121.0680]], 'status' => 'Suspended']);
+        $this->attachDispatchableVariant($route);
         $bus = Bus::create(['plate_number' => 'PAS-123', 'status' => 'inactive', 'capacity' => 40, 'lat' => 14.5690, 'lng' => 121.0680, 'speed' => 0, 'passengers' => 0]);
         $driver = Driver::create(['emp_id' => 'EMP-0021', 'first_name' => 'Juan', 'last_name' => 'Dela Cruz', 'license_number' => 'N01-23-456789', 'license_expiry' => '2027-12-12', 'status' => 'active', 'operational_status' => 'available']);
  
@@ -607,6 +630,3 @@ class AdminDispatchTest extends TestCase
             ->assertHasErrors(['dispatchError']);
     }
 }
-
-
-

@@ -68,10 +68,46 @@ class DeveloperLocationSimulatorTest extends TestCase
             ->assertSet('activeStop', null);
     }
 
+    public function test_duplicate_ligaya_preset_uses_the_terminal_coordinate(): void
+    {
+        $this->app->detectEnvironment(fn () => 'local');
+        $route = Route::create([
+            'name' => 'Route 2',
+            'description' => 'Canonical route',
+            'status' => 'Active',
+            'color' => '#003F87',
+        ]);
+        Stop::create([
+            'route_id' => $route->id,
+            'name' => 'Ligaya (Puregold)',
+            'lat' => 14.6096595,
+            'lng' => 121.0919772,
+            'sequence' => 20,
+            'radius_meters' => 100,
+        ]);
+        Stop::create([
+            'route_id' => $route->id,
+            'name' => 'Ligaya (Puregold)',
+            'lat' => 14.6185612,
+            'lng' => 121.0925442,
+            'sequence' => 21,
+            'radius_meters' => 100,
+        ]);
+
+        Livewire::test(GeofenceDetector::class)
+            ->assertViewHas('developerLocationPresets', function (array $presets) {
+                $preset = collect($presets)->firstWhere('label', 'Ligaya');
+
+                return $preset
+                    && $preset['lat'] === 14.6185612
+                    && $preset['lng'] === 121.0925442;
+            });
+    }
+
     private function seedPresetStops(): array
     {
         $route = Route::create([
-            'name' => 'Route 1',
+            'name' => 'Route 2',
             'description' => 'Canonical route',
             'status' => 'Active',
             'color' => '#003F87',

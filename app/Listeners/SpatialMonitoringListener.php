@@ -16,7 +16,7 @@ class SpatialMonitoringListener
 
     /**
      * Handle PositionUpdated telemetry events.
-     * [GPS_TRACE] TEMPORARY INSTRUMENTATION — REMOVE AFTER INVESTIGATION
+     * [GPS_TRACE] TEMPORARY INSTRUMENTATION - REMOVE AFTER INVESTIGATION
      */
     public function handle(PositionUpdated $event): void
     {
@@ -34,6 +34,7 @@ class SpatialMonitoringListener
                 'nearby_geofences' => count($context->nearbyGeofences ?? []),
                 'has_trip'         => (bool) $context->trip,
                 'has_corridor'     => (bool) $context->corridor,
+                'corridor_source'  => $context->corridorSource,
             ]);
 
             $this->engine->process($event->position, $context);
@@ -50,7 +51,7 @@ class SpatialMonitoringListener
                 'file'        => $e->getFile(),
                 'line'        => $e->getLine(),
             ]);
-            // Do not re-throw — spatial monitoring failure must not kill the telemetry pipeline
+            // Do not re-throw - spatial monitoring failure must not kill the telemetry pipeline.
         }
     }
 }

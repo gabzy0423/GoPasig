@@ -31,11 +31,7 @@ class CorrectiveDispatchValidationTest extends TestCase
 
         $this->admin = User::factory()->create(['role' => 'admin']);
 
-        $this->route = Route::create([
-            'id' => 1,
-            'name' => 'Route 1',
-            'status' => 'Active',
-        ]);
+        $this->route = Route::factory()->official()->withUsableVariant()->create();
 
         $this->bus = Bus::create([
             'plate_number' => 'PAS-001',
@@ -55,6 +51,7 @@ class CorrectiveDispatchValidationTest extends TestCase
         // Seed an unrelated schedule on the bus and driver earlier in the day
         Schedule::create([
             'route_id' => $this->route->id,
+            'route_variant_id' => $this->route->variants()->sole()->id,
             'bus_id' => $this->bus->id,
             'driver_id' => $this->driver->id,
             'departure_time' => '12:00:00',
@@ -82,7 +79,7 @@ class CorrectiveDispatchValidationTest extends TestCase
             'message' => 'Route suspended.',
             'severity' => 'critical',
             'status' => 'active',
-            'affected_routes' => 'Route 1',
+            'affected_routes' => 'Route 2',
             'suspend_route' => true,
         ]);
 
@@ -110,6 +107,7 @@ class CorrectiveDispatchValidationTest extends TestCase
     {
         $schedule = Schedule::create([
             'route_id' => $this->route->id,
+            'route_variant_id' => $this->route->variants()->sole()->id,
             'bus_id' => $this->bus->id,
             'driver_id' => $this->driver->id,
             'departure_time' => '14:00:00',

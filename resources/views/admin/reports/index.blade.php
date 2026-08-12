@@ -18,39 +18,39 @@
         <!-- Card 1 -->
         <div class="rounded-lg bg-slate-50 p-4 flex flex-col gap-3 border-l-4 border-[#003F87]">
             <div class="flex items-center justify-between shrink-0">
-                <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 leading-none">Total Pax Today</span>
+                <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 leading-none">Passengers Handled</span>
                 <span class="text-[#003F87]"><i class="ti ti-users text-base"></i></span>
             </div>
-            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-pax-today">1,284</p>
+            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-pax-today">0</p>
             <div class="leading-none mt-1">
-                <span class="text-[11px] font-bold text-[#639922] flex items-center gap-0.5" id="kpi-pax-today-trend"><i class="ti ti-trending-up"></i> +8% vs yesterday</span>
-                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider">across all routes</p>
+                <span class="text-[11px] font-bold text-slate-400 flex items-center gap-0.5" id="kpi-pax-today-trend"><i class="ti ti-users"></i> Recorded boarded events in selected period</span>
+                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider">boarded events only</p>
             </div>
         </div>
 
         <!-- Card 2 -->
         <div class="rounded-lg bg-slate-50 p-4 flex flex-col gap-3">
             <div class="flex items-center justify-between shrink-0">
-                <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 leading-none">Pax This Week</span>
+                <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 leading-none">Passengers in Selected Period</span>
                 <span class="text-[#003F87]"><i class="ti ti-calendar text-base"></i></span>
             </div>
-            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-pax-week">8,471</p>
+            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-pax-week">0</p>
             <div class="leading-none mt-1">
-                <span class="text-[11px] font-bold text-[#639922] flex items-center gap-0.5" id="kpi-pax-week-trend"><i class="ti ti-trending-up"></i> +3% vs last week</span>
-                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider">Mon–Sun running total</p>
+                <span class="text-[11px] font-bold text-slate-400 flex items-center gap-0.5" id="kpi-pax-week-trend"><i class="ti ti-calendar"></i> Recorded boarded events in selected period</span>
+                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider">selected report period</p>
             </div>
         </div>
 
         <!-- Card 3 -->
         <div class="rounded-lg bg-slate-50 p-4 flex flex-col gap-3">
             <div class="flex items-center justify-between shrink-0">
-                <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 leading-none">Avg Pax / Trip</span>
+                <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 leading-none">Avg Peak Load / Trip</span>
                 <span class="text-[#003F87]"><i class="ti ti-chart-bar text-base"></i></span>
             </div>
-            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-avg-pax">43.2</p>
+            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-avg-pax">0</p>
             <div class="leading-none mt-1">
-                <span class="text-[11px] font-bold text-[#E24B4A] flex items-center gap-0.5" id="kpi-avg-pax-trend"><i class="ti ti-trending-down"></i> -2% vs yesterday</span>
-                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider">fleet average</p>
+                <span class="text-[11px] font-bold text-slate-400 flex items-center gap-0.5" id="kpi-avg-pax-trend"><i class="ti ti-chart-bar"></i> Average peak load per actual trip in selected period</span>
+                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider">completed and ongoing Trips</p>
             </div>
         </div>
 
@@ -60,48 +60,48 @@
                 <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 leading-none">Trips Completed</span>
                 <span class="text-[#003F87]"><i class="ti ti-route text-base"></i></span>
             </div>
-            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-trips-completed">29</p>
+            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-trips-completed">0</p>
             <div class="leading-none mt-1">
-                <span class="inline-flex rounded-full bg-[#E8F4E0] px-2 py-0.5 text-[9px] font-bold text-[#639922]" id="kpi-trips-completed-percent">91% Completion</span>
-                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider" id="kpi-trips-completed-sub">of 32 scheduled</p>
+                <span class="inline-flex rounded-full bg-[#E8F4E0] px-2 py-0.5 text-[9px] font-bold text-[#639922]" id="kpi-trips-completed-percent">Actual operations</span>
+                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider" id="kpi-trips-completed-sub">completed trips in selected period</p>
             </div>
         </div>
 
         <!-- Card 5 -->
         <div class="rounded-lg bg-slate-50 p-4 flex flex-col gap-3">
             <div class="flex items-center justify-between shrink-0">
-                <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 leading-none">Fleet Util.</span>
-                <span class="text-slate-400 flex items-center select-none shrink-0" title="9 of 12 active">
+                <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 leading-none">Buses Operated</span>
+                <span class="text-slate-400 flex items-center select-none shrink-0" title="Distinct buses with actual completed or ongoing Trips in the selected period">
                     <svg class="h-6 w-6 transform -rotate-90" viewBox="0 0 36 36">
                         <circle cx="18" cy="18" r="14" fill="none" stroke="#E2E8F0" stroke-width="4.5" />
-                        <circle cx="18" cy="18" r="14" fill="none" stroke="#003F87" stroke-width="4.5" stroke-dasharray="66 88" />
+                        <circle cx="18" cy="18" r="14" fill="none" stroke="#003F87" stroke-width="4.5" stroke-dasharray="0 88" />
                     </svg>
                 </span>
             </div>
-            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-fleet-util">78%</p>
+            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-fleet-util">0%</p>
             <div class="leading-none mt-1">
                 <span class="text-[11px] font-bold text-slate-400 flex items-center gap-0.5"><i class="ti ti-minus"></i> Neutral</span>
-                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider" id="kpi-fleet-util-sub">9 of 12 buses active</p>
+                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider" id="kpi-fleet-util-sub">0 of 0 buses operated in selected period</p>
             </div>
         </div>
 
         <!-- Card 6 -->
         <div class="rounded-lg bg-slate-50 p-4 flex flex-col gap-3">
             <div class="flex items-center justify-between shrink-0">
-                <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 leading-none">On-Time Rate</span>
+                <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 leading-none">On-Time Performance</span>
                 <span class="text-[#BA7517]"><i class="ti ti-bell-ringing text-base"></i></span>
             </div>
-            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-on-time-rate">87%</p>
+            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-on-time-rate">Deferred</p>
             <div class="leading-none mt-1">
-                <span class="text-[11px] font-bold text-[#BA7517] flex items-center gap-0.5"><i class="ti ti-trending-down"></i> -5% vs yesterday</span>
-                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider" id="kpi-on-time-sub">4 delayed trips today</p>
+                <span class="text-[11px] font-bold text-slate-400 flex items-center gap-0.5"><i class="ti ti-minus"></i> Actual timing source required</span>
+                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider" id="kpi-on-time-sub">not schedule-status backed</p>
             </div>
         </div>
     </div>
 
     <!-- ==================== SECTION 3B — BUS RIDERSHIP SUMMARY ==================== -->
     <div id="analytics-fleet-utilization" class="space-y-3">
-        <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 block">Bus ridership summary — today</span>
+        <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 block">Bus operation load summary — selected period</span>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" id="bus-summary-cards-grid">
             <!-- Rendered dynamically by javascript -->
         </div>
@@ -111,8 +111,8 @@
     <div class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 shrink-0">
             <div>
-                <h2 class="text-xs font-extrabold uppercase tracking-widest text-slate-800">Passenger load over time — by bus</h2>
-                <p class="text-[10px] font-bold text-slate-400 mt-0.5">Hourly passenger on-board count per active bus unit</p>
+                <h2 class="text-xs font-extrabold uppercase tracking-widest text-slate-800">Peak load over time — by bus</h2>
+                <p class="text-[10px] font-bold text-slate-400 mt-0.5">Peak load captured from actual Trip records</p>
             </div>
             <div class="flex items-center gap-4 text-xs font-bold text-slate-500">
                 <div id="pax-load-timeline-legend" class="flex flex-wrap items-center gap-3">
@@ -137,7 +137,7 @@
                     <i class="ti ti-sparkles text-base animate-pulse"></i>
                     Dispatch Demand Forecast
                 </span>
-                <span class="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Based on 30-day ridership average</span>
+                <span class="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Forecast recommendations deferred</span>
             </div>
 
             <!-- Scrollable Tomorrow's Schedule prediction table -->
@@ -146,9 +146,9 @@
                     <thead>
                         <tr class="border-b border-slate-100 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 bg-slate-50/50">
                             <th class="px-3 py-2 font-bold w-[16%]">Time Slot</th>
-                            <th class="px-3 py-2 font-bold w-[16%]">Pred Pax</th>
-                            <th class="px-3 py-2 font-bold w-[12%]">Rec.</th>
-                            <th class="px-3 py-2 font-bold w-[12%]">Sched.</th>
+                            <th class="px-3 py-2 font-bold w-[16%]">Demand estimate</th>
+                            <th class="px-3 py-2 font-bold w-[12%]">Recommendation</th>
+                            <th class="px-3 py-2 font-bold w-[12%]">Basis</th>
                             <th class="px-3 py-2 font-bold w-[14%] text-center">Gap</th>
                             <th class="px-3 py-2 font-bold w-[30%]">Action Needed</th>
                         </tr>
@@ -163,8 +163,8 @@
             <div class="mt-4 border border-[#003F87]/20 bg-[#F0F5FF]/60 rounded-xl p-3 flex gap-3 shrink-0 items-center">
                 <span class="text-[#003F87] bg-white/80 p-2 rounded-lg"><i class="ti ti-info-circle text-base"></i></span>
                 <div class="leading-normal">
-                    <p class="text-[10px] font-black uppercase text-[#003F87] tracking-wider">Tomorrow's Dispatch Action Plan</p>
-                    <p class="text-[11px] text-slate-600 font-semibold mt-0.5">Shortages detected: <strong class="text-slate-900">8 buses</strong> across 6 peak hours. Busiest expected: <strong class="text-slate-900">7–8 AM (+2) and 5–6 PM (+2)</strong>. Pre-position 2 standby buses at Pasig Terminal for 6:45 AM and 4:45 PM deployment.</p>
+                    <p class="text-[10px] font-black uppercase text-[#003F87] tracking-wider">Dispatch Forecast</p>
+                    <p class="text-[11px] text-slate-600 font-semibold mt-0.5">Awaiting reliable demand and TripLog foundation data before showing dispatch recommendations.</p>
                 </div>
             </div>
         </div>
@@ -182,14 +182,14 @@
                 <div class="flex-1 flex flex-col justify-center space-y-2 mt-2 leading-none">
                     <div class="flex justify-between text-xs font-bold text-slate-500">
                         <span>Expected Route Volume:</span>
-                        <span class="text-slate-900 font-extrabold" id="pred-route-vol">1,284 pax / day</span>
+                        <span class="text-slate-900 font-extrabold" id="pred-route-vol">No data</span>
                     </div>
                     <div class="flex justify-between text-xs font-bold text-slate-500">
                         <span>Recommended Dispatches:</span>
-                        <span class="text-slate-900 font-extrabold" id="pred-route-rec">29 recommended</span>
+                        <span class="text-slate-900 font-extrabold" id="pred-route-rec">No recommendation data</span>
                     </div>
                     <div class="bg-[#FEF7ED] border border-[#BA7517]/10 p-2.5 rounded-lg text-[#8F530B] font-extrabold text-[11px] shrink-0 text-center uppercase tracking-wider" id="pred-route-busiest">
-                        Expected highest boarding: Pasig City Hall · 7–8 AM · ~67 passengers
+                        No reliable forecast data
                     </div>
                 </div>
             </div>
@@ -197,8 +197,8 @@
             <!-- 4C. 30-day Ridership Trend Chart Card -->
             <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)] flex-1 flex flex-col min-h-0">
                 <div class="flex items-center justify-between border-b border-slate-100 pb-2 shrink-0">
-                    <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-800">Historical ridership — last 30 days</span>
-                    <span class="text-[9px] font-bold text-slate-400">Total basis</span>
+                    <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-800">Historical demand — last 30 days</span>
+                    <span class="text-[9px] font-bold text-slate-400">DemandHistory basis</span>
                 </div>
                 
                 <!-- Canvas Chart -->
@@ -207,16 +207,14 @@
                 </div>
 
                 <div class="mt-2.5 border-t border-slate-50 pt-2 grid grid-cols-3 gap-2 text-[9px] font-bold text-slate-500 shrink-0 text-center">
-                    <div>Wkday Avg: <strong class="text-slate-800 block text-[10px] mt-0.5">1,247 pax</strong></div>
-                    <div>Wkend Avg: <strong class="text-slate-800 block text-[10px] mt-0.5">891 pax</strong></div>
-                    <div>Growth: <strong class="text-[#639922] block text-[10px] mt-0.5">+4.2%</strong></div>
+                    <div>Wkday Avg: <strong class="text-slate-800 block text-[10px] mt-0.5">No data</strong></div>
+                    <div>Wkend Avg: <strong class="text-slate-800 block text-[10px] mt-0.5">No data</strong></div>
+                    <div>Growth: <strong class="text-slate-800 block text-[10px] mt-0.5">No data</strong></div>
                 </div>
             </div>
         </div>
     </div>
 </section>
-
-
 {{-- ==================== ROUTE PERFORMANCE ANALYTICS SCREEN ==================== --}}
 <section id="screen-analytics-route-performance" class="hidden space-y-8 animate-fade-in">
 
@@ -232,21 +230,21 @@
         </div>
     </div>
 
-    <!-- ==================== SECTION 2 — RIDERSHIP ANALYTICS ==================== -->
+    <!-- ==================== SECTION 2 — ROUTE PERFORMANCE ANALYTICS ==================== -->
     <div id="analytics-route-performance" class="space-y-6">
-        <!-- 2A. HOURLY RIDERSHIP CHART -->
+        <!-- 2A. TRIPS STARTED CHART -->
         <div class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 shrink-0">
                 <div>
-                    <h2 class="text-sm font-extrabold uppercase tracking-widest text-slate-800">Hourly ridership by route</h2>
-                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">Admins dispatch planning baseline</p>
+                    <h2 class="text-sm font-extrabold uppercase tracking-widest text-slate-800">Trips started by time slot</h2>
+                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">Actual route operations by start time</p>
                 </div>
                 <div class="flex items-center gap-4 text-xs font-bold text-slate-500">
                     <!-- Custom HTML Legend -->
                     <div id="hourly-chart-legend" class="flex flex-wrap items-center gap-3">
                         <!-- Populated dynamically -->
                     </div>
-                    <span class="text-[10px] font-extrabold bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded uppercase tracking-wider">Today, May 24</span>
+                    <span class="text-[10px] font-extrabold bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded uppercase tracking-wider">Today</span>
                 </div>
             </div>
 
@@ -256,25 +254,22 @@
             </div>
 
             <div class="border-t border-slate-100 pt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between shrink-0">
-                <p class="text-xs font-bold text-slate-400 italic">Peak hours identified: 7–8 AM and 5–6 PM. Use these to plan additional dispatches.</p>
-                <div class="flex gap-2">
-                    <span class="inline-flex rounded-full bg-[#E6F1FB] px-2.5 py-0.5 text-[9px] font-bold text-[#003F87] uppercase tracking-wider">AM Peak · 322 pax</span>
-                    <span class="inline-flex rounded-full bg-[#E6F1FB] px-2.5 py-0.5 text-[9px] font-bold text-[#003F87] uppercase tracking-wider">PM Peak · 298 pax</span>
-                </div>
+                <p class="text-xs font-bold text-slate-400 italic">Awaiting operational data.</p>
+                <div class="flex gap-2"></div>
             </div>
         </div>
 
-        <!-- 2B. ROUTE RIDERSHIP BREAKDOWN (Doughnut & Comparison Table) -->
+        <!-- 2B. ROUTE OPERATIONS BREAKDOWN (Doughnut & Comparison Table) -->
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-10">
             <!-- Left Card: Doughnut Chart (40%) -->
             <div class="lg:col-span-4 rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] flex flex-col h-[360px]">
-                <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 border-b border-slate-100 pb-3 block">Passengers by route today</span>
+                <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 border-b border-slate-100 pb-3 block">Trips by route</span>
                 
                 <div class="flex-1 flex flex-col items-center justify-center relative select-none mt-2">
                     <!-- Doughnut center text overlay -->
                     <div class="absolute flex flex-col items-center justify-center leading-none">
-                        <span class="text-2xl font-black text-slate-900" id="doughnut-total-pax">1,284</span>
-                        <span class="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 mt-1">Total Pax</span>
+                        <span class="text-2xl font-black text-slate-900" id="doughnut-total-trips">0</span>
+                        <span class="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 mt-1">Trips run</span>
                     </div>
                     <div class="h-44 w-44">
                         <canvas id="route-doughnut-chart"></canvas>
@@ -296,46 +291,17 @@
                         <thead>
                             <tr class="border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
                                 <th class="pb-2 font-bold">Route</th>
-                                <th class="pb-2 font-bold">Trips Today</th>
-                                <th class="pb-2 font-bold">Total Pax</th>
-                                <th class="pb-2 font-bold">Avg Pax/Trip</th>
-                                <th class="pb-2 font-bold">Peak Hour</th>
-                                <th class="pb-2 font-bold text-right">Busiest Stop</th>
+                                <th class="pb-2 font-bold">Trips run</th>
+                                <th class="pb-2 font-bold">Completed</th>
+                                <th class="pb-2 font-bold">Ongoing</th>
+                                <th class="pb-2 font-bold">Dispatched</th>
+                                <th class="pb-2 font-bold">Cancelled</th>
+                                <th class="pb-2 font-bold text-right">Completion rate</th>
                             </tr>
                         </thead>
                         <tbody class="text-xs font-medium text-slate-700 divide-y divide-slate-100" id="route-comparison-tbody">
-                            <tr class="hover:bg-slate-50/50 transition">
-                                <td class="py-3 font-bold text-[#003F87]">Route A</td>
-                                <td class="py-3">11 trips</td>
-                                <td class="py-3">532 pax</td>
-                                <td class="py-3">48.4</td>
-                                <td class="py-3"><span class="inline-flex rounded-full bg-[#E6F1FB] px-2 py-0.5 text-[9px] font-bold text-[#003F87]">7–8 AM</span></td>
-                                <td class="py-3 text-right">Pasig City Hall</td>
-                            </tr>
-                            <tr class="hover:bg-slate-50/50 transition">
-                                <td class="py-3 font-bold text-[#639922]">Route B</td>
-                                <td class="py-3">10 trips</td>
-                                <td class="py-3">421 pax</td>
-                                <td class="py-3">42.1</td>
-                                <td class="py-3"><span class="inline-flex rounded-full bg-[#E6F1FB] px-2 py-0.5 text-[9px] font-bold text-[#003F87]">7–8 AM</span></td>
-                                <td class="py-3 text-right">Ortigas Center</td>
-                            </tr>
-                            <tr class="hover:bg-slate-50/50 transition">
-                                <td class="py-3 font-bold text-[#BA7517]">Route C</td>
-                                <td class="py-3">8 trips</td>
-                                <td class="py-3">331 pax</td>
-                                <td class="py-3">41.4</td>
-                                <td class="py-3"><span class="inline-flex rounded-full bg-[#E6F1FB] px-2 py-0.5 text-[9px] font-bold text-[#003F87]">5–6 PM</span></td>
-                                <td class="py-3 text-right">Shaw Blvd</td>
-                            </tr>
-                            <!-- Footer Totals Row -->
-                            <tr class="font-bold bg-slate-50 border-t border-slate-200">
-                                <td class="py-3 pl-2">Totals</td>
-                                <td class="py-3">29 trips</td>
-                                <td class="py-3">1,284 pax</td>
-                                <td class="py-3">44.3 avg</td>
-                                <td class="py-3">—</td>
-                                <td class="py-3 text-right pr-2">—</td>
+                            <tr>
+                                <td colspan="7" class="py-4 text-center text-slate-400">No data</td>
                             </tr>
                         </tbody>
                     </table>
@@ -344,10 +310,18 @@
         </div>
 
         <!-- 2C. RIDERSHIP HEATMAP (7-day × 18-hour) -->
+        <div class="rounded-lg border border-[#BA7517]/20 bg-[#FEF7ED] px-4 py-3">
+            <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <span class="text-xs font-extrabold uppercase tracking-widest text-[#8F530B]">Route demand signals</span>
+                <span class="text-[9px] font-extrabold uppercase tracking-widest text-[#8F530B]/70">Separate from driver-operation metrics</span>
+            </div>
+            <p class="text-[10px] font-bold text-[#8F530B]/80 mt-1">These panels use historical demand and commuter request records. Actual route operations above use Trip lifecycle records.</p>
+        </div>
+
         <div class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
             <div class="border-b border-slate-100 pb-3 shrink-0">
-                <h2 class="text-xs font-extrabold uppercase tracking-widest text-slate-800">Weekly ridership pattern — last 7 days</h2>
-                <p class="text-[10px] font-bold text-slate-400 mt-0.5">Identify recurring peak periods for dispatch planning</p>
+                <h2 class="text-xs font-extrabold uppercase tracking-widest text-slate-800">Historical demand by weekday/time slot</h2>
+                <p class="text-[10px] font-bold text-slate-400 mt-0.5">DemandHistory averages; not Trip lifecycle data</p>
             </div>
 
             <!-- Heatmap Matrix Board scrollable wrapper -->
@@ -427,7 +401,7 @@
 
             <!-- Right: Top 5 Stops Breakdown Table (40%) -->
             <div class="lg:col-span-4 rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] flex flex-col h-[440px]">
-                <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 border-b border-slate-100 pb-3 block">Top 5 stops passenger flow</span>
+                <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 border-b border-slate-100 pb-3 block">Top 5 stops demand flow</span>
                 
                 <div class="flex-1 overflow-x-auto mt-4 scrollbar-thin scrollbar-thumb-slate-200">
                     <table class="w-full text-left border-collapse">
@@ -435,46 +409,14 @@
                             <tr class="border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
                                 <th class="pb-2 font-bold">Stop</th>
                                 <th class="pb-2 font-bold">Routes</th>
-                                <th class="pb-2 font-bold">Avg Boarding</th>
-                                <th class="pb-2 font-bold">Avg Alight</th>
+                                <th class="pb-2 font-bold">Boarding requests</th>
+                                <th class="pb-2 font-bold">Alighting requests</th>
                                 <th class="pb-2 font-bold text-right">Net Change</th>
                             </tr>
                         </thead>
                         <tbody class="text-xs font-medium text-slate-700 divide-y divide-slate-100" id="top-stops-tbody">
-                            <tr class="hover:bg-slate-50/50 transition">
-                                <td class="py-2.5 font-bold">Pasig City Hall</td>
-                                <td class="py-2.5 text-[#003F87] font-bold">A, B</td>
-                                <td class="py-2.5">218 / day</td>
-                                <td class="py-2.5">142 / day</td>
-                                <td class="py-2.5 text-right text-[#639922] font-bold">+76</td>
-                            </tr>
-                            <tr class="hover:bg-slate-50/50 transition">
-                                <td class="py-2.5 font-bold">Kapitolyo</td>
-                                <td class="py-2.5 text-[#003F87] font-bold">A</td>
-                                <td class="py-2.5">187 / day</td>
-                                <td class="py-2.5">179 / day</td>
-                                <td class="py-2.5 text-right text-[#639922] font-bold">+8</td>
-                            </tr>
-                            <tr class="hover:bg-slate-50/50 transition">
-                                <td class="py-2.5 font-bold">Ortigas Center</td>
-                                <td class="py-2.5 text-[#003F87] font-bold">A, C</td>
-                                <td class="py-2.5">165 / day</td>
-                                <td class="py-2.5">204 / day</td>
-                                <td class="py-2.5 text-right text-[#E24B4A] font-bold">-39</td>
-                            </tr>
-                            <tr class="hover:bg-slate-50/50 transition">
-                                <td class="py-2.5 font-bold">Rosario</td>
-                                <td class="py-2.5 text-[#003F87] font-bold">B, C</td>
-                                <td class="py-2.5">143 / day</td>
-                                <td class="py-2.5">98 / day</td>
-                                <td class="py-2.5 text-right text-[#639922] font-bold">+45</td>
-                            </tr>
-                            <tr class="hover:bg-slate-50/50 transition">
-                                <td class="py-2.5 font-bold">Shaw Blvd</td>
-                                <td class="py-2.5 text-[#003F87] font-bold">C</td>
-                                <td class="py-2.5">121 / day</td>
-                                <td class="py-2.5">110 / day</td>
-                                <td class="py-2.5 text-right text-[#639922] font-bold">+11</td>
+                            <tr>
+                                <td colspan="5" class="py-4 text-center text-slate-400">No data</td>
                             </tr>
                         </tbody>
                     </table>
@@ -483,8 +425,6 @@
         </div>
     </div>
 </section>
-
-
 {{-- ==================== DRIVER PERFORMANCE ANALYTICS SCREEN ==================== --}}
 <section id="screen-analytics-driver-performance" class="hidden space-y-8 animate-fade-in">
 
@@ -500,12 +440,12 @@
         </div>
     </div>
 
-    <!-- ==================== SECTION 3A — PASSENGERS PER BUS TRIP TABLE ==================== -->
+    <!-- ==================== SECTION 3A — TRIP LOAD RECORDS TABLE ==================== -->
     <div class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 shrink-0">
             <div>
-                <h2 class="text-xs font-extrabold uppercase tracking-widest text-slate-800">Passenger count per trip — today</h2>
-                <p class="text-[10px] font-bold text-slate-400 mt-0.5">Real-time driver accountability & capacity analytics database</p>
+                <h2 class="text-xs font-extrabold uppercase tracking-widest text-slate-800">Trip load records — selected period</h2>
+                <p class="text-[10px] font-bold text-slate-400 mt-0.5">Based on actual Trip records. Peak load is captured from driver passenger updates.</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <select onchange="filterTripTableByRoute()" id="trip-route-filter" class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
@@ -521,19 +461,19 @@
 
         <!-- Data-Dense Full-Width Table Layout -->
         <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-            <table class="w-full text-left border-collapse table-fixed min-w-[800px]">
+            <table class="w-full text-left border-collapse table-fixed min-w-[1050px]">
                 <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-widest text-slate-500">
-                        <th class="px-4 py-2.5 font-bold w-[8%]">Trip #</th>
-                        <th class="px-4 py-2.5 font-bold w-[10%]">Bus Plate</th>
-                        <th class="px-4 py-2.5 font-bold w-[14%]">Driver</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Trip</th>
+                        <th class="px-4 py-2.5 font-bold w-[13%]">Driver</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Bus</th>
                         <th class="px-4 py-2.5 font-bold w-[10%]">Route</th>
-                        <th class="px-4 py-2.5 font-bold w-[9%]">Departure</th>
-                        <th class="px-4 py-2.5 font-bold w-[9%]">Arrival</th>
-                        <th class="px-4 py-2.5 font-bold w-[10%]">Pax Boarded</th>
-                        <th class="px-4 py-2.5 font-bold w-[10%]">Pax Alighted</th>
-                        <th class="px-4 py-2.5 font-bold w-[10%]">Peak Load</th>
-                        <th class="px-4 py-2.5 font-bold w-[10%]">Capacity %</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Status</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Started</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Ended</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Recorded boarded</th>
+                        <th class="px-4 py-2.5 font-bold w-[10%]">Recorded alighted</th>
+                        <th class="px-4 py-2.5 font-bold w-[7%]">Peak load</th>
                     </tr>
                 </thead>
                 <tbody class="text-xs font-semibold text-slate-700 divide-y divide-slate-100" id="trip-pax-tbody">
@@ -545,79 +485,31 @@
 
     <!-- ==================== SECTION 3D — DRIVER PERFORMANCE TABLE ==================== -->
     <div id="analytics-driver-performance" class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
-        <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 block border-b border-slate-100 pb-3">Ridership by driver — today</span>
+        <div class="border-b border-slate-100 pb-3">
+            <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 block">Driver operations by selected period</span>
+            <p class="text-[10px] font-bold text-slate-400 mt-1">Operational score starts at 100 and uses existing Accident/Breakdown penalties. Trip cancellations do not reduce the score.</p>
+        </div>
         
         <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-            <table class="w-full text-left border-collapse min-w-[700px]">
+            <table class="w-full text-left border-collapse min-w-[1000px]">
                 <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-                        <th class="px-5 py-3 font-bold w-[10%]">Rank</th>
+                        <th class="px-5 py-3 font-bold w-[8%]">Rank</th>
                         <th class="px-5 py-3 font-bold">Driver</th>
                         <th class="px-5 py-3 font-bold">Assigned Bus</th>
                         <th class="px-5 py-3 font-bold">Assigned Route</th>
-                        <th class="px-5 py-3 font-bold">Trips Today</th>
-                        <th class="px-5 py-3 font-bold">Total Pax Served</th>
-                        <th class="px-5 py-3 font-bold">Avg Pax/Trip</th>
-                        <th class="px-5 py-3 font-bold">Peak Load Reached</th>
+                        <th class="px-5 py-3 font-bold">Trips run</th>
+                        <th class="px-5 py-3 font-bold">Completed</th>
+                        <th class="px-5 py-3 font-bold">Ongoing</th>
+                        <th class="px-5 py-3 font-bold">Dispatched</th>
+                        <th class="px-5 py-3 font-bold">Cancelled</th>
+                        <th class="px-5 py-3 font-bold">Peak load</th>
+                        <th class="px-5 py-3 font-bold">Operational score</th>
                         <th class="px-5 py-3 font-bold text-right">Incidents</th>
                     </tr>
                 </thead>
                 <tbody class="text-xs font-semibold text-slate-700 divide-y divide-slate-100" id="driver-performance-tbody">
-                    <tr class="hover:bg-slate-50/50 transition">
-                        <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-[#EF9F27] text-[10px] font-black text-[#633806]" title="Rank 1 Gold">#1</span></td>
-                        <td class="px-5 py-3.5 font-bold">Ana Flores</td>
-                        <td class="px-5 py-3.5 font-mono">TUV-3301</td>
-                        <td class="px-5 py-3.5 text-[#BA7517] font-bold">Route C</td>
-                        <td class="px-5 py-3.5">5 trips</td>
-                        <td class="px-5 py-3.5 font-extrabold text-[#003F87]">221 pax</td>
-                        <td class="px-5 py-3.5">44.2</td>
-                        <td class="px-5 py-3.5 text-rose-600 font-extrabold">45 <span class="text-[9px] font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full uppercase ml-1">Full x3</span></td>
-                        <td class="px-5 py-3.5 text-right text-emerald-600 font-bold"><i class="ti ti-check text-base"></i></td>
-                    </tr>
-                    <tr class="hover:bg-slate-50/50 transition">
-                        <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-[#D3D1C7] text-[10px] font-black text-[#444441]" title="Rank 2 Silver">#2</span></td>
-                        <td class="px-5 py-3.5 font-bold">Juan dela Cruz</td>
-                        <td class="px-5 py-3.5 font-mono">PJY-8821</td>
-                        <td class="px-5 py-3.5 text-[#003F87] font-bold">Route A</td>
-                        <td class="px-5 py-3.5">4 trips</td>
-                        <td class="px-5 py-3.5 font-extrabold text-[#003F87]">187 pax</td>
-                        <td class="px-5 py-3.5">46.8</td>
-                        <td class="px-5 py-3.5 text-rose-600 font-extrabold">45 <span class="text-[9px] font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full uppercase ml-1">Full x2</span></td>
-                        <td class="px-5 py-3.5 text-right text-emerald-600 font-bold"><i class="ti ti-check text-base"></i></td>
-                    </tr>
-                    <tr class="hover:bg-slate-50/50 transition">
-                        <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center rounded-full bg-[#F5C4B3] text-[10px] font-black text-[#712B13]" title="Rank 3 Bronze">#3</span></td>
-                        <td class="px-5 py-3.5 font-bold">Maria Santos</td>
-                        <td class="px-5 py-3.5 font-mono">QRS-4412</td>
-                        <td class="px-5 py-3.5 text-[#639922] font-bold">Route B</td>
-                        <td class="px-5 py-3.5">4 trips</td>
-                        <td class="px-5 py-3.5 font-extrabold text-[#003F87]">163 pax</td>
-                        <td class="px-5 py-3.5">40.8</td>
-                        <td class="px-5 py-3.5 text-slate-500">43</td>
-                        <td class="px-5 py-3.5 text-right"><span class="inline-flex rounded-full bg-rose-50 border border-rose-100 px-2 py-0.5 text-[9px] font-bold text-rose-600">1 alert</span></td>
-                    </tr>
-                    <tr class="hover:bg-slate-50/50 transition">
-                        <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center text-slate-400 text-xs font-extrabold">#4</span></td>
-                        <td class="px-5 py-3.5 font-bold">Carlos Bautista</td>
-                        <td class="px-5 py-3.5 font-mono">WXY-9988</td>
-                        <td class="px-5 py-3.5 text-[#639922] font-bold">Route B</td>
-                        <td class="px-5 py-3.5">3 trips</td>
-                        <td class="px-5 py-3.5 font-extrabold text-[#003F87]">121 pax</td>
-                        <td class="px-5 py-3.5">40.3</td>
-                        <td class="px-5 py-3.5 text-slate-500">39</td>
-                        <td class="px-5 py-3.5 text-right text-emerald-600 font-bold"><i class="ti ti-check text-base"></i></td>
-                    </tr>
-                    <tr class="hover:bg-slate-50/50 transition">
-                        <td class="px-5 py-3.5"><span class="flex h-6 w-6 items-center justify-center text-slate-400 text-xs font-extrabold">#5</span></td>
-                        <td class="px-5 py-3.5 font-bold">Pedro Garcia</td>
-                        <td class="px-5 py-3.5 font-mono">MNO-2211</td>
-                        <td class="px-5 py-3.5 text-[#003F87] font-bold">Route A</td>
-                        <td class="px-5 py-3.5">3 trips</td>
-                        <td class="px-5 py-3.5 font-extrabold text-[#003F87]">118 pax</td>
-                        <td class="px-5 py-3.5">39.3</td>
-                        <td class="px-5 py-3.5 text-rose-600 font-extrabold">45 <span class="text-[9px] font-bold bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full uppercase ml-1">Full x1</span></td>
-                        <td class="px-5 py-3.5 text-right text-emerald-600 font-bold"><i class="ti ti-check text-base"></i></td>
-                    </tr>
+                    <!-- Rendered dynamically by javascript -->
                 </tbody>
             </table>
         </div>

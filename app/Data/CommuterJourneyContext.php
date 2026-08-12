@@ -5,6 +5,7 @@ namespace App\Data;
 use App\Models\CommuterSession;
 use App\Models\CommuterTrip;
 use App\Models\Route;
+use App\Models\RouteVariantStop;
 use App\Models\Stop;
 
 final class CommuterJourneyContext
@@ -16,14 +17,14 @@ final class CommuterJourneyContext
         public readonly StopGeofenceEvaluation $stopGeofence,
     ) {}
 
-    public function originStop(): ?Stop
+    public function originStop(): Stop|RouteVariantStop|null
     {
-        return $this->activeTrip?->originStop;
+        return $this->activeTrip?->resolvedOriginStop();
     }
 
-    public function destinationStop(): ?Stop
+    public function destinationStop(): Stop|RouteVariantStop|null
     {
-        return $this->activeTrip?->destinationStop;
+        return $this->activeTrip?->resolvedDestinationStop();
     }
 
     public function route(): ?Route

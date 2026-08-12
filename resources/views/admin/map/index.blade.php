@@ -4,7 +4,7 @@
         <div id="live-map-canvas" class="h-[520px] w-full lg:h-full"></div>
 
         <!-- Floating top identity, filters, and controls -->
-        <div class="map-ui-enter map-ui-enter-down relative z-[1000] m-3 flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-2.5 shadow-[0_14px_34px_rgba(15,23,42,0.16)] ring-1 ring-white/70 backdrop-blur-md transition duration-150 lg:absolute lg:left-4 lg:right-[392px] lg:top-4 lg:m-0 xl:right-[408px]">
+        <div id="live-map-toolbar" class="map-ui-enter map-ui-enter-down relative z-[1000] m-3 flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-2.5 shadow-[0_14px_34px_rgba(15,23,42,0.16)] ring-1 ring-white/70 backdrop-blur-md transition duration-150 lg:absolute lg:left-4 lg:right-[392px] lg:top-4 lg:m-0 xl:right-[408px]">
             <div class="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <!-- Compact page identity -->
                 <div class="min-w-[180px] shrink-0 select-none">

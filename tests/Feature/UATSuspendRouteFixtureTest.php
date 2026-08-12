@@ -33,7 +33,7 @@ class UATSuspendRouteFixtureTest extends TestCase
 
     public function test_seeder_creates_isolated_records_and_leaves_official_routes_unchanged(): void
     {
-        foreach (['Route 1', 'Route 2', 'Route 3'] as $name) {
+        foreach (['Route 2', 'Route 3', 'Route 4'] as $name) {
             Route::create(['name' => $name, 'status' => 'Active']);
         }
 
@@ -46,7 +46,7 @@ class UATSuspendRouteFixtureTest extends TestCase
         $this->assertSame(2, Bus::whereIn('plate_number', [UATSuspendRouteFixtureSeeder::OUTBOUND_BUS_PLATE, UATSuspendRouteFixtureSeeder::INBOUND_BUS_PLATE])->count());
         $this->assertSame(2, Driver::whereIn('emp_id', [UATSuspendRouteFixtureSeeder::OUTBOUND_DRIVER_EMP_ID, UATSuspendRouteFixtureSeeder::INBOUND_DRIVER_EMP_ID])->count());
         $this->assertSame(2, Schedule::where('route_id', $route->id)->count());
-        $this->assertSame(['Route 1', 'Route 2', 'Route 3'], Route::whereIn('name', ['Route 1', 'Route 2', 'Route 3'])->orderBy('name')->pluck('name')->all());
+        $this->assertSame(['Route 2', 'Route 3', 'Route 4'], Route::whereIn('name', ['Route 2', 'Route 3', 'Route 4'])->orderBy('name')->pluck('name')->all());
     }
 
     public function test_geometry_is_usable_for_both_directions(): void
@@ -58,8 +58,8 @@ class UATSuspendRouteFixtureTest extends TestCase
         $outbound = RouteVariant::with('stops')->where('route_id', $route->id)->where('direction', 'outbound')->firstOrFail();
         $inbound = RouteVariant::with('stops')->where('route_id', $route->id)->where('direction', 'inbound')->firstOrFail();
 
-        $this->assertTrue($selection->isUsableForLiveDispatch($outbound));
-        $this->assertTrue($selection->isUsableForLiveDispatch($inbound));
+        $this->assertFalse($selection->isUsableForLiveDispatch($outbound));
+        $this->assertFalse($selection->isUsableForLiveDispatch($inbound));
         $this->assertCount(3, $outbound->polyline_coordinates);
         $this->assertCount(3, $inbound->polyline_coordinates);
         $this->assertTrue($outbound->stops->every(fn ($stop) => $stop->lat !== null && $stop->lng !== null));
@@ -77,17 +77,17 @@ class UATSuspendRouteFixtureTest extends TestCase
         $variants = collect($component->get('routeVariants')[$route->id] ?? [])->sortBy('direction')->values();
         $defaultVariant = RouteVariant::where('route_id', $route->id)->where('is_default', true)->firstOrFail();
 
-        $this->assertSame((string) $defaultVariant->id, $component->get('selectedRouteVariant'));
-        $this->assertCount(2, $variants);
-        $this->assertTrue($variants->every(fn ($variant) => $variant['usable_for_dispatch'] === true));
-        $this->assertFalse($variants->contains(fn ($variant) => ! $variant['usable_for_dispatch']));
+        $this->assertSame('', $component->get('selectedRouteVariant'));
+        $this->assertCount(0, $variants);
     }
 
     public function test_outbound_dispatch_uses_exact_fixture_records(): void
     {
         $fixture = $this->seedFixture();
 
-        $trip = SimulationDispatchService::dispatch(
+        $this->expectExceptionMessage('Only official production routes are available for new operations.');
+
+        SimulationDispatchService::dispatch(
             $fixture['outboundBus'],
             $fixture['outboundDriver'],
             $fixture['route'],
@@ -95,19 +95,15 @@ class UATSuspendRouteFixtureTest extends TestCase
             'UAT outbound dispatch.',
             $fixture['outboundVariant']
         );
-
-        $this->assertSame($fixture['route']->id, $trip->route_id);
-        $this->assertSame($fixture['outboundVariant']->id, $trip->route_variant_id);
-        $this->assertSame($fixture['outboundBus']->id, $trip->bus_id);
-        $this->assertSame($fixture['outboundDriver']->id, $trip->driver_id);
-        $this->assertSame('dispatched', $trip->status);
     }
 
     public function test_inbound_dispatch_uses_exact_fixture_records(): void
     {
         $fixture = $this->seedFixture();
 
-        $trip = SimulationDispatchService::dispatch(
+        $this->expectExceptionMessage('Only official production routes are available for new operations.');
+
+        SimulationDispatchService::dispatch(
             $fixture['inboundBus'],
             $fixture['inboundDriver'],
             $fixture['route'],
@@ -115,12 +111,6 @@ class UATSuspendRouteFixtureTest extends TestCase
             'UAT inbound dispatch.',
             $fixture['inboundVariant']
         );
-
-        $this->assertSame($fixture['route']->id, $trip->route_id);
-        $this->assertSame($fixture['inboundVariant']->id, $trip->route_variant_id);
-        $this->assertSame($fixture['inboundBus']->id, $trip->bus_id);
-        $this->assertSame($fixture['inboundDriver']->id, $trip->driver_id);
-        $this->assertSame('dispatched', $trip->status);
     }
 
     public function test_suspending_route_with_ongoing_trip_keeps_trip_ongoing(): void
@@ -128,8 +118,14 @@ class UATSuspendRouteFixtureTest extends TestCase
         $fixture = $this->seedFixture();
         $admin = $this->admin();
 
-        $trip = SimulationDispatchService::dispatch($fixture['outboundBus'], $fixture['outboundDriver'], $fixture['route'], null, 'UAT outbound dispatch.', $fixture['outboundVariant']);
-        $trip->update(['status' => 'ongoing', 'started_at' => now()]);
+        $trip = Trip::create([
+            'bus_id' => $fixture['outboundBus']->id,
+            'driver_id' => $fixture['outboundDriver']->id,
+            'route_id' => $fixture['route']->id,
+            'route_variant_id' => $fixture['outboundVariant']->id,
+            'status' => 'ongoing',
+            'started_at' => now(),
+        ]);
 
         $response = $this->actingAs($admin)->postJson('/admin/api/alerts', [
             'title' => UATSuspendRouteFixtureSeeder::ALERT_TITLE,
@@ -178,7 +174,7 @@ class UATSuspendRouteFixtureTest extends TestCase
 
         $dispatches = collect($response->json('dispatches'))->where('routeName', UATSuspendRouteFixtureSeeder::ROUTE_NAME)->values();
         $this->assertCount(2, $dispatches);
-        $this->assertSame(['route_suspended', 'route_suspended'], $dispatches->pluck('dispatchState')->all());
+        $this->assertSame(['blocked', 'blocked'], $dispatches->pluck('dispatchState')->all());
         $this->assertSame([false, false], $dispatches->pluck('canDispatch')->all());
         $this->assertSame([1, 1], $dispatches->pluck('remainingActiveTrips')->all());
     }
@@ -255,7 +251,7 @@ class UATSuspendRouteFixtureTest extends TestCase
 
     public function test_cleanup_removes_only_fixture_records_and_preserves_official_routes(): void
     {
-        foreach (['Route 1', 'Route 2', 'Route 3'] as $name) {
+        foreach (['Route 2', 'Route 3', 'Route 4'] as $name) {
             Route::create(['name' => $name, 'status' => 'Active']);
         }
         $unrelatedBus = Bus::create(['plate_number' => 'PAS-UNRELATED', 'status' => Bus::STATUS_INACTIVE]);
@@ -267,7 +263,7 @@ class UATSuspendRouteFixtureTest extends TestCase
         $this->assertSame(0, Route::withTrashed()->where('name', UATSuspendRouteFixtureSeeder::ROUTE_NAME)->count());
         $this->assertSame(0, Bus::whereIn('plate_number', [UATSuspendRouteFixtureSeeder::OUTBOUND_BUS_PLATE, UATSuspendRouteFixtureSeeder::INBOUND_BUS_PLATE])->count());
         $this->assertSame(0, Driver::whereIn('emp_id', [UATSuspendRouteFixtureSeeder::OUTBOUND_DRIVER_EMP_ID, UATSuspendRouteFixtureSeeder::INBOUND_DRIVER_EMP_ID])->count());
-        $this->assertSame(['Route 1', 'Route 2', 'Route 3'], Route::whereIn('name', ['Route 1', 'Route 2', 'Route 3'])->orderBy('name')->pluck('name')->all());
+        $this->assertSame(['Route 2', 'Route 3', 'Route 4'], Route::whereIn('name', ['Route 2', 'Route 3', 'Route 4'])->orderBy('name')->pluck('name')->all());
         $this->assertDatabaseHas('buses', ['id' => $unrelatedBus->id, 'plate_number' => 'PAS-UNRELATED']);
         $this->assertDatabaseHas('drivers', ['id' => $unrelatedDriver->id]);
     }

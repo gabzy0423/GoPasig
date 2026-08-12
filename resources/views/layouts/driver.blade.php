@@ -125,6 +125,12 @@
 
         <!-- MAIN SCROLLABLE VIEW -->
         <main class="driver-scroll flex-grow overflow-y-auto no-scrollbar" style="-webkit-overflow-scrolling: touch;">
+            @if($errors->has('logout'))
+                <div class="mx-4 mt-4 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-rose-700" role="alert">
+                    <i class="ti ti-alert-triangle mt-0.5 shrink-0 text-[17px]"></i>
+                    <span class="text-[11px] font-semibold leading-4">{{ $errors->first('logout') }}</span>
+                </div>
+            @endif
             @yield('content')
         </main>
 

@@ -7,6 +7,7 @@ use App\Models\Driver;
 use App\Models\Route;
 use App\Models\RouteVariant;
 use App\Models\Schedule;
+use App\Models\SystemSetting;
 use App\Models\Trip;
 use App\Validators\BusDispatchValidator;
 use App\Validators\DriverDispatchValidator;
@@ -47,6 +48,7 @@ class SimulationDispatchService
 
             // 3. Resolve the service day before checking same-day runtime state.
             $serviceDay = self::resolveServiceDay($schedule);
+            self::ensureNoSameDayScheduleConflict($bus, $driver, $serviceDay, $schedule);
 
             // 4. Idempotency checks: verify no existing ongoing or dispatched trips
             $busTripExists = Trip::where('bus_id', $bus->id)->whereIn('status', ['ongoing', 'dispatched'])->exists();
@@ -65,6 +67,9 @@ class SimulationDispatchService
 
             // 5. Start Trip via TripService (lifecycle service) - starts in 'dispatched'
             $trip = TripService::startTrip($bus, $driver, $route, $bus->passengers ?: 0, $selectedVariant, $schedule);
+
+            // Refresh actual demand history without changing the dispatch lifecycle.
+            app(DemandHistoryBridgeService::class)->recordDispatch($trip);
 
             // 6. Transition Bus state to 'ready' (dispatched state) via BusStateService
             BusStateService::transition($bus, 'ready', $notes ?: 'Simulation Dispatch', $driver, $route);
@@ -155,5 +160,51 @@ class SimulationDispatchService
                 });
             })
             ->exists();
+    }
+
+    private static function ensureNoSameDayScheduleConflict(Bus $bus, Driver $driver, string $serviceDay, ?Schedule $schedule): void
+    {
+        if ($schedule) {
+            return;
+        }
+
+        $dispatchStart = now();
+        $durationMinutes = (int) ($bus->route?->travel_time_minutes ?? SystemSetting::get('schedule_default_travel_time_minutes', 30));
+        $dispatchStartMinute = ((int) $dispatchStart->format('H')) * 60 + (int) $dispatchStart->format('i');
+        $dispatchEndMinute = $dispatchStartMinute + max(1, $durationMinutes);
+
+        $conflictingSchedule = Schedule::whereDate('service_date', $serviceDay)
+            ->whereNotIn('status', ['cancelled', 'completed'])
+            ->where(function ($query) use ($bus, $driver) {
+                $query->where('bus_id', $bus->id)
+                    ->orWhere('driver_id', $driver->id);
+            })
+            ->orderBy('departure_time')
+            ->get()
+            ->first(function (Schedule $candidate) use ($dispatchStartMinute, $dispatchEndMinute) {
+                $candidateStart = self::minutesFromTime((string) $candidate->departure_time);
+                $candidateEnd = self::minutesFromTime((string) $candidate->arrival_time);
+
+                if ($candidateEnd <= $candidateStart) {
+                    $candidateEnd += 1440;
+                }
+
+                return $candidateStart < $dispatchEndMinute && $candidateEnd > $dispatchStartMinute;
+            });
+
+        if ($conflictingSchedule) {
+            throw new ScheduleConflictException('Bus or driver already scheduled for this service day.');
+        }
+    }
+
+    private static function minutesFromTime(string $time): int
+    {
+        if (str_contains($time, ' ')) {
+            $time = explode(' ', $time)[1];
+        }
+
+        $parts = explode(':', $time);
+
+        return ((int) ($parts[0] ?? 0)) * 60 + (int) ($parts[1] ?? 0);
     }
 }

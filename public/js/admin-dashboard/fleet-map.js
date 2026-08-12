@@ -2,16 +2,60 @@
 
     const LIVE_FLEET_DEFAULT_CENTER = [14.5764, 121.0851];
     const LIVE_FLEET_DEFAULT_ZOOM = 13.2;
-    const LIVE_FLEET_INITIAL_ROUTE_IDS = new Set(['1', '2', '3']);
+    const LIVE_FLEET_ROUTE_CONTROL_GAP = 12;
+    let liveFleetRouteControlResizeBound = false;
 
+    function alignOfficialRoutesControl() {
+        const mapCanvas = document.getElementById('live-map-canvas');
+        const toolbar = document.getElementById('live-map-toolbar');
+        const control = mapCanvas?.querySelector('.gopasig-route-map-ux');
+        if (!control) return;
+
+        const usesFloatingToolbar = window.matchMedia('(min-width: 1024px)').matches;
+        control.style.left = usesFloatingToolbar ? '16px' : '12px';
+        control.style.top = usesFloatingToolbar && toolbar?.offsetHeight
+            ? `${toolbar.offsetTop + toolbar.offsetHeight + LIVE_FLEET_ROUTE_CONTROL_GAP}px`
+            : '12px';
+    }
+
+    function bindOfficialRoutesControlAlignment() {
+        if (liveFleetRouteControlResizeBound) return;
+        window.addEventListener('resize', alignOfficialRoutesControl);
+        liveFleetRouteControlResizeBound = true;
+    }
+
+    function escapeRouteFilterText(value) {
+        return String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+    }
+
+    function routeFilterButtonClass(active = false) {
+        return active
+            ? "rounded-full bg-[#003F87] px-3 py-1 text-xs font-bold text-white transition cursor-pointer shrink-0"
+            : "rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer shrink-0";
+    }
+
+    function renderRouteFilterChips() {
+        const strips = document.querySelectorAll('.map-chip-strip');
+        if (!strips.length || !Array.isArray(routesDataDb)) return;
+
+        const routes = routesDataDb.filter(route => route && route.id && route.name);
+        strips.forEach(strip => {
+            strip.innerHTML = '<span class="mr-1 shrink-0 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Routes:</span>' +
+                '<button onclick="toggleRouteFilter(\'all\')" data-route-filter="all" class="' + routeFilterButtonClass(activeRouteFilter === 'all') + '">All <span id="route-pill-all-count"></span></button>' +
+                routes.map(route => {
+                    const id = String(route.id);
+                    return '<button onclick="toggleRouteFilter(\'' + escapeRouteFilterText(id) + '\')" data-route-filter="' + escapeRouteFilterText(id) + '" class="' + routeFilterButtonClass(activeRouteFilter === id) + '">' + escapeRouteFilterText(route.name) + ' <span id="route-pill-' + escapeRouteFilterText(id) + '-count"></span></button>';
+                }).join('');
+        });
+    }
     function applyInitialLiveFleetViewport() {
-        if (liveMap === null) return;
+        if (liveMap === null || window.GoPasigRouteMapUX) return;
 
         const canonicalBounds = L.latLngBounds([]);
 
         Object.entries(mapPolylinesMap).forEach(([key, polyline]) => {
             const routeId = key.split(':')[0];
-            if (!LIVE_FLEET_INITIAL_ROUTE_IDS.has(routeId)) return;
+            if (Array.isArray(routesDataDb) && routesDataDb.length && !routesDataDb.some(route => String(route.id) === routeId)) return;
             if (!liveMap.hasLayer(polyline)) return;
 
             const bounds = typeof polyline.getBounds === 'function' ? polyline.getBounds() : null;
@@ -36,6 +80,7 @@
     function initLiveFleetMap() {
         if (liveMap !== null) {
             liveMap.invalidateSize();
+            alignOfficialRoutesControl();
             return;
         }
 
@@ -61,6 +106,7 @@
         L.control.zoom({ position: 'bottomright' }).addTo(liveMap);
 
         // Render everything
+        renderRouteFilterChips();
         renderMapPolylines();
         renderMapStops();
         renderMapMarkers();
@@ -76,6 +122,12 @@
 
     // Render Routes Polylines
     function renderMapPolylines() {
+        if (window.GoPasigRouteMapUX) {
+            window.GoPasigRouteMapUX.mount({ map: liveMap, routes: routesDataDb, compact: false, fitOnFirstRender: true });
+            alignOfficialRoutesControl();
+            bindOfficialRoutesControlAlignment();
+            return;
+        }
         // Clear existing polylines if any
         for (let key in mapPolylinesMap) {
             liveMap.removeLayer(mapPolylinesMap[key]);
@@ -109,6 +161,7 @@
 
     // Render Designated Stop Circles (White circles, 8px, stroke 1.5px)
     function renderMapStops() {
+        if (window.GoPasigRouteMapUX) return;
         // Clear existing stops
         mapStopCircles.forEach(circle => liveMap.removeLayer(circle));
         mapStopCircles = [];
@@ -287,7 +340,7 @@
             }).length;
         };
 
-        const routes = ['all', '1', '2', '3', '4'];
+        const routes = ['all', ...routesDataDb.map(route => String(route.id))];
         routes.forEach(routeId => {
             const count = getActiveBusesCount(routeId);
             const badgeEl = document.getElementById(`route-pill-${routeId}-count`);
@@ -625,7 +678,12 @@
             activeBtn.className = "rounded-full bg-[#003F87] px-3 py-1 text-xs font-bold text-white transition cursor-pointer shrink-0";
         }
 
+        if (window.GoPasigRouteMapUX) {
+            window.GoPasigRouteMapUX.setRouteFilter(liveMap, routeLetter);
+        }
+
         // Show/Hide Leaflet Polylines dynamically
+
         for (let route in mapPolylinesMap) {
             if (routeLetter === 'all' || route.split(':')[0] === routeLetter) {
                 mapPolylinesMap[route].addTo(liveMap);
@@ -771,8 +829,3 @@
     }, 1000);
 
     // ==================== END LIVE FLEET MAP MODULE ======================
-
-
-
-
-

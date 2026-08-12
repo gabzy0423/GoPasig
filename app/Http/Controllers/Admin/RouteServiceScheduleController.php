@@ -21,9 +21,12 @@ class RouteServiceScheduleController extends Controller
 
         $routes = Route::with([
                 'variants' => fn ($query) => $query->orderBy('direction')->orderBy('id'),
-                'variants.serviceSchedules' => fn ($query) => $query->orderByDesc('is_active')->orderByDesc('effective_from')->orderBy('id'),
+                'variants.serviceSchedules' => fn ($query) => $query
+                    ->orderByDesc('is_active')
+                    ->orderBy('first_trip_time')
+                    ->orderBy('id'),
             ])
-            ->orderBy('id')
+            ->canonicalProduction()
             ->get()
             ->map(fn (Route $route) => $this->formatRoute($route));
 
@@ -55,17 +58,56 @@ class RouteServiceScheduleController extends Controller
         return [
             'id' => $route->id,
             'name' => $route->name,
-            'variants' => $route->variants->map(fn (RouteVariant $variant) => [
-                'id' => $variant->id,
-                'direction' => $variant->direction,
-                'directionLabel' => ucfirst((string) $variant->direction),
-                'originName' => $variant->origin_name,
-                'destinationName' => $variant->destination_name,
-                'serviceSchedule' => $variant->serviceSchedules->first()
-                    ? $this->formatServiceSchedule($variant->serviceSchedules->first())
-                    : null,
-            ])->values(),
+            'variants' => $route->variants->map(fn (RouteVariant $variant) => $this->formatVariant($variant))->values(),
         ];
+    }
+
+    private function formatVariant(RouteVariant $variant): array
+    {
+        $schedules = $variant->serviceSchedules
+            ->sortBy([
+                ['is_active', 'desc'],
+                ['first_trip_time', 'asc'],
+                ['id', 'asc'],
+            ])
+            ->values();
+        $activeSchedules = $schedules->where('is_active', true)->values();
+        $summarySchedules = $activeSchedules->isNotEmpty() ? $activeSchedules : $schedules;
+
+        return [
+            'id' => $variant->id,
+            'direction' => $variant->direction,
+            'directionLabel' => ucfirst((string) $variant->direction),
+            'originName' => $variant->origin_name,
+            'destinationName' => $variant->destination_name,
+            'serviceSchedule' => $summarySchedules->isNotEmpty()
+                ? $this->formatServiceScheduleSummary($summarySchedules)
+                : null,
+            'serviceSchedules' => $schedules
+                ->map(fn (RouteServiceSchedule $schedule) => $this->formatServiceSchedule($schedule))
+                ->values(),
+        ];
+    }
+
+    private function formatServiceScheduleSummary($schedules): array
+    {
+        $firstSchedule = $schedules->sortBy('first_trip_time')->first();
+        $lastSchedule = $schedules->sortByDesc('last_trip_time')->first();
+        $baseSchedule = $firstSchedule;
+
+        $summary = $this->formatServiceSchedule($baseSchedule);
+        $summary['id'] = null;
+        $summary['firstTripTime'] = $this->formatTime($firstSchedule->first_trip_time);
+        $summary['lastTripTime'] = $this->formatTime($lastSchedule->last_trip_time);
+        $summary['firstTripRaw'] = $firstSchedule->first_trip_time;
+        $summary['lastTripRaw'] = $lastSchedule->last_trip_time;
+        $summary['windowCount'] = $schedules->count();
+        $summary['statusLabel'] = $schedules->contains(fn (RouteServiceSchedule $schedule) => $schedule->is_active)
+            ? 'Active'
+            : 'Inactive';
+        $summary['isActive'] = $schedules->contains(fn (RouteServiceSchedule $schedule) => $schedule->is_active);
+
+        return $summary;
     }
 
     private function formatServiceSchedule(RouteServiceSchedule $schedule): array

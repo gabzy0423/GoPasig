@@ -11,17 +11,28 @@ class RouteVariantSelectionService
 {
     public const USABLE_GEOMETRY_STATUSES = ['valid', 'authoritative', 'active'];
 
+    public function isOperationalRoute(Route $route): bool
+    {
+        return $route->isCanonicalProduction();
+    }
+
     public function resolveForSchedule(Route $route, ?int $routeVariantId): ?RouteVariant
     {
+        $this->assertOperationalRoute($route);
+
         if ($routeVariantId === null) {
-            return null;
+            throw ValidationException::withMessages([
+                'route_variant_id' => 'Select an official route direction before creating a schedule.',
+            ]);
         }
 
-        return $this->findForRoute($route, $routeVariantId, false);
+        return $this->findForRoute($route, $routeVariantId, true);
     }
 
     public function resolveForDispatch(Route $route, ?int $routeVariantId = null, ?Schedule $schedule = null): ?RouteVariant
     {
+        $this->assertOperationalRoute($route);
+
         if ($schedule && $schedule->route_id !== $route->id) {
             throw ValidationException::withMessages([
                 'schedule_id' => 'Selected schedule does not belong to the dispatch route.',
@@ -63,6 +74,7 @@ class RouteVariantSelectionService
 
     public function resolveOppositeForNextTrip(Route $route, ?RouteVariant $previousVariant): ?RouteVariant
     {
+        $this->assertOperationalRoute($route);
         $allVariants = $route->variants()->withCount('stops')->get();
 
         if ($allVariants->count() === 0) {
@@ -128,8 +140,17 @@ class RouteVariantSelectionService
 
         return $usableCandidates->first();
     }
+
     public function isUsableForLiveDispatch(RouteVariant $variant): bool
     {
+        $route = $variant->relationLoaded('route')
+            ? $variant->route
+            : $variant->route()->first();
+
+        if (! $route || ! $this->isOperationalRoute($route)) {
+            return false;
+        }
+
         $status = strtolower((string) $variant->geometry_status);
         $polyline = $variant->polyline_coordinates ?: [];
         $stops = $variant->relationLoaded('stops')
@@ -138,8 +159,10 @@ class RouteVariantSelectionService
 
         $stopsCount = $stops->count();
         $stopsHaveCoordinates = $stops->every(fn ($stop) => $stop->lat !== null && $stop->lng !== null);
+        $statusAllowed = in_array($status, self::USABLE_GEOMETRY_STATUSES, true)
+            || $status === 'schematic';
 
-        return in_array($status, self::USABLE_GEOMETRY_STATUSES, true)
+        return $statusAllowed
             && is_array($polyline)
             && count($polyline) >= 2
             && $stopsCount >= 2
@@ -172,5 +195,14 @@ class RouteVariantSelectionService
         }
 
         return $variant;
+    }
+
+    private function assertOperationalRoute(Route $route): void
+    {
+        if (! $this->isOperationalRoute($route)) {
+            throw ValidationException::withMessages([
+                'route_id' => 'Only official production routes are available for new operations.',
+            ]);
+        }
     }
 }

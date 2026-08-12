@@ -64,11 +64,17 @@ function renderTripsTableDOM(trips) {
 
     trips.forEach(trip => {
         const statusBadge = statusClasses[trip.status] || 'bg-slate-100 text-slate-600 border-slate-100';
-        const routeName = trip.route ? `${trip.route.name}` : `Route ${trip.route_id}`;
+        const routeName = trip.route
+            ? `${trip.route.name}${trip.route_variant?.direction ? ' - ' + trip.route_variant.direction.charAt(0).toUpperCase() + trip.route_variant.direction.slice(1) : ''}`
+            : `Route ${trip.route_id}`;
         
         // Eager loaded relations (Laravel Eloquent serializes camelCase relations to snake_case in array/json)
-        const origin = trip.origin_stop ? trip.origin_stop.name : `Stop ${trip.origin_stop_id}`;
-        const dest = trip.destination_stop ? trip.destination_stop.name : `Stop ${trip.destination_stop_id}`;
+        const origin = trip.origin_route_variant_stop?.name
+            || trip.origin_stop?.name
+            || 'Unknown stop';
+        const dest = trip.destination_route_variant_stop?.name
+            || trip.destination_stop?.name
+            || 'Unknown stop';
         
         // Build timestamp list
         let timesHtml = `<div class="space-y-0.5 text-[11px]">`;

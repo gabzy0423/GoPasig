@@ -4,8 +4,8 @@ namespace App\Livewire\Commuter;
 
 use Livewire\Component;
 use App\Models\Stop;
-use App\Models\Bus;
 use App\Models\Route;
+use App\Services\CommuterDashboardCacheService;
 use App\Services\CommuterEtaProvenanceService;
 
 class CommuterStops extends Component
@@ -107,9 +107,8 @@ class CommuterStops extends Component
                     })->get();
 
                 // Find next arriving bus for this route (ISSUE-052: Sort active buses by physical proximity/distance to the stop)
-                $buses = Bus::where('route_id', $selectedStop->route_id)
-                    ->where('status', 'active')
-                    ->get();
+                $activeBuses = CommuterDashboardCacheService::getActiveBuses();
+                $buses = $activeBuses->where('route_id', $selectedStop->route_id);
 
                 $nextBus = $buses->map(function ($bus) use ($selectedStop) {
                     $bus->distance_to_stop = \App\Services\GPSKalmanFilter::calculateDistance(
@@ -124,9 +123,7 @@ class CommuterStops extends Component
                 if (!$nextBus) {
                     // Fallback to active bus on any servicing route if primary is empty (ISSUE-052: Sort active fallback buses by physical proximity/distance to the stop)
                     $routeIds = $servicingRoutes->pluck('id')->toArray();
-                    $busesFallback = Bus::whereIn('route_id', $routeIds)
-                        ->where('status', 'active')
-                        ->get();
+                    $busesFallback = $activeBuses->whereIn('route_id', $routeIds);
 
                     $nextBus = $busesFallback->map(function ($bus) use ($selectedStop) {
                         $bus->distance_to_stop = \App\Services\GPSKalmanFilter::calculateDistance(

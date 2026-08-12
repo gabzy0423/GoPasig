@@ -41,15 +41,26 @@ class RouteVariant extends Model
         return $this->hasMany(Trip::class);
     }
 
+    public function commuterTrips()
+    {
+        return $this->hasMany(CommuterTrip::class);
+    }
+
     public function geometryVersions()
     {
         return $this->hasMany(RouteVariantGeometryVersion::class)->latest('id');
+    }
+
+    public function corridor()
+    {
+        return $this->hasOne(RouteVariantCorridor::class);
     }
 
     public function schedules()
     {
         return $this->hasMany(Schedule::class);
     }
+
     public function serviceSchedules()
     {
         return $this->hasMany(RouteServiceSchedule::class);
@@ -60,4 +71,3 @@ class RouteVariant extends Model
         return $this->hasMany(RouteServiceSchedule::class)->where('is_active', true);
     }
 }
-

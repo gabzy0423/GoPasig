@@ -140,7 +140,7 @@ class FleetRuntimeOccupancyResetTest extends TestCase
 
     private function dispatchableResources(array $busOverrides = []): array
     {
-        $route = Route::factory()->create(['status' => 'Active']);
+        $route = Route::factory()->official()->withUsableVariant()->create();
 
         $bus = Bus::factory()->create(array_merge([
             'status' => Bus::STATUS_INACTIVE,

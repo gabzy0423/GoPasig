@@ -21,7 +21,7 @@ class CommuterJourneyFoundationTest extends TestCase
         Cache::flush();
 
         $route = Route::create([
-            'name' => 'Route 1',
+            'name' => 'Route 2',
             'description' => 'Canonical route',
             'status' => 'Active',
             'color' => '#003F87',

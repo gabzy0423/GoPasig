@@ -7,6 +7,7 @@ use App\Models\Driver;
 use App\Models\Route;
 use App\Models\RouteVariant;
 use App\Models\Trip;
+use App\Models\TripPassengerEvent;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -195,6 +196,7 @@ class DriverTripPageTest extends TestCase
         $this->assertSame(4, $this->bus->fresh()->passengers);
         $this->assertSame(7, $this->driver->fresh()->pax_today);
         $this->assertSame(1, Trip::count());
+        $this->assertSame(0, TripPassengerEvent::count());
     }
 
     /** @test */
@@ -228,6 +230,15 @@ class DriverTripPageTest extends TestCase
         $this->assertSame(5, $this->bus->fresh()->passengers);
         $this->assertSame(8, $this->driver->fresh()->pax_today);
         $this->assertSame(5, $trip->fresh()->peak_passengers);
+        $this->assertDatabaseHas('trip_passenger_events', [
+            'trip_id' => $trip->id,
+            'driver_id' => $this->driver->id,
+            'bus_id' => $this->bus->id,
+            'route_id' => $this->route->id,
+            'event_type' => TripPassengerEvent::TYPE_BOARDED,
+            'passenger_delta' => 1,
+            'onboard_after' => 5,
+        ]);
 
         $this->actingAs($this->user)
             ->postJson('/driver/trip/pax', ['change' => -1])
@@ -237,7 +248,18 @@ class DriverTripPageTest extends TestCase
 
         $this->assertSame(4, $this->bus->fresh()->passengers);
         $this->assertSame(8, $this->driver->fresh()->pax_today);
+        $this->assertSame(5, $trip->fresh()->peak_passengers);
+        $this->assertDatabaseHas('trip_passenger_events', [
+            'trip_id' => $trip->id,
+            'driver_id' => $this->driver->id,
+            'bus_id' => $this->bus->id,
+            'route_id' => $this->route->id,
+            'event_type' => TripPassengerEvent::TYPE_ALIGHTED,
+            'passenger_delta' => 1,
+            'onboard_after' => 4,
+        ]);
         $this->assertSame(1, Trip::count());
+        $this->assertSame(2, TripPassengerEvent::where('trip_id', $trip->id)->count());
     }
 
     /** @test */
@@ -269,6 +291,7 @@ class DriverTripPageTest extends TestCase
         $this->assertSame(6, $this->bus->fresh()->passengers);
         $this->assertSame(9, $this->driver->fresh()->pax_today);
         $this->assertSame(1, Trip::count());
+        $this->assertSame(0, TripPassengerEvent::count());
     }
     /** @test */
     public function passenger_updates_are_rejected_when_no_assigned_trip_exists(): void
@@ -287,6 +310,7 @@ class DriverTripPageTest extends TestCase
         $this->assertSame(3, $this->bus->fresh()->passengers);
         $this->assertSame(2, $this->driver->fresh()->pax_today);
         $this->assertSame(0, Trip::count());
+        $this->assertSame(0, TripPassengerEvent::count());
     }
 
     /** @test */
@@ -317,5 +341,72 @@ class DriverTripPageTest extends TestCase
         $this->assertSame(5, $this->bus->fresh()->passengers);
         $this->assertSame(4, $this->driver->fresh()->pax_today);
         $this->assertSame(1, Trip::count());
+        $this->assertSame(0, TripPassengerEvent::count());
+    }
+
+    /** @test */
+    public function passenger_event_bounds_use_only_the_accepted_delta(): void
+    {
+        $this->bus->update([
+            'status' => 'operating',
+            'capacity' => 10,
+            'passengers' => 8,
+        ]);
+        $this->driver->update(['pax_today' => 4]);
+
+        $trip = Trip::create([
+            'bus_id' => $this->bus->id,
+            'driver_id' => $this->driver->id,
+            'route_id' => $this->route->id,
+            'route_variant_id' => $this->routeVariant->id,
+            'status' => 'ongoing',
+            'gps_session' => 'ACTIVE',
+            'started_at' => now(),
+            'dispatched_at' => now()->subMinutes(10),
+            'peak_passengers' => 8,
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson('/driver/trip/pax', ['change' => 5])
+            ->assertOk()
+            ->assertJsonPath('passengers', 10)
+            ->assertJsonPath('pax_today', 6);
+
+        $this->assertSame(10, $this->bus->fresh()->passengers);
+        $this->assertSame(10, $trip->fresh()->peak_passengers);
+        $this->assertDatabaseHas('trip_passenger_events', [
+            'trip_id' => $trip->id,
+            'event_type' => TripPassengerEvent::TYPE_BOARDED,
+            'passenger_delta' => 2,
+            'onboard_after' => 10,
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson('/driver/trip/pax', ['change' => 3])
+            ->assertOk()
+            ->assertJsonPath('passengers', 10);
+
+        $this->assertSame(1, TripPassengerEvent::where('trip_id', $trip->id)->count());
+
+        $this->actingAs($this->user)
+            ->postJson('/driver/trip/pax', ['change' => -25])
+            ->assertOk()
+            ->assertJsonPath('passengers', 0);
+
+        $this->assertSame(10, $trip->fresh()->peak_passengers);
+        $this->assertSame(6, $this->driver->fresh()->pax_today);
+        $this->assertDatabaseHas('trip_passenger_events', [
+            'trip_id' => $trip->id,
+            'event_type' => TripPassengerEvent::TYPE_ALIGHTED,
+            'passenger_delta' => 10,
+            'onboard_after' => 0,
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson('/driver/trip/pax', ['change' => -1])
+            ->assertOk()
+            ->assertJsonPath('passengers', 0);
+
+        $this->assertSame(2, TripPassengerEvent::where('trip_id', $trip->id)->count());
     }
 }

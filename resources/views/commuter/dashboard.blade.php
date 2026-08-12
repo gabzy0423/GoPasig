@@ -77,7 +77,7 @@
                             </div>
                         </div>
                         <div class="text-[10px] font-extrabold text-slate-400 text-right">
-                            {{ $route->completed_trips }} / {{ $route->scheduled_trips }} trips done
+                            {{ $route->completed_trips }} / {{ $route->scheduled_trips }} trips completed
                         </div>
                     </div>
 
@@ -213,7 +213,7 @@
                         @else
                             <span class="text-slate-400 flex items-center gap-1">
                                 <span class="h-1.5 w-1.5 rounded-full bg-slate-300"></span>
-                                Service ended
+                                {{ $sched->service_status }}
                             </span>
                         @endif
                     </div>

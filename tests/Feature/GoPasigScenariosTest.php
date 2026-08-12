@@ -24,7 +24,7 @@ class GoPasigScenariosTest extends TestCase
         $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
         $route = Route::create([
-            'name' => 'Route A',
+            'name' => 'Route 2',
             'description' => 'Pasig City Hall to Megamall',
             'polyline_coordinates' => [[14.5593, 121.0805]],
             'status' => 'Active',
@@ -84,7 +84,7 @@ class GoPasigScenariosTest extends TestCase
     public function test_breakdown_and_maintenance_alerts_commuter(): void
     {
         $route = Route::create([
-            'name' => 'Route A',
+            'name' => 'Route 2',
             'description' => 'Pasig Route',
             'polyline_coordinates' => [[14.5593, 121.0805]],
             'status' => 'Active',
@@ -142,12 +142,13 @@ class GoPasigScenariosTest extends TestCase
     {
         $dispatcher = User::factory()->create(['role' => 'fleet_manager']);
 
-        $route = Route::create([
-            'name' => 'Route A',
+        $route = Route::factory()->official()->withUsableVariant()->create([
             'description' => 'Test Route',
             'polyline_coordinates' => [[14.5, 121.0]],
-            'status' => 'Active',
         ]);
+        $variant = $route->variants()->with('stops')->sole();
+        $originVariantStop = $variant->stops->first();
+        $destinationVariantStop = $variant->stops->last();
 
         $stop = Stop::create([
             'name' => 'Start Stop',
@@ -162,8 +163,8 @@ class GoPasigScenariosTest extends TestCase
             'plate_number' => 'PAS-FAR',
             'status' => 'inactive',
             'capacity' => 45,
-            'lat' => 14.6000, // ~11 km away
-            'lng' => 121.1000,
+            'lat' => 14.7000,
+            'lng' => 121.2000,
             'speed' => 0,
             'passengers' => 0,
         ]);
@@ -173,8 +174,8 @@ class GoPasigScenariosTest extends TestCase
             'plate_number' => 'PAS-NEAR',
             'status' => 'inactive',
             'capacity' => 45,
-            'lat' => 14.5010, // ~150 meters away
-            'lng' => 121.0010,
+            'lat' => 14.5610,
+            'lng' => 121.0800,
             'speed' => 0,
             'passengers' => 0,
         ]);
@@ -190,9 +191,13 @@ class GoPasigScenariosTest extends TestCase
             CommuterTrip::create([
                 'session_token' => $token,
                 'route_id' => $route->id,
+                'route_variant_id' => $variant->id,
                 'origin_stop_id' => $stop->id,
                 'destination_stop_id' => $stop->id,
+                'origin_route_variant_stop_id' => $originVariantStop->id,
+                'destination_route_variant_stop_id' => $destinationVariantStop->id,
                 'status' => 'WAITING',
+                'is_simulated' => false,
             ]);
         }
 

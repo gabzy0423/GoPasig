@@ -148,10 +148,38 @@ class CommuterJourneyRecoveryTest extends TestCase
         $this->assertDatabaseMissing('commuter_trips', ['status' => 'PAUSED']);
     }
 
+    public function test_arrived_journey_remains_history_but_is_not_recovered_as_active(): void
+    {
+        [$route, $origin, $destination] = $this->seedCanonicalRouteWithStops();
+        $token = $this->createCommuterSession('cb3-arrived-history');
+        $trip = CommuterTrip::create([
+            'session_token' => $token,
+            'origin_stop_id' => $origin->id,
+            'destination_stop_id' => $destination->id,
+            'route_id' => $route->id,
+            'status' => 'ARRIVED',
+            'boarded_at' => now()->subMinutes(10),
+            'arrived_at' => now()->subMinute(),
+        ]);
+
+        Livewire::withCookie('commuter_session_token', $token)
+            ->test(GeofenceDetector::class)
+            ->assertSet('journeyRecovered', true)
+            ->assertSet('activeTrip', null);
+
+        $runtime = app(CommuterJourneyCoordinator::class)->recoverWaitingRuntime($token);
+
+        $this->assertNull($runtime->journey);
+        $this->assertDatabaseHas('commuter_trips', [
+            'id' => $trip->id,
+            'status' => 'ARRIVED',
+        ]);
+    }
+
     private function seedCanonicalRouteWithStops(): array
     {
         $route = Route::create([
-            'name' => 'Route 1',
+            'name' => 'Route 2',
             'description' => 'Canonical commuter route',
             'status' => 'Active',
             'color' => '#003F87',

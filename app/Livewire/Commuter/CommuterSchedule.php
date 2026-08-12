@@ -5,6 +5,7 @@ namespace App\Livewire\Commuter;
 use App\Models\Route;
 use App\Models\RouteServiceSchedule;
 use App\Models\RouteVariant;
+use App\Services\RouteServiceScheduleEvaluator;
 use Carbon\Carbon;
 use Livewire\Component;
 
@@ -42,7 +43,10 @@ class CommuterSchedule extends Component
             ->publicCommuterVisible()
             ->with([
                 'variants' => fn ($query) => $query->orderByRaw("case direction when 'outbound' then 0 when 'inbound' then 1 else 2 end")->orderBy('id'),
-                'variants.serviceSchedules' => fn ($query) => $query->orderByDesc('is_active')->orderByDesc('effective_from')->orderBy('id'),
+                'variants.serviceSchedules' => fn ($query) => $query
+                    ->orderByDesc('is_active')
+                    ->orderBy('first_trip_time')
+                    ->orderBy('id'),
             ])
             ->whereIn('id', $routeIds)
             ->orderBy('id');
@@ -78,7 +82,22 @@ class CommuterSchedule extends Component
 
     private function formatDirection(Route $route, RouteVariant $variant): array
     {
-        $serviceSchedule = $variant->serviceSchedules->first();
+        $evaluator = app(RouteServiceScheduleEvaluator::class);
+        $now = Carbon::now('Asia/Manila');
+        $currentWindow = $evaluator->currentWindowForVariant($variant, $now);
+        $nextWindow = $evaluator->nextWindowForVariant($variant, $now);
+        $serviceSchedules = $variant->serviceSchedules
+            ->sortBy([
+                ['is_active', 'desc'],
+                ['first_trip_time', 'asc'],
+                ['id', 'asc'],
+            ])
+            ->values();
+        $activeSchedules = $serviceSchedules->where('is_active', true)->values();
+        $summarySchedules = $activeSchedules->isNotEmpty() ? $activeSchedules : $serviceSchedules;
+        $firstSchedule = $summarySchedules->sortBy('first_trip_time')->first();
+        $lastSchedule = $summarySchedules->sortByDesc('last_trip_time')->first();
+        $operatingStatus = $this->formatOperatingStatus($currentWindow, $nextWindow, $activeSchedules, $now);
 
         return [
             'route_id' => $route->id,
@@ -89,14 +108,77 @@ class CommuterSchedule extends Component
             'direction_label' => str((string) $variant->direction)->title()->toString(),
             'origin' => $variant->origin_name,
             'destination' => $variant->destination_name,
-            'status_label' => $serviceSchedule ? ($serviceSchedule->is_active ? 'Active' : 'Inactive') : 'Missing Configuration',
-            'has_configuration' => (bool) $serviceSchedule,
-            'first_trip_time' => $serviceSchedule ? $this->formatTime($serviceSchedule->first_trip_time) : null,
-            'last_trip_time' => $serviceSchedule ? $this->formatTime($serviceSchedule->last_trip_time) : null,
-            'service_days_label' => $serviceSchedule ? $this->formatServiceDays($serviceSchedule->service_days ?: []) : null,
-            'service_configuration_label' => $serviceSchedule ? $this->humanize((string) $serviceSchedule->service_configuration) : null,
-            'effective_range_label' => $serviceSchedule ? $this->formatEffectiveRange($serviceSchedule) : null,
-            'source_label' => $serviceSchedule ? $this->humanize((string) $serviceSchedule->source) : null,
+            'status_label' => $summarySchedules->isNotEmpty()
+                ? ($summarySchedules->contains(fn (RouteServiceSchedule $schedule) => $schedule->is_active) ? 'Active' : 'Inactive')
+                : 'Missing Configuration',
+            'is_operating_now' => $operatingStatus['is_operating_now'],
+            'operating_status_label' => $operatingStatus['operating_status_label'],
+            'current_window' => $this->formatRuntimeWindow($currentWindow),
+            'next_window' => $this->formatRuntimeWindow($nextWindow),
+            'has_configuration' => $summarySchedules->isNotEmpty(),
+            'first_trip_time' => $firstSchedule ? $this->formatTime($firstSchedule->first_trip_time) : null,
+            'last_trip_time' => $lastSchedule ? $this->formatTime($lastSchedule->last_trip_time) : null,
+            'service_days_label' => $firstSchedule ? $this->formatServiceDays($firstSchedule->service_days ?: []) : null,
+            'service_configuration_label' => $firstSchedule ? $this->humanize((string) $firstSchedule->service_configuration) : null,
+            'effective_range_label' => $firstSchedule ? $this->formatEffectiveRange($firstSchedule) : null,
+            'source_label' => $firstSchedule ? $this->humanize((string) $firstSchedule->source) : null,
+            'service_windows' => $serviceSchedules
+                ->map(fn (RouteServiceSchedule $schedule) => [
+                    'id' => $schedule->id,
+                    'first_trip_time' => $this->formatTime($schedule->first_trip_time),
+                    'last_trip_time' => $this->formatTime($schedule->last_trip_time),
+                    'status_label' => $schedule->is_active ? 'Active' : 'Inactive',
+                    'service_days_label' => $this->formatServiceDays($schedule->service_days ?: []),
+                    'service_configuration_label' => $this->humanize((string) $schedule->service_configuration),
+                    'effective_range_label' => $this->formatEffectiveRange($schedule),
+                    'source_label' => $this->humanize((string) $schedule->source),
+                ])
+                ->values()
+                ->toArray(),
+        ];
+    }
+
+    private function formatOperatingStatus(
+        ?RouteServiceSchedule $currentWindow,
+        ?RouteServiceSchedule $nextWindow,
+        $activeSchedules,
+        Carbon $now
+    ): array {
+        if ($currentWindow) {
+            return [
+                'is_operating_now' => true,
+                'operating_status_label' => 'In service',
+            ];
+        }
+
+        if ($nextWindow) {
+            $nextStart = $now->copy()->setTimeFromTimeString($this->normalizeTime($nextWindow->first_trip_time));
+            $minutes = max(1, (int) ceil($now->diffInMinutes($nextStart, false)));
+
+            return [
+                'is_operating_now' => false,
+                'operating_status_label' => "Starts in {$minutes} min",
+            ];
+        }
+
+        return [
+            'is_operating_now' => false,
+            'operating_status_label' => $activeSchedules->isNotEmpty() ? 'Service ended' : 'Missing configuration',
+        ];
+    }
+
+    private function formatRuntimeWindow(?RouteServiceSchedule $schedule): ?array
+    {
+        if (! $schedule) {
+            return null;
+        }
+
+        return [
+            'id' => $schedule->id,
+            'first_trip_time' => $this->formatTime($schedule->first_trip_time),
+            'last_trip_time' => $this->formatTime($schedule->last_trip_time),
+            'first_trip_raw' => $this->normalizeTime($schedule->first_trip_time),
+            'last_trip_raw' => $this->normalizeTime($schedule->last_trip_time),
         ];
     }
 
@@ -117,6 +199,15 @@ class CommuterSchedule extends Component
 
         return Carbon::createFromFormat('H:i:s', strlen($time) === 5 ? $time . ':00' : $time)
             ->format('g:i A');
+    }
+
+    private function normalizeTime(?string $time): string
+    {
+        if (! $time) {
+            return '00:00:00';
+        }
+
+        return strlen($time) === 5 ? $time . ':00' : substr($time, 0, 8);
     }
 
     private function formatServiceDays(array $days): string

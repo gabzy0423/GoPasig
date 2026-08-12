@@ -536,7 +536,7 @@ class ServiceAlertController extends Controller
         $invalidTargets = $requested->reject(fn ($routeName) => $adminRoutes->has($routeName))->values();
         if ($invalidTargets->isNotEmpty()) {
             throw ValidationException::withMessages([
-                'affects' => 'Service alert targeting is limited to official Route 1, Route 2, Route 3, and the active UAT suspend-route fixture when present.',
+                'affects' => 'Service alert targeting is limited to official production routes and the active UAT suspend-route fixture when present.',
             ]);
         }
 

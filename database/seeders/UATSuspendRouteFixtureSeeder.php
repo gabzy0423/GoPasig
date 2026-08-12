@@ -267,6 +267,32 @@ class UATSuspendRouteFixtureSeeder extends Seeder
             $userIds = $users->pluck('id');
             $variantIds = RouteVariant::whereIn('route_id', $routeIds)->pluck('id');
 
+            $fixtureBusPlates = [
+                self::OUTBOUND_BUS_PLATE,
+                self::INBOUND_BUS_PLATE,
+                'PAS-UAT1',
+                'PAS-UAT2',
+            ];
+            $fixtureRouteAssignments = $routeIds
+                ->map(fn ($routeId) => (string) $routeId)
+                ->merge($routeNames)
+                ->unique()
+                ->values();
+
+            Driver::query()
+                ->where(function ($query) use ($fixtureBusPlates, $fixtureRouteAssignments) {
+                    $query->whereIn('assigned_bus', $fixtureBusPlates)
+                        ->orWhereIn('assigned_route', $fixtureRouteAssignments);
+                })
+                ->get()
+                ->each(function (Driver $driver) {
+                    $driver->update([
+                        'assigned_bus' => null,
+                        'assigned_route' => null,
+                        'operational_status' => $driver->status === 'active' ? 'available' : 'unavailable',
+                    ]);
+                });
+
             if ($tripIds->isNotEmpty()) {
                 foreach (['trip_progresses', 'trip_progress', 'stop_arrivals', 'route_deviations', 'vehicle_positions'] as $table) {
                     if (Schema::hasTable($table)) {

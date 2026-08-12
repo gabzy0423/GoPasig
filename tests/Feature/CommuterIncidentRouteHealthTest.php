@@ -33,9 +33,9 @@ class CommuterIncidentRouteHealthTest extends TestCase
 
         Cache::flush();
 
-        $this->route1 = $this->makeRoute('Route 1');
-        $this->route2 = $this->makeRoute('Route 2');
-        $this->route3 = $this->makeRoute('Route 3');
+        $this->route1 = $this->makeRoute('Route 2');
+        $this->route2 = $this->makeRoute('Route 3');
+        $this->route3 = $this->makeRoute('Route 4');
         $this->legacyRoute = $this->makeRoute('Route A');
         $this->uatRoute = $this->makeRoute('PHASE3C-UAT Point-to-Point A-B');
         $this->driver = Driver::factory()->create();
@@ -106,12 +106,12 @@ class CommuterIncidentRouteHealthTest extends TestCase
 
         ServiceAlert::create([
             'route_id' => $this->route1->id,
-            'title' => 'Route 1 delay alert',
+            'title' => 'Route 2 delay alert',
             'message' => 'Manual public delay alert remains active.',
             'severity' => 'warning',
             'status' => 'active',
             'type' => 'delay',
-            'affected_routes' => 'Route 1',
+            'affected_routes' => 'Route 2',
         ]);
 
         $delay->update(['status' => 'resolved']);
@@ -128,12 +128,12 @@ class CommuterIncidentRouteHealthTest extends TestCase
     {
         ServiceAlert::create([
             'route_id' => $this->route1->id,
-            'title' => 'Route 1 delay alert',
+            'title' => 'Route 2 delay alert',
             'message' => 'Manual public delay alert.',
             'severity' => 'warning',
             'status' => 'active',
             'type' => 'delay',
-            'affected_routes' => 'Route 1',
+            'affected_routes' => 'Route 2',
         ]);
 
         $this->assertSame('Minor Delay', $this->health());
@@ -155,8 +155,8 @@ class CommuterIncidentRouteHealthTest extends TestCase
         $data = app(CommuterDashboardCacheService::class)->dashboardData();
         $routes = $data['activeRoutes']->keyBy('route_name');
 
-        $this->assertSame(['Route 1', 'Route 2', 'Route 3'], $data['activeRoutes']->pluck('route_name')->all());
-        $this->assertSame('Disrupted', $routes['Route 1']->health_status);
+        $this->assertSame(['Route 2', 'Route 3', 'Route 4'], $data['activeRoutes']->pluck('route_name')->all());
+        $this->assertSame('Disrupted', $routes['Route 2']->health_status);
         $this->assertFalse($data['nearestBuses']->pluck('plate')->contains($legacyBus->plate_number));
         $this->assertFalse($data['nearestBuses']->pluck('plate')->contains($uatBus->plate_number));
     }

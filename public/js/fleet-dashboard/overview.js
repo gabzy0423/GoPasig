@@ -338,22 +338,9 @@ function initOverviewPreviewMap(routes, buses) {
         }).addTo(previewMapInstance);
     }
 
-    // Draw route polylines
-    const palette = ['#378ADD', '#639922', '#BA7517', '#E24B4A', '#0F6E56', '#DC2626', '#0891B2', '#D97706'];
-    routes.forEach(route => {
-        const geometries = route.map_geometry_source === 'route_variant'
-            ? (route.map_variant_geometries || []).filter(item => item.polyline_coordinates?.length > 0)
-            : [{ polyline_coordinates: route.polyline_coordinates }];
-        geometries.forEach(geometry => {
-            if (geometry.polyline_coordinates) {
-                L.polyline(geometry.polyline_coordinates, {
-                    color: palette[(route.id - 1) % palette.length],
-                    weight: 3,
-                    opacity: 0.85
-                }).addTo(previewMapInstance);
-            }
-        });
-    });
+    if (window.GoPasigRouteMapUX) {
+        window.GoPasigRouteMapUX.mount({ map: previewMapInstance, routes: routes, compact: true, fitOnFirstRender: true });
+    }
 
     updatePreviewMapMarkers(buses);
 }

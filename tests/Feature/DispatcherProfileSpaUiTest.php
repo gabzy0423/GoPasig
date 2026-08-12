@@ -40,7 +40,7 @@ class DispatcherProfileSpaUiTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertSee('id="topbar-identity-trigger"', false);
-        $response->assertSee('onclick="switchScreen(\'profile\')"', false);
+        $response->assertSee("window.activateFleetModule('profile')", false);
         $response->assertSee('Fleet Operator', false);
     }
 
@@ -50,16 +50,14 @@ class DispatcherProfileSpaUiTest extends TestCase
         $navJs = file_get_contents(public_path('js/fleet-dashboard/navigation.js'));
 
         $this->assertStringContainsString("'profile'", $navJs);
-        $this->assertStringContainsString("'profile':               'Account Profile'", $navJs);
-        $this->assertStringContainsString("if (screenName === 'profile')", $navJs);
-        $this->assertStringContainsString("loadDispatcherProfileData();", $navJs);
+        $this->assertStringContainsString("profile: 'Account Profile'", $navJs);
+        $this->assertStringContainsString("profile: () => window.initStaffProfileModule?.() || window.loadDispatcherProfileData?.()", $navJs);
 
         // Verify existing hooks remain intact
-        $this->assertStringContainsString("if (screenName === 'schedule')", $navJs);
-        $this->assertStringContainsString("if (screenName === 'drivers')", $navJs);
-        $this->assertStringContainsString("if (screenName === 'monitor'", $navJs);
-        $this->assertStringContainsString("if (screenName === 'commuter-trips')", $navJs);
-        $this->assertStringContainsString("if (screenName === 'commuter-sessions')", $navJs);
+        $this->assertStringContainsString("schedule: () => window.initFleetScheduleModule?.()", $navJs);
+        $this->assertStringContainsString("drivers: () => window.initFleetPerformanceModule?.('drivers')", $navJs);
+        $this->assertStringContainsString("'commuter-trips': () => window.initFleetCommuterTripsModule?.()", $navJs);
+        $this->assertStringContainsString("'commuter-sessions': () => window.initFleetCommuterSessionsModule?.()", $navJs);
     }
 
     /** @test */

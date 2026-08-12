@@ -83,7 +83,9 @@ class CommuterEtaProvenanceService
     private function hasUsableAuthoritativeGeometry(RouteVariant $variant): bool
     {
         $polyline = $variant->polyline_coordinates ?: [];
-        if (($variant->geometry_status ?? null) !== 'valid' || count($polyline) < 2) {
+        $status = strtolower((string) ($variant->geometry_status ?? ''));
+        $allowedStatuses = array_merge(RouteVariantSelectionService::USABLE_GEOMETRY_STATUSES, ['schematic']);
+        if (!in_array($status, $allowedStatuses, true) || count($polyline) < 2) {
             return false;
         }
 
