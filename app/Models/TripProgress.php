@@ -23,7 +23,6 @@ class TripProgress extends Model
         'completed_stops_count',
         'remaining_stops_count',
         'trip_percentage',
-        'route_adherence',
         'current_delay_minutes',
         'upcoming_etas',
     ];

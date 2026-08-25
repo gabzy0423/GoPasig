@@ -6,7 +6,6 @@ use App\Models\Geofence;
 use App\Models\GeofenceTransition;
 use App\Models\GPSLog;
 use App\Models\Route;
-use App\Models\RouteDeviation;
 use App\Models\StopArrival;
 use App\Models\TripProgress;
 use App\Models\VehiclePosition;
@@ -63,7 +62,7 @@ class ControlledLocationIntelligenceHarnessTest extends TestCase
         $this->assertNotNull(VehiclePosition::where('bus_id', $busId)->first());
         $this->assertNotNull(TripProgress::where('trip_id', $tripId)->first());
         $this->assertGreaterThanOrEqual(1, StopArrival::where('trip_id', $tripId)->count());
-        $this->assertGreaterThanOrEqual(1, RouteDeviation::where('trip_id', $tripId)->count());
+        $this->assertDatabaseMissing('route_deviations', ['trip_id' => $tripId]);
     }
 
     public function test_cached_heartbeat_inside_stop_does_not_create_duplicate_transition(): void
@@ -97,8 +96,10 @@ class ControlledLocationIntelligenceHarnessTest extends TestCase
         $this->assertTrue($final['admin_api']['has_live_telemetry']);
         $this->assertNull($final['fleet_api']['next_stop']);
         $this->assertNull($final['admin_api']['next_stop']);
-        $this->assertSame($final['fleet_api']['corridor_distance'], $final['admin_api']['corridor_distance']);
-        $this->assertSame($final['fleet_api']['route_adherence'], $final['admin_api']['route_adherence']);
+        $this->assertArrayNotHasKey('corridor_distance', $final['fleet_api']);
+        $this->assertArrayNotHasKey('route_adherence', $final['fleet_api']);
+        $this->assertArrayNotHasKey('corridor_distance', $final['admin_api']);
+        $this->assertArrayNotHasKey('route_adherence', $final['admin_api']);
         $this->assertArrayHasKey('fleet_admin_mismatches', $final);
     }
 }

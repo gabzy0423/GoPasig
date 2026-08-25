@@ -9,7 +9,6 @@
         'utilization' => 'Fleet Utilization',
         'drivers' => 'Driver Performance',
         'routes' => 'Route Performance',
-        'schedule' => 'Schedule Compliance',
         'incidents' => 'Incident Reports',
         'maintenance' => 'Maintenance',
         'analytics' => 'Analytics',
@@ -38,7 +37,7 @@
 
                     @foreach($fleetBreadcrumbs as $fleetTab => $fleetLabel)
                         @continue($fleetTab === 'overview')
-                        <section id="screen-{{ $fleetTab }}" class="hidden animate-fade-in" style="display: none;" data-fleet-module-placeholder="{{ $fleetTab }}" data-loaded="false">
+                        <section id="screen-{{ $fleetTab }}" class="hidden animate-fade-in" style="display: none;" data-fleet-module-placeholder="{{ $fleetTab }}" data-loaded="false" data-load-state="idle" aria-live="polite">
                             <div class="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/70 text-center">
                                 <div class="space-y-3">
                                     <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#003F87] shadow-sm">
@@ -46,7 +45,7 @@
                                     </div>
                                     <div>
                                         <p class="text-sm font-extrabold text-slate-800">{{ $fleetLabel }}</p>
-                                        <p class="text-xs font-semibold text-slate-500">Module loads when opened.</p>
+                                        <p class="text-xs font-semibold text-slate-500">Ready to load.</p>
                                     </div>
                                 </div>
                             </div>
@@ -69,7 +68,6 @@
                 analytics: @json(asset('js/fleet-dashboard/analytics.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/analytics.js'))),
                 drivers: @json(asset('js/fleet-dashboard/performance.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/performance.js'))),
                 routes: @json(asset('js/fleet-dashboard/performance.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/performance.js'))),
-                schedule: @json(asset('js/fleet-dashboard/schedule-compliance.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/schedule-compliance.js'))),
                 incidents: @json(asset('js/fleet-dashboard/incidents.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/incidents.js'))),
                 maintenance: @json(asset('js/fleet-dashboard/maintenance-management.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/maintenance-management.js'))),
                 'dispatch-intelligence': @json(asset('js/fleet-dashboard/dispatch-intelligence.js') . '?v=' . filemtime(public_path('js/fleet-dashboard/dispatch-intelligence.js'))),
@@ -86,7 +84,7 @@
             window.GoPasigOverviewInitialData = {
                 routes: @json($routes),
                 buses: @json($buses),
-                scheduleCompliance: @json($scheduleCompliance)
+                tripOutcomes: @json($tripOutcomes)
             };
         </script>
 

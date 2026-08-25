@@ -8,7 +8,6 @@ window.FleetIncidentsConfig = {
     dataUrl: '/fleet/api/incidents-data',
     storeUrl: '/fleet/api/incidents-store',
     updateStatusUrl: '/fleet/api/incidents-update-status',
-    deleteUrl: '/fleet/api/incidents-delete',
     tripDetailsUrl: '/fleet/api/trips-details',
     csrfToken: document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
 };
@@ -17,6 +16,34 @@ window.FleetIncidentsConfig = {
 let selectedIncidentId = null;
 let currentActiveIncidents = [];
 let currentResolvedIncidents = [];
+
+function escapeIncidentHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function updateIncidentTripOptions(trips = []) {
+    const select = document.getElementById('newTripId');
+    if (!select) return;
+
+    const currentValue = select.value;
+    select.innerHTML = '<option value="">Select an ongoing trip...</option>';
+    trips.forEach(trip => {
+        const option = document.createElement('option');
+        option.value = trip.id;
+        const direction = trip.direction ? ` - ${String(trip.direction).replace(/^./, char => char.toUpperCase())}` : '';
+        option.innerText = `${trip.bus_plate} | ${trip.driver_name} | ${trip.route_name}${direction}`;
+        select.appendChild(option);
+    });
+
+    if ([...select.options].some(option => option.value === currentValue)) {
+        select.value = currentValue;
+    }
+}
 
 // Fetch and Update Incidents Page
 async function fetchIncidentsData() {
@@ -47,6 +74,7 @@ async function fetchIncidentsData() {
         updateIncidentsMetricsDOM(data.incidentMetrics);
         updateActiveIncidentsFeedDOM();
         updateResolvedIncidentsTableDOM();
+        updateIncidentTripOptions(data.ongoingTrips || []);
     } catch (error) {
         console.error('Failed to fetch refreshed incidents stats:', error);
     }
@@ -119,12 +147,12 @@ function updateActiveIncidentsFeedDOM() {
         article.innerHTML = `
             <div class="mt-1 h-[46px] w-[3px] shrink-0 rounded-full ${barColor}"></div>
             <div class="min-w-0 flex-1 space-y-1.5">
-                <h3 class="truncate text-[14px] font-medium text-[#001F44]">${incident.title}</h3>
-                <p class="text-[12px] text-slate-500">${incident.incident_id} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${incident.bus_plate} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${incident.driver_name} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${incident.route_name}</p>
+                <h3 class="truncate text-[14px] font-medium text-[#001F44]">${escapeIncidentHtml(incident.title)}</h3>
+                <p class="text-[12px] text-slate-500">${escapeIncidentHtml(incident.incident_id)} | ${escapeIncidentHtml(incident.bus_plate)} | ${escapeIncidentHtml(incident.driver_name)} | ${escapeIncidentHtml(incident.route_name)}</p>
             </div>
             <div class="min-w-[150px] space-y-1 text-right">
                 <p class="text-[12px] text-slate-400">Reported ${timeDiff}</p>
-                <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass}">${statusLabel}</span>
+                <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass}">${escapeIncidentHtml(statusLabel)}</span>
             </div>
         `;
         feed.appendChild(article);
@@ -171,15 +199,15 @@ function updateResolvedIncidentsTableDOM() {
         const resolvedTime = formatDateTime(incident.updated_at);
 
         tr.innerHTML = `
-            <td class="py-3 px-3 font-mono text-[12px] text-slate-600 font-semibold">${incident.incident_id}</td>
+            <td class="py-3 px-3 font-mono text-[12px] text-slate-600 font-semibold">${escapeIncidentHtml(incident.incident_id)}</td>
             <td class="py-3 px-3">
-                <div class="font-medium text-[#001F44]">${incident.title}</div>
-                <div class="text-[11px] text-slate-400 truncate">${incident.description}</div>
+                <div class="font-medium text-[#001F44]">${escapeIncidentHtml(incident.title)}</div>
+                <div class="text-[11px] text-slate-400 truncate">${escapeIncidentHtml(incident.description)}</div>
             </td>
-            <td class="py-3 px-3 text-slate-600">${incident.route_name}</td>
+            <td class="py-3 px-3 text-slate-600">${escapeIncidentHtml(incident.route_name)}</td>
             <td class="py-3 px-3 text-slate-500 font-mono text-[12px]">${resolvedTime}</td>
             <td class="py-3 px-3">
-                <span class="rounded-full px-2.5 py-0.5 text-[11px] font-medium ${statusClass}">${statusLabel}</span>
+                <span class="rounded-full px-2.5 py-0.5 text-[11px] font-medium ${statusClass}">${escapeIncidentHtml(statusLabel)}</span>
             </td>
         `;
         tableBody.appendChild(tr);
@@ -271,8 +299,6 @@ function openIncidentDrawerAction(id) {
         footer.innerHTML += `<button onclick="updateIncidentStatusAction(${id}, 'under_review')" class="w-full rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 text-[13px] font-semibold transition cursor-pointer">Reopen Incident</button>`;
     }
 
-    footer.innerHTML += `<button onclick="confirmDeleteIncidentModal()" class="w-full rounded-lg border border-red-200 hover:bg-red-50 text-red-600 px-4 py-2.5 text-[13px] font-semibold transition cursor-pointer">Delete / Cancel Record</button>`;
-
     // Show drawer
     const drawerContainer = document.getElementById('details-drawer-container');
     if (drawerContainer) {
@@ -303,41 +329,6 @@ async function executeResolveIncident() {
     if (!selectedIncidentId) return;
     await updateIncidentStatusAction(selectedIncidentId, 'resolved');
     closeResolveIncidentModal();
-}
-
-function confirmDeleteIncidentModal() {
-    const modal = document.getElementById('confirm-delete-modal');
-    if (modal) modal.classList.remove('hidden');
-}
-
-function closeDeleteIncidentModal() {
-    const modal = document.getElementById('confirm-delete-modal');
-    if (modal) modal.classList.add('hidden');
-}
-
-async function executeDeleteIncident() {
-    if (!selectedIncidentId) return;
-    try {
-        const response = await fetch(`${window.FleetIncidentsConfig.deleteUrl}/${selectedIncidentId}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': window.FleetIncidentsConfig.csrfToken
-            }
-        });
-        const data = await response.json();
-        if (response.ok && data.success) {
-            showIncidentsAlert(data.message);
-            closeIncidentDrawerAction();
-            fetchIncidentsData();
-        } else {
-            showIncidentsAlert(data.message || 'Error deleting incident.', true);
-        }
-    } catch (error) {
-        console.error('Error deleting incident:', error);
-        showIncidentsAlert('Failed to delete incident.', true);
-    }
-    closeDeleteIncidentModal();
 }
 
 // Update Incident Status AJAX
@@ -371,8 +362,7 @@ function openLogIncidentModal() {
     if (modal) {
         modal.classList.remove('hidden');
         document.getElementById('newTripId').value = '';
-        document.getElementById('newType').value = 'Breakdown';
-        document.getElementById('newStatus').value = 'reported';
+        document.getElementById('newType').selectedIndex = 0;
         document.getElementById('newDescription').value = '';
         document.getElementById('form-auto-fields').classList.add('hidden');
         clearIncidentsFormErrors();
@@ -419,7 +409,6 @@ async function submitDetailedIncidentForm(event) {
 
     const tripId = document.getElementById('newTripId').value;
     const type = document.getElementById('newType').value;
-    const status = document.getElementById('newStatus').value;
     const description = document.getElementById('newDescription').value.trim();
 
     let hasErrors = false;
@@ -444,7 +433,6 @@ async function submitDetailedIncidentForm(event) {
             body: JSON.stringify({
                 trip_id: tripId,
                 type: type,
-                status: status,
                 description: description
             })
         });
@@ -500,7 +488,7 @@ function clearIncidentsFormErrors() {
 
 // Document ready entry
 let fleetIncidentsModuleInitialized = false;
-let fleetIncidentsPollingId = null;
+let fleetIncidentsPollingRegistration = null;
 
 function initFleetIncidentsModule() {
     if (fleetIncidentsModuleInitialized || !document.getElementById('active-incidents-list')) return;
@@ -543,14 +531,21 @@ function initFleetIncidentsModule() {
         });
 
         // Export button click
-        document.querySelector('[wire\\:click="exportIncidentReport"]')?.addEventListener('click', () => {
+        document.getElementById('btn-export-incidents-report')?.addEventListener('click', () => {
             const dateStart = document.getElementById('filter-incidents-date-start')?.value || '';
             const dateEnd = document.getElementById('filter-incidents-date-end')?.value || '';
             const routeFilter = document.getElementById('filter-incidents-route')?.value || 'all';
             const typeFilter = document.getElementById('filter-incidents-type')?.value || 'all';
             const statusFilter = document.getElementById('filter-incidents-status')?.value || 'all';
+            const queryParams = new URLSearchParams({
+                date_start: dateStart,
+                date_end: dateEnd,
+                route_filter: routeFilter,
+                type_filter: typeFilter,
+                status_filter: statusFilter
+            });
             
-            window.location.href = `/fleet/api/incidents-export?date_start=${dateStart}&date_end=${dateEnd}&route_filter=${routeFilter}&type_filter=${typeFilter}&status_filter=${statusFilter}`;
+            window.location.href = `/fleet/api/incidents-export?${queryParams.toString()}`;
         });
 
         // Toggle Resolved incidents button
@@ -573,9 +568,10 @@ function initFleetIncidentsModule() {
         // Form submission
         document.getElementById('incident-creation-form')?.addEventListener('submit', submitDetailedIncidentForm);
 
-        // Polling interval
-        if (!fleetIncidentsPollingId) {
-            fleetIncidentsPollingId = setInterval(fetchIncidentsData, 15000);
+        if (!fleetIncidentsPollingRegistration) {
+            fleetIncidentsPollingRegistration = window.GoPasigFleetModules?.registerPoller
+                ? window.GoPasigFleetModules.registerPoller('incidents', 'incident-data', fetchIncidentsData, 15000)
+                : setInterval(fetchIncidentsData, 15000);
         }
 }
 

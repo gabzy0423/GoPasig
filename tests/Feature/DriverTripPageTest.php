@@ -7,9 +7,13 @@ use App\Models\Driver;
 use App\Models\Route;
 use App\Models\RouteVariant;
 use App\Models\Trip;
+use App\Models\TripLog;
 use App\Models\TripPassengerEvent;
 use App\Models\User;
+use App\Services\DashboardService;
+use App\Services\TripPassengerEventService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class DriverTripPageTest extends TestCase
@@ -225,16 +229,18 @@ class DriverTripPageTest extends TestCase
             ->postJson('/driver/trip/pax', ['change' => 1])
             ->assertOk()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('passengers', 5);
+            ->assertJsonPath('passengers', 5)
+            ->assertJsonPath('route_variant_stop_id', null);
 
         $this->assertSame(5, $this->bus->fresh()->passengers);
-        $this->assertSame(8, $this->driver->fresh()->pax_today);
+        $this->assertSame(1, $this->driver->fresh()->pax_today);
         $this->assertSame(5, $trip->fresh()->peak_passengers);
         $this->assertDatabaseHas('trip_passenger_events', [
             'trip_id' => $trip->id,
             'driver_id' => $this->driver->id,
             'bus_id' => $this->bus->id,
             'route_id' => $this->route->id,
+            'route_variant_stop_id' => null,
             'event_type' => TripPassengerEvent::TYPE_BOARDED,
             'passenger_delta' => 1,
             'onboard_after' => 5,
@@ -247,7 +253,7 @@ class DriverTripPageTest extends TestCase
             ->assertJsonPath('passengers', 4);
 
         $this->assertSame(4, $this->bus->fresh()->passengers);
-        $this->assertSame(8, $this->driver->fresh()->pax_today);
+        $this->assertSame(1, $this->driver->fresh()->pax_today);
         $this->assertSame(5, $trip->fresh()->peak_passengers);
         $this->assertDatabaseHas('trip_passenger_events', [
             'trip_id' => $trip->id,
@@ -370,7 +376,7 @@ class DriverTripPageTest extends TestCase
             ->postJson('/driver/trip/pax', ['change' => 5])
             ->assertOk()
             ->assertJsonPath('passengers', 10)
-            ->assertJsonPath('pax_today', 6);
+            ->assertJsonPath('pax_today', 2);
 
         $this->assertSame(10, $this->bus->fresh()->passengers);
         $this->assertSame(10, $trip->fresh()->peak_passengers);
@@ -394,7 +400,7 @@ class DriverTripPageTest extends TestCase
             ->assertJsonPath('passengers', 0);
 
         $this->assertSame(10, $trip->fresh()->peak_passengers);
-        $this->assertSame(6, $this->driver->fresh()->pax_today);
+        $this->assertSame(2, $this->driver->fresh()->pax_today);
         $this->assertDatabaseHas('trip_passenger_events', [
             'trip_id' => $trip->id,
             'event_type' => TripPassengerEvent::TYPE_ALIGHTED,
@@ -408,5 +414,223 @@ class DriverTripPageTest extends TestCase
             ->assertJsonPath('passengers', 0);
 
         $this->assertSame(2, TripPassengerEvent::where('trip_id', $trip->id)->count());
+    }
+
+    public function test_duplicate_passenger_request_id_is_applied_once(): void
+    {
+        $trip = $this->createOperatingPassengerTrip();
+        $requestId = (string) Str::uuid();
+
+        $this->actingAs($this->user)
+            ->postJson('/driver/trip/pax', ['change' => 1, 'request_id' => $requestId])
+            ->assertOk()
+            ->assertJsonPath('passengers', 1)
+            ->assertJsonPath('duplicate', false);
+
+        $this->actingAs($this->user)
+            ->postJson('/driver/trip/pax', ['change' => 1, 'request_id' => $requestId])
+            ->assertOk()
+            ->assertJsonPath('passengers', 1)
+            ->assertJsonPath('duplicate', true);
+
+        $this->assertSame(1, $this->bus->fresh()->passengers);
+        $this->assertSame(1, $this->driver->fresh()->pax_today);
+        $this->assertSame(1, TripPassengerEvent::where('trip_id', $trip->id)->count());
+        $this->assertDatabaseHas('trip_passenger_events', [
+            'trip_id' => $trip->id,
+            'request_id' => $requestId,
+            'passenger_delta' => 1,
+            'onboard_after' => 1,
+        ]);
+    }
+
+    public function test_rapid_distinct_passenger_requests_preserve_every_delta_in_order(): void
+    {
+        $trip = $this->createOperatingPassengerTrip(capacity: 10);
+
+        foreach (range(1, 5) as $expectedPassengers) {
+            $this->actingAs($this->user)
+                ->postJson('/driver/trip/pax', [
+                    'change' => 1,
+                    'request_id' => (string) Str::uuid(),
+                ])
+                ->assertOk()
+                ->assertJsonPath('passengers', $expectedPassengers);
+        }
+
+        $this->assertSame(5, $this->bus->fresh()->passengers);
+        $this->assertSame(5, $this->driver->fresh()->pax_today);
+        $this->assertSame(5, $trip->fresh()->peak_passengers);
+        $this->assertSame(
+            [1, 2, 3, 4, 5],
+            TripPassengerEvent::where('trip_id', $trip->id)
+                ->orderBy('id')
+                ->pluck('onboard_after')
+                ->all()
+        );
+    }
+
+    public function test_passenger_event_failure_rolls_back_bus_driver_and_trip_updates(): void
+    {
+        $trip = $this->createOperatingPassengerTrip();
+        $this->driver->update(['pax_today' => 9]);
+
+        $eventWriter = \Mockery::mock(TripPassengerEventService::class);
+        $eventWriter->shouldReceive('record')
+            ->once()
+            ->andThrow(new \RuntimeException('Forced passenger event failure.'));
+        $this->app->instance(TripPassengerEventService::class, $eventWriter);
+
+        $this->actingAs($this->user)
+            ->postJson('/driver/trip/pax', [
+                'change' => 1,
+                'request_id' => (string) Str::uuid(),
+            ])
+            ->assertStatus(500);
+
+        $this->assertSame(0, $this->bus->fresh()->passengers);
+        $this->assertSame(9, $this->driver->fresh()->pax_today);
+        $this->assertSame(0, $trip->fresh()->peak_passengers);
+        $this->assertSame(0, TripPassengerEvent::where('trip_id', $trip->id)->count());
+    }
+
+    public function test_manual_completion_waits_for_passenger_load_to_reach_zero(): void
+    {
+        $trip = $this->createOperatingPassengerTrip();
+
+        $this->actingAs($this->user)
+            ->postJson('/driver/trip/pax', [
+                'change' => 1,
+                'request_id' => (string) Str::uuid(),
+            ])
+            ->assertOk();
+
+        $this->actingAs($this->user)
+            ->postJson('/driver/trip/toggle', ['status' => 'inactive'])
+            ->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath(
+                'message',
+                'Cannot end the trip while passengers remain onboard. Reach the final stop or record alighting first.'
+            );
+
+        $this->assertSame('ongoing', $trip->fresh()->status);
+        $this->assertSame('operating', $this->bus->fresh()->status);
+        $this->assertSame(1, $this->bus->fresh()->passengers);
+        $this->assertDatabaseMissing('trip_logs', ['trip_id' => $trip->id]);
+
+        $this->actingAs($this->user)
+            ->postJson('/driver/trip/pax', [
+                'change' => -1,
+                'request_id' => (string) Str::uuid(),
+            ])
+            ->assertOk()
+            ->assertJsonPath('passengers', 0);
+
+        $this->actingAs($this->user)
+            ->postJson('/driver/trip/toggle', ['status' => 'inactive'])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $tripLog = TripLog::where('trip_id', $trip->id)->firstOrFail();
+        $this->assertSame('completed', $trip->fresh()->status);
+        $this->assertSame(1, $tripLog->passengers);
+        $this->assertSame(1, $tripLog->alighted_passengers);
+    }
+
+    public function test_passenger_update_is_rejected_after_trip_finalization(): void
+    {
+        $trip = $this->createOperatingPassengerTrip();
+
+        app(\App\Services\TripLifecycleService::class)->completeTrip($trip);
+
+        $this->actingAs($this->user)
+            ->postJson('/driver/trip/pax', [
+                'change' => 1,
+                'request_id' => (string) Str::uuid(),
+            ])
+            ->assertStatus(409)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath(
+                'message',
+                'Passenger management is unavailable because the assigned trip is not currently operating.'
+            );
+
+        $this->assertSame('completed', $trip->fresh()->status);
+        $this->assertSame('ready', $this->bus->fresh()->status);
+        $this->assertSame(0, $this->bus->fresh()->passengers);
+        $this->assertSame(0, TripPassengerEvent::where('trip_id', $trip->id)->count());
+        $this->assertSame(1, TripLog::where('trip_id', $trip->id)->count());
+    }
+
+    public function test_driver_dashboard_pax_today_uses_manila_day_boarded_events(): void
+    {
+        $trip = $this->createOperatingPassengerTrip();
+        $this->driver->update(['pax_today' => 999]);
+
+        TripPassengerEvent::create([
+            'trip_id' => $trip->id,
+            'driver_id' => $this->driver->id,
+            'bus_id' => $this->bus->id,
+            'route_id' => $this->route->id,
+            'event_type' => TripPassengerEvent::TYPE_BOARDED,
+            'passenger_delta' => 3,
+            'onboard_after' => 3,
+            'recorded_at' => now(),
+        ]);
+        TripPassengerEvent::create([
+            'trip_id' => $trip->id,
+            'driver_id' => $this->driver->id,
+            'bus_id' => $this->bus->id,
+            'route_id' => $this->route->id,
+            'event_type' => TripPassengerEvent::TYPE_BOARDED,
+            'passenger_delta' => 20,
+            'onboard_after' => 20,
+            'recorded_at' => now()->subDay(),
+        ]);
+
+        $stats = app(DashboardService::class)->getDriverStats($this->driver->fresh());
+
+        $this->assertSame(3, $stats->pax_today);
+    }
+
+    public function test_driver_trip_ui_queues_rapid_passenger_requests_with_unique_ids(): void
+    {
+        $this->createOperatingPassengerTrip();
+
+        $this->actingAs($this->user)
+            ->get('/driver/trip')
+            ->assertOk()
+            ->assertSee('passengerRequestQueue', false)
+            ->assertSee('crypto.randomUUID', false)
+            ->assertSee('request_id: passengerRequest.requestId', false);
+    }
+
+    private function createOperatingPassengerTrip(int $passengers = 0, int $capacity = 30): Trip
+    {
+        $this->bus->update([
+            'status' => 'operating',
+            'capacity' => $capacity,
+            'passengers' => $passengers,
+            'route_id' => $this->route->id,
+        ]);
+        $this->driver->update([
+            'assigned_bus' => $this->bus->plate_number,
+            'assigned_route' => $this->route->id,
+            'status' => 'active',
+            'operational_status' => 'driving',
+        ]);
+
+        return Trip::create([
+            'bus_id' => $this->bus->id,
+            'driver_id' => $this->driver->id,
+            'route_id' => $this->route->id,
+            'route_variant_id' => $this->routeVariant->id,
+            'status' => 'ongoing',
+            'gps_session' => 'ACTIVE',
+            'started_at' => now(),
+            'dispatched_at' => now()->subMinutes(5),
+            'peak_passengers' => $passengers,
+        ]);
     }
 }

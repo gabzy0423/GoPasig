@@ -284,15 +284,11 @@ new class extends Component
                     $totalBuses        = \App\Models\Bus::count();
                     $activeBuses       = \App\Models\Bus::where('status', 'active')->count();
                     $previewUtil       = $totalBuses > 0 ? round(($activeBuses / $totalBuses) * 100) : 0;
-                    $totalSchedules    = \App\Models\Schedule::count();
-                    $onTimeCount       = \App\Models\Schedule::where('status', 'like', '%On time%')->count();
-                    $previewOnTime     = $totalSchedules > 0 ? round(($onTimeCount / $totalSchedules) * 100) : 100;
                 @endphp
-                <div class="grid grid-cols-4 gap-2 text-center text-[10px] font-bold text-slate-500 shrink-0 mb-3 border-b border-slate-100 pb-2.5">
+                <div class="grid grid-cols-3 gap-2 text-center text-[10px] font-bold text-slate-500 shrink-0 mb-3 border-b border-slate-100 pb-2.5">
                     <div>Total Pax: <strong class="text-slate-800 block text-xs font-black mt-0.5">{{ number_format($previewTotalPax) }}</strong></div>
                     <div>Trips: <strong class="text-slate-800 block text-xs font-black mt-0.5">{{ $previewTrips }} completed</strong></div>
                     <div>Util Rate: <strong class="text-[#003F87] block text-xs font-black mt-0.5">{{ $previewUtil }}%</strong></div>
-                    <div>On-Time: <strong class="text-[#639922] block text-xs font-black mt-0.5">{{ $previewOnTime }}%</strong></div>
                 </div>
                 
                 @if($notes)
@@ -314,8 +310,8 @@ new class extends Component
                 
                 <!-- PDF/CSV Quick Downloads inside preview -->
                 <div class="absolute bottom-4 right-4 flex gap-2 shrink-0">
-                    <button type="button" onclick="GoPasigUI.alert('Downloading PDF...')" class="rounded bg-[#003F87] px-3 py-1 text-[10px] font-extrabold text-white hover:bg-[#002D62] transition cursor-pointer">Download PDF</button>
-                    <button type="button" onclick="GoPasigUI.alert('Downloading CSV...')" class="rounded border border-slate-200 bg-white px-3 py-1 text-[10px] font-extrabold text-slate-600 hover:bg-slate-50 transition cursor-pointer">Download CSV</button>
+                    <span class="rounded bg-slate-100 px-3 py-1 text-[10px] font-extrabold text-slate-400">PDF export deferred</span>
+                    <span class="rounded border border-slate-200 bg-white px-3 py-1 text-[10px] font-extrabold text-slate-400">CSV export deferred</span>
                 </div>
             </div>
         </div>
@@ -335,7 +331,7 @@ new class extends Component
                             </div>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
-                            <button type="button" onclick="GoPasigUI.alert('Downloading Report...')" class="p-1 text-slate-400 hover:text-[#003F87] cursor-pointer" title="Download"><i class="ti ti-download text-sm"></i></button>
+                            <span class="rounded bg-slate-100 px-2 py-1 text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Export deferred</span>
                             <button type="button" wire:click="deleteHistory({{ $index }})" class="p-1 text-slate-400 hover:text-[#E24B4A] cursor-pointer" title="Delete"><i class="ti ti-trash text-sm"></i></button>
                         </div>
                     </div>

@@ -88,6 +88,7 @@
         }
         state.routes = Array.isArray(options.routes) ? options.routes : [];
         state.compact = options.compact !== false;
+        state.showControl = options.showControl !== false;
         if (!(state.knownRouteIds instanceof Set)) state.knownRouteIds = new Set();
         if (!Array.isArray(state.stopGeofences)) state.stopGeofences = [];
 
@@ -106,7 +107,12 @@
             }
             state.knownRouteIds = routeIds;
         }
-        state.control = state.control || createControl(map, state);
+        if (state.showControl) {
+            state.control = state.control || createControl(map, state);
+        } else if (state.control) {
+            state.control.remove();
+            state.control = null;
+        }
         render(map, state, Boolean(options.fitOnFirstRender));
         return state;
     }
@@ -125,6 +131,8 @@
     }
 
     function renderControl(state) {
+        if (!state.control) return;
+
         const routes = state.routes.filter(route => variantsFor(route).length || route.polyline_coordinates?.length);
         state.control.innerHTML = `<div class="gopasig-route-map-ux__title">Official routes</div><div class="gopasig-route-map-ux__note">Schematic visualization based on official stop coordinates.</div><div class="gopasig-route-map-ux__routes">${routes.map(route => `<button type="button" data-route="${esc(route.id)}" aria-pressed="${state.visibleRoutes.has(String(route.id))}">${esc(route.name)}</button>`).join('')}</div><div class="gopasig-route-map-ux__directions"><label class="gopasig-route-map-ux__direction"><input type="checkbox" data-direction="outbound" ${state.directions.outbound ? 'checked' : ''}> OUT solid</label><label class="gopasig-route-map-ux__direction"><input type="checkbox" data-direction="inbound" ${state.directions.inbound ? 'checked' : ''}> IN dashed</label></div>`;
         state.control.querySelectorAll('[data-route]').forEach(button => button.addEventListener('click', () => {
@@ -195,5 +203,14 @@
         render(map, state, false);
     }
 
-    window.GoPasigRouteMapUX = { mount, setRouteFilter, _normalizedStops: normalizedStops };
+    function setDirectionVisibility(map, direction, visible) {
+        const state = map && map[stateKey];
+        const normalizedDirection = String(direction || '').toLowerCase();
+        if (!state || !Object.hasOwn(state.directions, normalizedDirection)) return;
+
+        state.directions[normalizedDirection] = Boolean(visible);
+        render(map, state, false);
+    }
+
+    window.GoPasigRouteMapUX = { mount, setRouteFilter, setDirectionVisibility, _normalizedStops: normalizedStops };
 })(window);

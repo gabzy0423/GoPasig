@@ -80,7 +80,7 @@
         <!-- Card 1 -->
         <div class="metric-card-bg rounded-md p-4 flex flex-col justify-between h-[96px] shadow-sm">
             <div class="flex justify-between items-start">
-                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Total passengers</span>
+                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Recorded boarded</span>
                 <i class="ti ti-users text-[18px] text-[#0F6E56]"></i>
             </div>
             <span id="metric-total-passengers" class="text-[24px] font-medium text-[#001F44] leading-none mt-2">{{ $metricSummary->total_passengers }}</span>
@@ -98,7 +98,7 @@
         <!-- Card 3 -->
         <div class="metric-card-bg rounded-md p-4 flex flex-col justify-between h-[96px] shadow-sm">
             <div class="flex justify-between items-start">
-                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Avg passengers / trip</span>
+                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Avg boarded / trip</span>
                 <i class="ti ti-chart-bar text-[18px] text-[#BA7517]"></i>
             </div>
             <span id="metric-avg-per-trip" class="text-[24px] font-medium text-[#001F44] leading-none mt-2">{{ $metricSummary->avg_per_trip }}</span>
@@ -121,14 +121,14 @@
             </div>
             <div class="flex flex-col mt-2 min-w-0">
                 <span id="metric-busiest-route" class="text-[20px] font-semibold text-[#001F44] leading-tight truncate">{{ $metricSummary->busiest_route }}</span>
-                <span id="metric-busiest-route-count" class="text-[11px] text-slate-500 font-medium truncate">({{ $metricSummary->busiest_route_count }} pax)</span>
+                <span id="metric-busiest-route-count" class="text-[11px] text-slate-500 font-medium truncate">({{ $metricSummary->busiest_route_count }} boarded)</span>
             </div>
         </div>
 
         <!-- Card 6 -->
         <div class="metric-card-bg rounded-md p-4 flex flex-col justify-between h-[96px] shadow-sm">
             <div class="flex justify-between items-start">
-                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Peak hour</span>
+                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Peak boarding slot</span>
                 <i class="ti ti-clock text-[18px] text-slate-500"></i>
             </div>
             <span id="metric-peak-hour" class="text-[14px] font-semibold text-[#001F44] mt-2 leading-tight">{{ $metricSummary->peak_hour }}</span>
@@ -137,13 +137,13 @@
 
     <!-- SECTION 3: CHART ROW -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <!-- LEFT: Passengers per route -->
+        <!-- LEFT: Recorded boarded per route -->
         <div class="bg-white border-[0.5px] border-slate-200 shadow-sm rounded-lg p-5 flex flex-col">
-            <h2 class="text-[16px] font-medium text-[#001F44] mb-4">Passengers per route</h2>
+            <h2 class="text-[16px] font-medium text-[#001F44] mb-4">Recorded boarded per route</h2>
             <div class="flex-1 relative min-h-[280px] flex flex-col justify-center">
                 <div id="routePassengersEmptyState" class="hidden absolute inset-0 z-10 flex flex-col items-center justify-center text-center bg-white/95">
                     <i class="ti ti-chart-bar-off text-[32px] text-slate-400 mb-1"></i>
-                    <p class="text-[14px] font-semibold text-slate-400">No route passenger data available</p>
+                    <p class="text-[14px] font-semibold text-slate-400">No recorded boarding data available</p>
                 </div>
                 <div class="h-[280px] w-full">
                     <div id="routePassengersChart" style="width: 100%; height: 100%;"></div>
@@ -151,13 +151,13 @@
             </div>
         </div>
 
-        <!-- RIGHT: Hourly ridership trend -->
+        <!-- RIGHT: Recorded boarding trend -->
         <div class="bg-white border-[0.5px] border-slate-200 shadow-sm rounded-lg p-5 flex flex-col">
-            <h2 class="text-[16px] font-medium text-[#001F44] mb-4">Hourly ridership trend</h2>
+            <h2 class="text-[16px] font-medium text-[#001F44] mb-4">Recorded boarding trend</h2>
             <div class="flex-1 relative min-h-[280px] flex flex-col justify-center">
                 <div id="hourlyRidershipEmptyState" class="hidden absolute inset-0 z-10 flex flex-col items-center justify-center text-center bg-white/95">
                     <i class="ti ti-circle-check text-[32px] text-[#0F6E56] mb-1"></i>
-                    <p class="text-[14px] font-semibold text-slate-400">No ridership recorded for selected period</p>
+                    <p class="text-[14px] font-semibold text-slate-400">No boarding events recorded for selected period</p>
                 </div>
                 <div class="h-[280px] w-full">
                     <div id="hourlyRidershipChart" style="width: 100%; height: 100%;"></div>
@@ -166,10 +166,10 @@
         </div>
     </div>
 
-    <!-- SECTION 4: PASSENGERS PER BUS TABLE -->
+    <!-- SECTION 4: BUS ACTUAL OPERATIONS TABLE -->
     <div class="bg-white border-[0.5px] border-slate-200 shadow-sm rounded-lg p-5">
         <div class="flex items-center justify-between mb-4">
-            <h2 class="text-[16px] font-medium text-[#001F44]">Bus utilization log</h2>
+            <h2 class="text-[16px] font-medium text-[#001F44]">Bus actual operations log</h2>
             <span id="bus-log-count" class="rounded-full bg-slate-100 px-2.5 py-0.5 text-[12px] font-medium text-slate-500">{{ count($busLogs) }} buses</span>
         </div>
 
@@ -188,11 +188,14 @@
                         <th class="py-3 px-4 w-[22%] cursor-pointer select-none" onclick="sortTable('assigned_route')">
                             <span class="flex items-center">Assigned Route <i id="sort-icon-assigned_route" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
                         </th>
-                        <th class="py-3 px-4 w-[12%] text-center cursor-pointer select-none" onclick="sortTable('trips_completed')">
-                            <span class="flex items-center justify-center">Trips Done <i id="sort-icon-trips_completed" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
+                        <th class="py-3 px-4 w-[11%] text-center cursor-pointer select-none" onclick="sortTable('trips_completed')">
+                            <span class="flex items-center justify-center">Trips Run <i id="sort-icon-trips_completed" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
                         </th>
-                        <th class="py-3 px-4 w-[14%] text-center cursor-pointer select-none" onclick="sortTable('total_passengers')">
-                            <span class="flex items-center justify-center">Passengers <i id="sort-icon-total_passengers" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
+                        <th class="py-3 px-4 w-[13%] text-center cursor-pointer select-none" onclick="sortTable('total_passengers')">
+                            <span class="flex items-center justify-center">Recorded Boarded <i id="sort-icon-total_passengers" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
+                        </th>
+                        <th class="py-3 px-4 w-[10%] text-center cursor-pointer select-none" onclick="sortTable('peak_load')">
+                            <span class="flex items-center justify-center">Peak Load <i id="sort-icon-peak_load" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
                         </th>
                         <th class="py-3 px-4 w-[10%] text-center cursor-pointer select-none" onclick="sortTable('capacity')">
                             <span class="flex items-center justify-center">Capacity <i id="sort-icon-capacity" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
@@ -219,11 +222,13 @@
                                 $utilLabel = 'Normal';
                             }
 
-                            if ($row->status === 'Active') {
+                            if ($row->status === 'Operating') {
+                                $statusBg = 'bg-[#E6F1FB] text-[#0C447C]';
+                            } elseif ($row->status === 'Ready') {
                                 $statusBg = 'bg-[#E1F5EE] text-[#0F6E56]';
-                            } elseif ($row->status === 'Idle') {
+                            } elseif ($row->status === 'Standby' || $row->status === 'Inactive') {
                                 $statusBg = 'bg-[#F1EFE8] text-[#5F5E5A]';
-                            } elseif ($row->status === 'Delayed') {
+                            } elseif ($row->status === 'Breakdown') {
                                 $statusBg = 'bg-[#FAEEDA] text-[#854F0B]';
                             } else {
                                 $statusBg = 'bg-[#FCEBEB] text-[#A32D2D]';
@@ -234,6 +239,7 @@
                             data-assigned_route="{{ $row->assigned_route }}"
                             data-trips_completed="{{ $row->trips_completed }}"
                             data-total_passengers="{{ $row->total_passengers }}"
+                            data-peak_load="{{ $row->peak_load }}"
                             data-capacity="{{ $row->capacity }}"
                             data-utilization_rate="{{ $row->utilization_rate }}"
                             data-status="{{ $row->status }}">
@@ -246,6 +252,7 @@
                             </td>
                             <td class="py-3 px-4 text-center font-mono-custom text-slate-700">{{ $row->trips_completed }}</td>
                             <td class="py-3 px-4 text-center font-mono-custom text-slate-700">{{ number_format($row->total_passengers) }}</td>
+                            <td class="py-3 px-4 text-center font-mono-custom text-slate-700">{{ $row->peak_load }}</td>
                             <td class="py-3 px-4 text-center font-mono-custom text-slate-700">{{ $row->capacity }}</td>
                             <td class="py-3 px-4 text-center">
                                 <div class="inline-flex flex-col items-center gap-1.5 w-full">
@@ -267,56 +274,22 @@
         <div class="flex items-center justify-between mb-4">
             <div>
                 <h2 class="text-[16px] font-medium text-[#001F44]">Dispatch recommendations</h2>
-                <p class="text-[13px] text-slate-500 font-normal">Data-driven — based on live ridership & active fleet</p>
+                <p class="text-[13px] text-slate-500 font-normal">Standby until Dispatch Intelligence is fully aligned</p>
             </div>
             <div class="flex items-center gap-3">
                 <span id="recommendations-last-updated" class="text-[12px] text-slate-400 font-normal">Last updated: {{ $lastUpdatedTime }}</span>
-                <button id="btn-refresh-recommendations" class="p-1.5 rounded-lg border border-black/10 hover:bg-slate-50 transition-colors text-slate-600" title="Recalculate Recommendations">
+                <button id="btn-refresh-recommendations" class="p-1.5 rounded-lg border border-black/10 hover:bg-slate-50 transition-colors text-slate-600" title="Refresh Analytics">
                      <i class="ti ti-refresh text-[18px]"></i>
                 </button>
             </div>
         </div>
 
-        <div id="recommendations-empty" class="{{ count($dispatchRecommendations) === 0 ? '' : 'hidden' }} text-center py-10 text-slate-400">
+        <div id="recommendations-empty" class="text-center py-10 text-slate-400">
             <i class="ti ti-route-off text-[40px] block mb-2"></i>
-            <p class="text-sm">No routes found for recommendation</p>
+            <p class="text-sm font-semibold">Dispatch recommendations are on standby.</p>
+            <p class="text-xs mt-1">Recommendations will return after Dispatch Intelligence is fully operationally aligned.</p>
         </div>
-
-        <div id="recommendations-container" class="{{ count($dispatchRecommendations) === 0 ? 'hidden' : '' }} grid grid-cols-1 md:grid-cols-3 gap-3">
-            @foreach($dispatchRecommendations as $rec)
-                @php
-                    if ($rec->status === 'Underserved') {
-                        $badgeStyle = 'bg-[#FCEBEB] text-[#A32D2D]';
-                    } elseif ($rec->status === 'Adequate') {
-                        $badgeStyle = 'bg-[#EAF3DE] text-[#3B6D11]';
-                    } else {
-                        $badgeStyle = 'bg-[#FAEEDA] text-[#854F0B]';
-                    }
-                @endphp
-                <div class="bg-white border-[0.5px] border-slate-200 rounded-md p-4 shadow-sm flex flex-col justify-between">
-                    <div>
-                        <div class="flex items-center justify-between mb-3 border-b border-slate-50 pb-2">
-                            <span class="text-[14px] font-semibold text-[#001F44]">{{ $rec->route }}</span>
-                            <span class="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider {{ $badgeStyle }}">{{ $rec->status }}</span>
-                        </div>
-
-                        <div class="space-y-2 mt-2">
-                            <div>
-                                <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Recommended Dispatch</span>
-                                <span class="text-[20px] font-semibold text-[#003F87]">{{ $rec->recommended_dispatch }}</span>
-                            </div>
-                            <div>
-                                <span class="text-[11px] text-slate-500 font-medium block">Peak window: <strong>{{ $rec->peak_window }}</strong></span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mt-4 pt-3 border-t border-slate-100">
-                        <p class="text-[12px] text-slate-500 italic leading-relaxed">"{{ $rec->insight_blurb }}"</p>
-                    </div>
-                </div>
-            @endforeach
-        </div>
+        <div id="recommendations-container" class="hidden grid-cols-1 md:grid-cols-3 gap-3"></div>
     </div>
 </div>
 
@@ -328,4 +301,3 @@
     </script>
 
 </section>
-

@@ -136,4 +136,5 @@ class Route extends Model
     {
         return $this->hasMany(RouteDuration::class);
     }
+
 }

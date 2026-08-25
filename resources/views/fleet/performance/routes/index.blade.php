@@ -53,131 +53,107 @@
     </div>
 
     <!-- SECTION 2: ROUTE PERFORMANCE SUMMARY CARDS -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <!-- Card 1 -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <div class="bg-slate-50 rounded-md p-4 flex flex-col justify-between h-[96px] shadow-sm">
             <div class="flex justify-between items-start">
-                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Trips completed</span>
+                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Trips run</span>
                 <i class="ti ti-bus text-[16px] text-[#003F87]"></i>
             </div>
-            <span id="metric-trips-completed" class="text-[24px] font-medium text-[#001F44] leading-none mt-2">{{ $routePerformanceSummary->trips_completed }}</span>
+            <span id="metric-trips-run" class="text-[24px] font-medium text-[#001F44] leading-none mt-2">{{ $routePerformanceSummary->trips_run }}</span>
         </div>
 
-        <!-- Card 2 -->
         <div class="bg-slate-50 rounded-md p-4 flex flex-col justify-between h-[96px] shadow-sm">
             <div class="flex justify-between items-start">
-                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">On-time rate</span>
-                <i class="ti ti-clock-check text-[16px] text-[#0F6E56]"></i>
+                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Completed</span>
+                <i class="ti ti-circle-check text-[16px] text-[#0F6E56]"></i>
             </div>
-            <div class="flex flex-col mt-2">
-                @php $otColor = $routePerformanceSummary->on_time_rate >= $routePerformanceSummary->on_time_target ? 'text-[#3B6D11]' : 'text-[#A32D2D]'; @endphp
-                <span id="metric-on-time-rate" class="text-[24px] font-medium {{ $otColor }} leading-none">{{ $routePerformanceSummary->on_time_rate }}%</span>
-                <span class="text-[11px] text-slate-400 font-semibold mt-1">target: {{ $routePerformanceSummary->on_time_target }}%</span>
-            </div>
+            <span id="metric-trips-completed" class="text-[24px] font-medium text-[#001F44] leading-none mt-2">{{ $routePerformanceSummary->completed_trips }}</span>
         </div>
 
-        <!-- Card 3 -->
         <div class="bg-slate-50 rounded-md p-4 flex flex-col justify-between h-[96px] shadow-sm">
             <div class="flex justify-between items-start">
-                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Avg headway</span>
-                <i class="ti ti-timeline text-[16px] text-amber-500"></i>
+                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Ongoing</span>
+                <i class="ti ti-player-play text-[16px] text-[#378ADD]"></i>
             </div>
-            <div class="flex flex-col mt-2">
-                @php $hwColor = $routePerformanceSummary->avg_headway <= $routePerformanceSummary->headway_target ? 'text-[#3B6D11]' : 'text-[#A32D2D]'; @endphp
-                <span id="metric-avg-headway" class="text-[24px] font-medium {{ $hwColor }} leading-none">
-                    {{ $routePerformanceSummary->avg_headway > 0 ? $routePerformanceSummary->avg_headway . ' min' : 'N/A' }}
-                </span>
-                <span class="text-[11px] text-slate-400 font-semibold mt-1">target: &le;{{ $routePerformanceSummary->headway_target }} min</span>
-            </div>
+            <span id="metric-trips-ongoing" class="text-[24px] font-medium text-[#001F44] leading-none mt-2">{{ $routePerformanceSummary->ongoing_trips }}</span>
         </div>
 
-        <!-- Card 4 -->
         <div class="bg-slate-50 rounded-md p-4 flex flex-col justify-between h-[96px] shadow-sm">
             <div class="flex justify-between items-start">
-                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Incidents recorded</span>
-                <i class="ti ti-alert-triangle text-[16px] text-[#E24B4A]"></i>
+                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Dispatched</span>
+                <i class="ti ti-send text-[16px] text-[#854F0B]"></i>
             </div>
-            @php $devColor = $routePerformanceSummary->deviations_count > 0 ? 'text-[#A32D2D]' : 'text-[#3B6D11]'; @endphp
-            <span id="metric-incidents" class="text-[24px] font-medium leading-none mt-2 {{ $devColor }}">{{ $routePerformanceSummary->deviations_count }}</span>
+            <span id="metric-trips-dispatched" class="text-[24px] font-medium text-[#001F44] leading-none mt-2">{{ $routePerformanceSummary->dispatched_trips }}</span>
         </div>
 
-        <!-- Card 5 -->
         <div class="bg-slate-50 rounded-md p-4 flex flex-col justify-between h-[96px] shadow-sm">
             <div class="flex justify-between items-start">
-                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Stop adherence rate</span>
-                <i class="ti ti-map-pin-check text-[16px] text-purple-600"></i>
+                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Cancelled</span>
+                <i class="ti ti-circle-x text-[16px] text-[#E24B4A]"></i>
             </div>
-            <span id="metric-stop-adherence" class="text-[24px] font-medium text-[#001F44] leading-none mt-2">{{ $routePerformanceSummary->stop_adherence_rate }}%</span>
+            <span id="metric-trips-cancelled" class="text-[24px] font-medium text-[#001F44] leading-none mt-2">{{ $routePerformanceSummary->cancelled_trips }}</span>
+        </div>
+
+        <div class="bg-slate-50 rounded-md p-4 flex flex-col justify-between h-[96px] shadow-sm">
+            <div class="flex justify-between items-start">
+                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Avg trip duration</span>
+                <i class="ti ti-clock text-[16px] text-[#533AB7]"></i>
+            </div>
+            <span id="metric-avg-trip-duration" class="text-[20px] font-medium text-[#001F44] leading-none mt-2">{{ $routePerformanceSummary->avg_trip_duration_label }}</span>
         </div>
     </div>
 
     <!-- SECTION 3: CHART ROW -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <!-- LEFT: Headway Regularity Chart -->
+        <!-- LEFT: Actual Headway by Direction -->
         <div class="bg-white border-[0.5px] border-slate-200 shadow-sm rounded-lg p-5">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
-                <h2 class="text-[16px] font-medium text-[#001F44]">Headway regularity</h2>
-                <div class="flex items-center gap-3">
-                    <div class="flex items-center gap-1">
-                        <span class="w-3 h-3 rounded-sm inline-block bg-[#378ADD]"></span>
-                        <span class="text-slate-500 text-[11px]">Actual headway</span>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <span class="w-4 h-0.5 border-t-2 border-dashed border-[#888780] inline-block"></span>
-                        <span class="text-slate-500 text-[11px]">Target (15 min)</span>
-                    </div>
+                <div>
+                    <h2 class="text-[16px] font-medium text-[#001F44]">Actual headway by direction</h2>
+                    <p class="text-[11px] text-slate-500 mt-0.5">Average gap between consecutive Trip starts on the same service day</p>
                 </div>
+                <span class="rounded bg-blue-50 px-2 py-1 text-[10px] font-semibold uppercase text-[#003F87]">Actual starts</span>
             </div>
 
             <div id="routeHeadwayEmptyState" class="hidden h-[260px] flex flex-col items-center justify-center text-slate-400">
                 <i class="ti ti-chart-line-off text-[40px] block mb-2"></i>
-                <p class="text-sm font-medium">Not enough data for headway chart</p>
-                <p class="text-xs mt-1">Requires at least 2 scheduled trips per route</p>
+                <p class="text-sm font-medium">Not enough actual Trip starts</p>
+                <p class="text-xs mt-1">Two starts in the same direction and Manila service day are required</p>
             </div>
             <div id="headwayRegularityChart" style="width: 100%; height: 260px;"></div>
         </div>
 
-        <!-- RIGHT: Schedule Compliance per Trip Chart -->
+        <!-- RIGHT: Actual Trip Duration by Direction -->
         <div class="bg-white border-[0.5px] border-slate-200 shadow-sm rounded-lg p-5">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
-                <h2 class="text-[16px] font-medium text-[#001F44]">Schedule compliance per trip</h2>
-                <div class="flex items-center gap-3">
-                    <div class="flex items-center gap-1">
-                        <span class="w-3 h-3 rounded-sm inline-block bg-[#639922]"></span>
-                        <span class="text-slate-500 text-[11px]">On time / Early</span>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <span class="w-3 h-3 rounded-sm inline-block bg-[#BA7517]"></span>
-                        <span class="text-slate-500 text-[11px]">1–5 min late</span>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <span class="w-3 h-3 rounded-sm inline-block bg-[#E24B4A]"></span>
-                        <span class="text-slate-500 text-[11px]">&gt;5 min late</span>
-                    </div>
+                <div>
+                    <h2 class="text-[16px] font-medium text-[#001F44]">Actual trip duration by direction</h2>
+                    <p class="text-[11px] text-slate-500 mt-0.5">Valid completed Trip start-to-end durations</p>
                 </div>
+                <span class="rounded bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase text-emerald-700">Completed trips</span>
             </div>
 
-            <div id="routeComplianceEmptyState" class="hidden h-[260px] flex flex-col items-center justify-center text-slate-400">
-                <i class="ti ti-calendar-off text-[40px] block mb-2"></i>
-                <p class="text-sm font-medium">No schedule data for this period</p>
+            <div id="routeDurationEmptyState" class="hidden h-[260px] flex flex-col items-center justify-center text-slate-400">
+                <i class="ti ti-clock-off text-[40px] block mb-2"></i>
+                <p class="text-sm font-medium">No valid completed durations</p>
+                <p class="text-xs mt-1">Completed Trips need valid start and end timestamps</p>
             </div>
-            <div id="scheduleComplianceChart" style="width: 100%; height: 260px;"></div>
+            <div id="tripDurationChart" style="width: 100%; height: 260px;"></div>
         </div>
     </div>
 
-    <!-- SECTION 4: STOP ADHERENCE TABLE -->
+    <!-- SECTION 4: RECORDED STOP ACTIVITY TABLE -->
     <div class="bg-white border-[0.5px] border-slate-200 shadow-sm rounded-lg p-5">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
             <div>
-                <h2 class="text-[16px] font-medium text-[#001F44]">Stop adherence log</h2>
-                <p class="text-[13px] text-slate-500 font-normal">Stops and service coverage per route</p>
+                <h2 class="text-[16px] font-medium text-[#001F44]">Recorded stop activity</h2>
+                <p class="text-[13px] text-slate-500 font-normal">Accepted driver passenger updates grouped by confirmed route stop</p>
             </div>
             <div class="flex items-center gap-2">
                 @php
                     $selectedRouteObj = collect($availableRoutes)->firstWhere('id', (int)$selectedRoute);
                     $badgeLabel = $selectedRoute === 'all' ? 'All Routes' : ($selectedRouteObj ? $selectedRouteObj['name'] : 'Route ' . $selectedRoute);
-                    $colorPaletteStop = ['#003F87', '#3B6D11', '#854F0B', '#6B21A8', '#0F6E56', '#DC2626'];
-                    $badgeColor = $selectedRoute === 'all' ? '#6b7280' : ($colorPaletteStop[((int)$selectedRoute - 1) % count($colorPaletteStop)] ?? '#6b7280');
+                    $badgeColor = $selectedRoute === 'all' ? '#6b7280' : ($selectedRouteObj['color'] ?? '#6b7280');
                 @endphp
                 <span class="flex items-center gap-2 rounded-full border border-black/10 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
                     <span id="route-pill-color" class="w-2.5 h-2.5 rounded-full inline-block" style="background-color: {{ $badgeColor }}"></span>
@@ -186,32 +162,33 @@
             </div>
         </div>
 
-        <div id="stop-table-empty" class="hidden text-center py-12 text-slate-400">
+        <div id="stop-table-empty" class="{{ $stopAdherence->isEmpty() ? '' : 'hidden' }} text-center py-12 text-slate-400">
             <i class="ti ti-map-pin-off text-[40px] block mb-2"></i>
-            <p class="text-sm font-medium">No stops found for the selected route</p>
+            <p class="text-sm font-medium">No recorded stop activity</p>
+            <p class="text-xs mt-1">No accepted passenger updates match the selected period</p>
         </div>
 
-        <div id="stop-table-wrapper" class="overflow-x-auto">
+        <div id="stop-table-wrapper" class="{{ $stopAdherence->isEmpty() ? 'hidden' : '' }} overflow-x-auto">
             <table class="w-full text-left border-collapse table-fixed text-[13px]">
                 <thead>
                     <tr class="bg-slate-50/50 border-b border-slate-100 text-[11px] font-medium uppercase tracking-wider text-slate-400">
                         <th class="py-3 px-4 w-[24%] cursor-pointer select-none" onclick="sortStopTable('stop_name')">
                             <span class="flex items-center">Stop Name <i id="sort-icon-stop_name" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
                         </th>
-                        <th class="py-3 px-4 w-[18%] cursor-pointer select-none" onclick="sortStopTable('route_name')">
-                            <span class="flex items-center">Route <i id="sort-icon-route_name" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
+                        <th class="py-3 px-4 w-[24%] cursor-pointer select-none" onclick="sortStopTable('display_label')">
+                            <span class="flex items-center">Route Direction <i id="sort-icon-display_label" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
                         </th>
                         <th class="py-3 px-4 w-[8%] text-center cursor-pointer select-none" onclick="sortStopTable('sequence')">
                             <span class="flex items-center justify-center">Seq <i id="sort-icon-sequence" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
                         </th>
-                        <th class="py-3 px-4 w-[14%] text-center cursor-pointer select-none" onclick="sortStopTable('scheduled_time')">
-                            <span class="flex items-center justify-center">First Trip <i id="sort-icon-scheduled_time" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
+                        <th class="py-3 px-4 w-[14%] text-center cursor-pointer select-none" onclick="sortStopTable('recorded_boarded')">
+                            <span class="flex items-center justify-center">Recorded Boarded <i id="sort-icon-recorded_boarded" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
                         </th>
-                        <th class="py-3 px-4 w-[14%] cursor-pointer select-none" onclick="sortStopTable('status')">
-                            <span class="flex items-center">Status <i id="sort-icon-status" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
+                        <th class="py-3 px-4 w-[14%] text-center cursor-pointer select-none" onclick="sortStopTable('recorded_alighted')">
+                            <span class="flex items-center justify-center">Recorded Alighted <i id="sort-icon-recorded_alighted" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
                         </th>
-                        <th class="py-3 px-4 w-[12%] text-center cursor-pointer select-none" onclick="sortStopTable('buses_passed')">
-                            <span class="flex items-center justify-center">Buses Served <i id="sort-icon-buses_passed" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
+                        <th class="py-3 px-4 w-[12%] text-center cursor-pointer select-none" onclick="sortStopTable('trips_recorded')">
+                            <span class="flex items-center justify-center">Trips Recorded <i id="sort-icon-trips_recorded" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
                         </th>
                     </tr>
                 </thead>
@@ -225,37 +202,14 @@
         <div id="stop-pagination-controls" class="mt-4"></div>
     </div>
 
-    <!-- SECTION 5: DEVIATION LOG PANEL -->
+    <!-- SECTION 5: OPERATIONAL INCIDENT LOG -->
     <div class="bg-white border-[0.5px] border-slate-200 shadow-sm rounded-lg p-5">
         <div class="flex items-center justify-between mb-4">
             <div>
-                <h2 class="text-[16px] font-medium text-[#001F44]">Recorded incidents</h2>
-                <p class="text-[13px] text-slate-500 font-normal">Route violations and operational events from DB</p>
+                <h2 class="text-[16px] font-medium text-[#001F44]">Operational incidents</h2>
+                <p class="text-[13px] text-slate-500 font-normal">Actual driver-reported incidents for the selected period</p>
             </div>
-            <div class="flex items-center gap-3 relative">
-                <span id="incidents-log-badge" class="rounded-full px-2.5 py-0.5 text-[12px] font-semibold"></span>
-
-                <button id="btn-deviation-dropdown-toggle" onclick="toggleDeviationDropdown()"
-                    class="p-1.5 rounded-lg border border-black/10 hover:bg-slate-50 transition-colors text-slate-600" title="Filter incidents">
-                    <i class="ti ti-filter text-[18px]"></i>
-                </button>
-
-                <!-- Deviation type filter dropdown -->
-                <div id="deviation-filter-dropdown" class="hidden absolute right-0 top-10 z-20 w-48 bg-white border border-slate-200 rounded-lg shadow-xl p-3 space-y-2">
-                    <div class="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                        <span class="text-xs font-semibold text-[#001F44]">Filter Type</span>
-                        <button onclick="clearDeviationFilters()" class="text-[10px] text-blue-600 font-medium hover:underline">Clear all</button>
-                    </div>
-                    <div class="space-y-1.5 pt-1.5">
-                        @foreach(['Off-Route', 'Long Dwell', 'Early Departure', 'Route Skip', 'Speed Anomaly'] as $type)
-                            <label class="flex items-center gap-2 text-xs text-slate-600 font-medium cursor-pointer">
-                                <input type="checkbox" value="{{ $type }}" class="deviation-filter-checkbox rounded border-slate-300 text-[#003F87] focus:ring-[#003F87] w-3.5 h-3.5">
-                                <span>{{ $type }}</span>
-                            </label>
-                        @endforeach
-                    </div>
-                </div>
-            </div>
+            <span id="incidents-log-badge" class="rounded-full px-2.5 py-0.5 text-[12px] font-semibold"></span>
         </div>
 
         <div class="space-y-3" id="incidents-log-feed">
@@ -266,70 +220,51 @@
     <!-- SECTION 6: ROUTE HEALTH SCORE CARD -->
     <div class="bg-white border-[0.5px] border-slate-200 shadow-sm rounded-lg p-5">
         <div class="grid grid-cols-1 md:grid-cols-10 gap-5 items-center">
-            <!-- Left Score display -->
             <div class="md:col-span-4 flex flex-col items-center md:items-start text-center md:text-left md:border-r border-slate-100 md:pr-6">
                 <span class="text-[11px] text-slate-500 uppercase tracking-wider font-bold">Overall route health</span>
-                @php
-                    $healthScore = $routeHealthScore->overall_score;
-                    $healthColor = $healthScore >= 80 ? 'text-[#3B6D11]' : ($healthScore >= 60 ? 'text-[#854F0B]' : 'text-[#A32D2D]');
-                @endphp
-                <div class="flex items-baseline mt-2">
-                    <span id="health-overall-score" class="text-[48px] font-medium leading-none {{ $healthColor }}">{{ $healthScore }}</span>
-                    <span class="text-[20px] text-slate-400 ml-1">/100</span>
-                </div>
-                <span id="health-score-label" class="text-[14px] font-bold mt-1 uppercase tracking-wide {{ $healthColor }}">{{ $routeHealthScore->score_label }}</span>
-                <p class="text-[11px] text-slate-400 italic mt-3">
-                    Computed from live DB data: on-time rate, headway regularity, stop coverage, and incidents.
+                <span id="health-overall-score" class="text-[24px] font-medium leading-none text-slate-400 mt-3">No data</span>
+                <span id="health-score-label" class="text-[12px] font-bold mt-2 uppercase tracking-wide text-slate-400">Insufficient evidence</span>
+                <p id="health-data-note" class="text-[11px] text-slate-400 italic mt-3">
+                    Equal-weight score from actual completion, headway, and recorded incidents. Incomplete evidence fails closed.
                 </p>
             </div>
 
-            <!-- Right breakdown progress bars -->
             <div class="md:col-span-6 space-y-3.5">
-                <span class="text-[11px] text-slate-500 uppercase tracking-wider font-bold block">Score components (25 pts each)</span>
+                <span class="text-[11px] text-slate-500 uppercase tracking-wider font-bold block">Actual component scores</span>
 
                 <div class="space-y-1">
                     <div class="flex justify-between items-center text-[12px] font-semibold">
-                        <span class="text-slate-600">On-time rate</span>
-                        <span class="font-mono-custom text-[#001F44]">{{ $routeHealthScore->on_time_score }} / 25</span>
+                        <span class="text-slate-600">Trip completion reliability</span>
+                        <span id="health-completion-score" class="font-mono-custom text-slate-400">No data</span>
                     </div>
                     <div class="w-full h-[6px] bg-slate-100 rounded-full overflow-hidden">
-                        <div id="progress-health-ot" class="h-full bg-[#378ADD] rounded-full transition-all duration-[600ms] ease-out"
-                            style="width: {{ ($routeHealthScore->on_time_score / 25) * 100 }}%"></div>
+                        <div id="progress-health-completion" class="h-full bg-[#378ADD] rounded-full transition-all duration-[600ms] ease-out" style="width: 0%"></div>
                     </div>
+                    <p id="health-completion-evidence" class="text-[10px] text-slate-400">No finalized Trips</p>
                 </div>
 
                 <div class="space-y-1">
                     <div class="flex justify-between items-center text-[12px] font-semibold">
-                        <span class="text-slate-600">Headway regularity</span>
-                        <span class="font-mono-custom text-[#001F44]">{{ $routeHealthScore->headway_score }} / 25</span>
+                        <span class="text-slate-600">Headway consistency</span>
+                        <span id="health-headway-score" class="font-mono-custom text-slate-400">No data</span>
                     </div>
                     <div class="w-full h-[6px] bg-slate-100 rounded-full overflow-hidden">
-                        <div id="progress-health-hw" class="h-full bg-[#639922] rounded-full transition-all duration-[600ms] ease-out"
-                            style="width: {{ ($routeHealthScore->headway_score / 25) * 100 }}%"></div>
+                        <div id="progress-health-hw" class="h-full bg-[#639922] rounded-full transition-all duration-[600ms] ease-out" style="width: 0%"></div>
                     </div>
+                    <p id="health-headway-evidence" class="text-[10px] text-slate-400">Insufficient same-direction gaps</p>
                 </div>
 
                 <div class="space-y-1">
                     <div class="flex justify-between items-center text-[12px] font-semibold">
-                        <span class="text-slate-600">Stop coverage</span>
-                        <span class="font-mono-custom text-[#001F44]">{{ $routeHealthScore->stop_adherence_score }} / 25</span>
+                        <span class="text-slate-600">Recorded incident-free trips</span>
+                        <span id="health-incident-score" class="font-mono-custom text-slate-400">No data</span>
                     </div>
                     <div class="w-full h-[6px] bg-slate-100 rounded-full overflow-hidden">
-                        <div id="progress-health-stop" class="h-full bg-[#BA7517] rounded-full transition-all duration-[600ms] ease-out"
-                            style="width: {{ ($routeHealthScore->stop_adherence_score / 25) * 100 }}%"></div>
+                        <div id="progress-health-incidents" class="h-full bg-[#BA7517] rounded-full transition-all duration-[600ms] ease-out" style="width: 0%"></div>
                     </div>
+                    <p id="health-incident-evidence" class="text-[10px] text-slate-400">No started Trips</p>
                 </div>
 
-                <div class="space-y-1">
-                    <div class="flex justify-between items-center text-[12px] font-semibold">
-                        <span class="text-slate-600">Zero incidents</span>
-                        <span class="font-mono-custom text-[#001F44]">{{ $routeHealthScore->deviation_score }} / 25</span>
-                    </div>
-                    <div class="w-full h-[6px] bg-slate-100 rounded-full overflow-hidden">
-                        <div id="progress-health-dev" class="h-full bg-[#533AB7] rounded-full transition-all duration-[600ms] ease-out"
-                            style="width: {{ ($routeHealthScore->deviation_score / 25) * 100 }}%"></div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -339,10 +274,9 @@
         // Load initial data state to protect from layout redraw lag
         window.GoPasigRoutesInitialData = {
             headway: @json($headwayData),
-            schedule: @json($scheduleCompliance),
-            stops: @json($stopAdherence->items()) // We pass the full first page of stops to render immediately
+            duration: @json($tripDurationData),
+            stops: @json($stopActivityData)
         };
     </script>
 
 </section>
-

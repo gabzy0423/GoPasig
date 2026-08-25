@@ -12,7 +12,6 @@ final class TripProgressResult
         public readonly int $completedStopsCount,
         public readonly int $remainingStopsCount,
         public readonly float $tripPercentage,
-        public readonly string $routeAdherence,
         public readonly int $currentDelayMinutes,
         public readonly array $upcomingEtas // Array of ETAResult DTOs
     ) {}

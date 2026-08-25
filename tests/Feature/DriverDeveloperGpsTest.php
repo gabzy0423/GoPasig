@@ -8,9 +8,13 @@ use App\Models\GPSLog;
 use App\Models\Route;
 use App\Models\RouteVariant;
 use App\Models\RouteVariantStop;
+use App\Models\StopArrival;
 use App\Models\Trip;
+use App\Models\TripProgress;
+use App\Models\TripPassengerEvent;
 use App\Models\User;
 use App\Models\VehiclePosition;
+use App\Services\Routing\CurrentTripStopResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
@@ -101,7 +105,7 @@ class DriverDeveloperGpsTest extends TestCase
             ->assertJsonPath('success', false);
     }
 
-    public function test_driver_developer_gps_updates_only_local_bus_preview_state(): void
+    public function test_driver_developer_gps_updates_preview_and_canonical_trip_progress_without_gps_log(): void
     {
         $trip = $this->makeOngoingTrip();
         Config::set('app.env', 'local');
@@ -131,7 +135,24 @@ class DriverDeveloperGpsTest extends TestCase
             'lng' => 121.0800,
             'gps_quality_state' => 'DEVELOPER',
         ]);
+        $this->assertDatabaseHas('trip_progresses', [
+            'trip_id' => $trip->id,
+            'current_route_variant_stop_id' => $this->variant->stops()->where('sequence', 1)->firstOrFail()->id,
+            'next_route_variant_stop_id' => $this->variant->stops()->where('sequence', 2)->firstOrFail()->id,
+            'completed_stops_count' => 1,
+        ]);
+        $this->assertDatabaseHas('stop_arrivals', [
+            'trip_id' => $trip->id,
+            'route_variant_stop_id' => $this->variant->stops()->where('sequence', 1)->firstOrFail()->id,
+            'arrival_source' => 'DEVELOPER',
+        ]);
+        $this->assertSame(1, TripProgress::where('trip_id', $trip->id)->count());
+        $this->assertSame(1, StopArrival::where('trip_id', $trip->id)->count());
         $this->assertSame(0, GPSLog::where('trip_id', $trip->id)->count());
+        $this->assertSame(
+            $this->variant->stops()->where('sequence', 1)->firstOrFail()->id,
+            app(CurrentTripStopResolver::class)->resolve($trip)?->id
+        );
     }
 
     public function test_driver_trip_page_exposes_route_variant_stop_presets_only_in_local_mode(): void
@@ -152,6 +173,46 @@ class DriverDeveloperGpsTest extends TestCase
             ->get(route('driver.trip'))
             ->assertOk()
             ->assertDontSee('Developer GPS');
+    }
+
+    public function test_passenger_changes_are_attributed_to_the_confirmed_developer_gps_stop(): void
+    {
+        $trip = $this->makeOngoingTrip();
+        $origin = $this->variant->stops()->where('sequence', 1)->firstOrFail();
+        $this->bus->update(['passengers' => 0, 'capacity' => 45]);
+        Config::set('app.env', 'local');
+
+        $this->actingAs($this->user)
+            ->postJson(route('driver.trip.developer-gps'), [
+                'lat' => $origin->lat,
+                'lng' => $origin->lng,
+                'speed' => 0,
+                'accuracy' => 5,
+            ])
+            ->assertOk();
+
+        $this->actingAs($this->user)
+            ->postJson(route('driver.trip.pax'), ['change' => 2])
+            ->assertOk()
+            ->assertJsonPath('route_variant_stop_id', $origin->id);
+
+        $this->actingAs($this->user)
+            ->postJson(route('driver.trip.pax'), ['change' => -1])
+            ->assertOk()
+            ->assertJsonPath('route_variant_stop_id', $origin->id);
+
+        $this->assertDatabaseHas('trip_passenger_events', [
+            'trip_id' => $trip->id,
+            'route_variant_stop_id' => $origin->id,
+            'event_type' => TripPassengerEvent::TYPE_BOARDED,
+            'passenger_delta' => 2,
+        ]);
+        $this->assertDatabaseHas('trip_passenger_events', [
+            'trip_id' => $trip->id,
+            'route_variant_stop_id' => $origin->id,
+            'event_type' => TripPassengerEvent::TYPE_ALIGHTED,
+            'passenger_delta' => 1,
+        ]);
     }
 
     private function makeOngoingTrip(): Trip

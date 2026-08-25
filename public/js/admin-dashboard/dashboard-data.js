@@ -89,6 +89,7 @@ async function loadDatabaseFleetData(options = {}) {
                 gpsQualityReason: bus.gps_quality_reason ?? null,
                 gpsFixAgeSeconds: bus.gps_fix_age_seconds ?? null,
                 lastGpsFixAt: bus.last_gps_fix_at ?? null,
+                busStatus: String(bus.bus_status ?? bus.status ?? 'unknown').toLowerCase(),
                 operationalStatus: bus.operational_status ?? bus.status ?? null,
                 passengers: bus.passengers,
                 capacity: bus.capacity,
@@ -198,6 +199,9 @@ async function loadDatabaseFleetData(options = {}) {
             updateBusSummaryStats();
         }
         if (liveMap !== null && typeof renderMapMarkers === 'function') {
+            if (typeof renderRouteFilterChips === 'function') {
+                renderRouteFilterChips();
+            }
             renderMapMarkers();
             updateFleetSidebarList();
             updateFleetSummaryStats();
@@ -212,6 +216,9 @@ async function loadDatabaseFleetData(options = {}) {
             }
             if (typeof renderMapStops === 'function') {
                 renderMapStops();
+            }
+            if (typeof refreshLiveFleetMapSize === 'function') {
+                refreshLiveFleetMapSize();
             }
         }
         if (typeof syncRoutesWithDatabase === 'function') {
@@ -236,8 +243,6 @@ async function loadDatabaseFleetData(options = {}) {
 
 // Fetch database records immediately on load
 loadDatabaseFleetData();
-
-
 
 
 

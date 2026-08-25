@@ -6,7 +6,6 @@ use App\Exceptions\InvalidStatusTransitionException;
 use App\Http\Controllers\Controller;
 use App\Models\Bus;
 use App\Models\MaintenanceRecord;
-use App\Models\Schedule;
 use App\Models\Trip;
 use App\Models\SystemSetting;
 use App\Models\Route;
@@ -362,31 +361,27 @@ class BusController extends Controller
             ], 403);
         }
 
-        // Existing guards (ongoing trip, active schedule, active maintenance)
+        // Existing guards (ongoing trip, active maintenance)
         $hasOngoingTrip = Trip::where('bus_id', $bus->id)
             ->where('status', 'ongoing')->exists();
-
-        $hasActiveSchedule = Schedule::where('bus_id', $bus->id)
-            ->whereNotIn('status', [Schedule::STATUS_CANCELLED, 'cancelled', 'completed'])->exists();
 
         $hasActiveMaintenance = MaintenanceRecord::where('bus_id', $bus->id)
             ->whereNotIn('status', ['completed', 'cancelled'])->exists();
 
         // block deletion if historical records exist
         $hasHistoricalTrips = Trip::where('bus_id', $bus->id)->exists();
-        $hasHistoricalSchedules = Schedule::where('bus_id', $bus->id)->exists();
 
-        if ($hasOngoingTrip || $hasActiveSchedule || $hasActiveMaintenance) {
+        if ($hasOngoingTrip || $hasActiveMaintenance) {
             return response()->json([
                 'success' => false,
-                'message' => 'Cannot delete bus with active trips, schedules, or maintenance records.'
+                'message' => 'Cannot delete bus with active trips or maintenance records.'
             ], 422);
         }
 
-        if ($hasHistoricalTrips || $hasHistoricalSchedules) {
+        if ($hasHistoricalTrips) {
             return response()->json([
                 'success' => false,
-                'message' => 'Cannot delete bus with historical trip or schedule records. Deactivate the bus instead to preserve operational data.'
+                'message' => 'Cannot delete bus with historical trip records. Deactivate the bus instead to preserve operational data.'
             ], 422);
         }
 

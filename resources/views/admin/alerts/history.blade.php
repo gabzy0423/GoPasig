@@ -60,10 +60,7 @@
                     <label for="hist-filter-route" class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Route</label>
                     <select id="hist-filter-route" class="rounded-lg border border-slate-200 bg-slate-50 py-1.5 px-3 text-xs font-semibold text-slate-900 outline-none transition duration-200 focus:border-[#003F87] focus:bg-white" onchange="handleHistoryFilterRouteChange(event)">
                         <option value="All">All routes</option>
-                        <option value="Route A">Route A</option>
-                        <option value="Route B">Route B</option>
-                        <option value="Route C">Route C</option>
-                        <option value="All routes">All routes only</option>
+                        <option value="All official routes">All official routes only</option>
                     </select>
                 </div>
             </div>

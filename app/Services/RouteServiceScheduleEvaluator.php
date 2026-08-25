@@ -113,6 +113,17 @@ class RouteServiceScheduleEvaluator
             ->values();
     }
 
+    public function activeWindowsForVariantOn(RouteVariant|int $variant, CarbonInterface $at): Collection
+    {
+        $variant = $this->resolveVariant($variant);
+
+        if (! $variant) {
+            return collect();
+        }
+
+        return $this->candidateWindowsForVariant($variant, $this->manila($at));
+    }
+
     private function currentWindowForRoute(Route|int $route, CarbonInterface $at): ?RouteServiceSchedule
     {
         $route = $this->resolveRoute($route);

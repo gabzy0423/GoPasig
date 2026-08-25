@@ -37,6 +37,26 @@ Artisan::command('trips:cleanup-orphaned', function () {
 // Schedule the command to run every 30 minutes
 Schedule::command('trips:cleanup-orphaned')->everyThirtyMinutes();
 
+$demandHistoryRebuildCommand = 'demand-history:rebuild --only-unfinalized';
+if (app()->environment('production')) {
+    $demandHistoryRebuildCommand .= ' --training-eligible';
+}
+
+Schedule::command($demandHistoryRebuildCommand)
+    ->hourlyAt(5)
+    ->timezone('Asia/Manila')
+    ->withoutOverlapping();
+
+Schedule::command('demand-forecast:capture')
+    ->dailyAt('00:10')
+    ->timezone('Asia/Manila')
+    ->withoutOverlapping();
+
+Schedule::command('demand-forecast:evaluate')
+    ->dailyAt('00:15')
+    ->timezone('Asia/Manila')
+    ->withoutOverlapping();
+
 Artisan::command('buses:clean-inconsistent-statuses {--confirm : Actually perform the update}', function () {
     // 1. Active status but no ongoing trip
     $query1 = \App\Models\Bus::whereNotIn('status', ['maintenance', 'breakdown', 'inactive'])
@@ -165,7 +185,6 @@ Artisan::command('fleet:simulate-trip', function () {
     \App\Models\TripProgress::updateOrCreate(
         ['trip_id' => $trip->id],
         [
-            'route_adherence' => 'On Route',
             'completed_stops_count' => 0,
             'remaining_stops_count' => 0,
         ]
@@ -186,17 +205,17 @@ Artisan::command('fleet:simulate-trip', function () {
         // Step 3: Moving away from SPED Terminal (Exit pending / exited)
         [14.5605, 121.0810, 15, "Leaving SPED Terminal (Exiting Geofence)"],
 
-        // Step 4: Normal moving along Route A corridor
-        [14.5620, 121.0820, 25, "On Route: Caruncho Ave"],
+        // Step 4: Normal movement along Caruncho Ave.
+        [14.5620, 121.0820, 25, "Moving along Caruncho Ave"],
 
-        // Step 5: Moving off-route (deviation)
-        [14.5625, 121.0865, 30, "Route Deviation (Moving off-route)"],
+        // Step 5: Continue the telemetry sample.
+        [14.5625, 121.0865, 30, "Continuing GPS movement"],
 
-        // Step 6: Still off-route (continuing deviation)
-        [14.5630, 121.0870, 20, "Route Deviation (Still off-route)"],
+        // Step 6: Continue toward the next stop.
+        [14.5630, 121.0870, 20, "Approaching the next stop"],
 
-        // Step 7: Moving back to Route A corridor
-        [14.5680, 121.0760, 25, "On Route: Approaching next waypoint (Recovery)"],
+        // Step 7: Continue toward the next waypoint.
+        [14.5680, 121.0760, 25, "Approaching next waypoint"],
 
         // Step 8: Approaching Temporary Pasig City Hall (Stop 2)
         [14.5820, 121.0630, 15, "Approaching Temporary Pasig City Hall"],
@@ -227,7 +246,7 @@ Artisan::command('fleet:simulate-trip', function () {
             ]
         );
 
-        // Dispatch position updated event (triggers pipeline Validation -> Kalman -> Geofencing -> Corridor)
+        // Dispatch position updated event through the active GPS and geofence pipeline.
         event(new \App\Events\PositionUpdated($position));
 
         $this->line("Event dispatched. Sleeping 3 seconds...");
@@ -235,7 +254,7 @@ Artisan::command('fleet:simulate-trip', function () {
     }
 
     $this->info("=== Simulation Completed ===");
-})->purpose('Simulates GPS coordinates for PAS-001 along Route A to test geofencing and corridor monitoring');
+})->purpose('Simulates GPS coordinates for PAS-001 to test telemetry and geofencing');
 
 Artisan::command('location-uat:route-c {--no-reset : Keep existing dedicated UAT trip derived data before replay} {--json : Print full JSON output}', function () {
     $harness = app(\App\Services\Testing\ControlledLocationIntelligenceHarness::class);
@@ -266,33 +285,23 @@ Artisan::command('location-uat:route-c {--no-reset : Keep existing dedicated UAT
         $this->line('GPSLog: status='.($result['gps_log']['processing_status'] ?? 'none')
             .' | filtered='.($result['gps_log']['filtered_lat'] ?? 'null').', '.($result['gps_log']['filtered_lng'] ?? 'null'));
         $this->line('VehiclePosition: '.($result['vehicle_position']['lat'] ?? 'null').', '.($result['vehicle_position']['lng'] ?? 'null')
-            .' | corridor='.($result['vehicle_position']['corridor_distance'] ?? 'null')
             .' | movement='.($result['vehicle_position']['movement_state'] ?? 'null')
             .' | gps_quality='.($result['vehicle_position']['gps_quality_state'] ?? 'null'));
         $this->line('TripProgress: current='.($result['trip_progress']['current_stop_id'] ?? 'null')
             .' | next='.($result['trip_progress']['next_stop_id'] ?? 'null')
             .' | completed='.($result['trip_progress']['completed_stops_count'] ?? 'null')
-            .' | pct='.($result['trip_progress']['trip_percentage'] ?? 'null')
-            .' | adherence='.($result['trip_progress']['route_adherence'] ?? 'null'));
+            .' | pct='.($result['trip_progress']['trip_percentage'] ?? 'null'));
         $this->line('Geofence: transition='.($result['geofence']['id'] ?? 'none')
             .' | geofence_id='.($result['geofence']['geofence_id'] ?? 'none')
             .' | exited_at='.($result['geofence']['exited_at'] ?? 'null'));
         $this->line('StopArrival: id='.($result['stop_arrival']['id'] ?? 'none')
             .' | stop_id='.($result['stop_arrival']['stop_id'] ?? 'none')
             .' | departed='.($result['stop_arrival']['departure_time'] ?? 'null'));
-        $this->line('RouteDeviation: id='.($result['route_deviation']['id'] ?? 'none')
-            .' | distance='.($result['route_deviation']['distance_meters'] ?? 'null')
-            .' | severity='.($result['route_deviation']['severity'] ?? 'null')
-            .' | resolved_at='.($result['route_deviation']['resolved_at'] ?? 'null'));
         $this->line('Fleet API: next='.($result['fleet_api']['next_stop'] ?? 'null')
             .' | upcoming='.($result['fleet_api']['upcoming_stop'] ?? 'null')
-            .' | eta='.($result['fleet_api']['eta'] ?? 'null')
-            .' | corridor='.($result['fleet_api']['corridor_distance'] ?? 'null')
-            .' | adherence='.($result['fleet_api']['route_adherence'] ?? 'null'));
+            .' | eta='.($result['fleet_api']['eta'] ?? 'null'));
         $this->line('Admin API: next='.($result['admin_api']['next_stop'] ?? 'null')
-            .' | eta='.($result['admin_api']['eta'] ?? 'null')
-            .' | corridor='.($result['admin_api']['corridor_distance'] ?? 'not_exposed')
-            .' | adherence='.($result['admin_api']['route_adherence'] ?? 'not_exposed'));
+            .' | eta='.($result['admin_api']['eta'] ?? 'null'));
 
         if (! empty($result['fleet_admin_mismatches'])) {
             $this->warn('Fleet/Admin mismatch: '.json_encode($result['fleet_admin_mismatches']));

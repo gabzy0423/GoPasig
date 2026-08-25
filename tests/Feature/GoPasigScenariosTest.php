@@ -73,7 +73,7 @@ class GoPasigScenariosTest extends TestCase
         // Verify that a "signal lost" incident was auto-created
         $this->assertDatabaseHas('incidents', [
             'trip_id' => $trip->id,
-            'type' => 'Delay',
+            'type' => Incident::getTrafficDelayType(),
             'status' => 'reported',
         ]);
 

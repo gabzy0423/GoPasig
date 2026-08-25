@@ -17,7 +17,7 @@ window.FleetPerformanceConfig = {
 // ECharts References
 let driverScoreChart = null;
 let headwayChart = null;
-let scheduleComplianceChart = null;
+let tripDurationChart = null;
 
 // Table Sorting & Pagination State
 let currentDriverSortCol = '';
@@ -32,6 +32,30 @@ const stopPerPage = 10;
 // Shared Helper: Format Numbers
 function formatNumber(num) {
     return new Intl.NumberFormat().format(num);
+}
+
+function escapeMarkup(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function safeRouteColor(value) {
+    return /^#[0-9a-f]{6}$/i.test(String(value || '')) ? value : '#64748b';
+}
+
+function formatScore(score) {
+    return score === null || score === undefined ? 'No data' : score;
+}
+
+function scorePillClasses(score) {
+    if (score === null || score === undefined) return 'bg-slate-100 text-slate-400';
+    return score >= 85
+        ? 'bg-[#EAF3DE] text-[#3B6D11]'
+        : (score >= 70 ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-[#FCEBEB] text-[#A32D2D]');
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -75,8 +99,8 @@ function updateDriverMetricsDOM(metrics) {
     const avgTripsEl = document.getElementById('metric-avg-trips');
 
     if (totalEl) totalEl.innerText = metrics.total_drivers;
-    if (onDutyEl) onDutyEl.innerText = metrics.on_duty_today;
-    if (avgScoreEl) avgScoreEl.innerText = metrics.avg_performance_score;
+    if (onDutyEl) onDutyEl.innerText = metrics.drivers_with_trips ?? metrics.on_duty_today;
+    if (avgScoreEl) avgScoreEl.innerText = formatScore(metrics.avg_performance_score);
     if (incidentsEl) incidentsEl.innerText = metrics.incidents_this_period;
     if (avgTripsEl) avgTripsEl.innerText = metrics.avg_trips_per_driver;
 }
@@ -99,9 +123,7 @@ function updateTopDriversDOM(topDrivers) {
         else if (top.rank === 4) avatarClasses = 'bg-orange-200 text-orange-800';
 
         const rowStyle = top.rank === 1 ? 'border-l-[3px] border-[#003F87] bg-[#E6F1FB] pl-3' : '';
-        const scorePill = top.performance_score >= 85
-            ? 'bg-[#EAF3DE] text-[#3B6D11]'
-            : (top.performance_score >= 70 ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-[#FCEBEB] text-[#A32D2D]');
+        const scorePill = scorePillClasses(top.performance_score);
 
         const div = document.createElement('div');
         div.className = `flex items-center justify-between py-2.5 transition-all duration-150 ${rowStyle}`;
@@ -120,8 +142,8 @@ function updateTopDriversDOM(topDrivers) {
                 </div>
             </div>
             <div class="flex flex-col items-end gap-1">
-                <span class="px-2 py-0.5 rounded text-[13px] font-semibold tracking-wide ${scorePill}">${top.performance_score}</span>
-                <span class="text-[11px] text-slate-400 font-medium">${top.trips_completed} trips</span>
+                <span class="px-2 py-0.5 rounded text-[13px] font-semibold tracking-wide ${scorePill}">${formatScore(top.performance_score)}</span>
+                <span class="text-[11px] text-slate-400 font-medium">${top.trips_run} trips</span>
             </div>
         `;
         list.appendChild(div);
@@ -154,9 +176,7 @@ function updateDriverTableDOM(drivers) {
             ? 'bg-[#E1F5EE] text-[#0F6E56]'
             : ((row.status || '').toLowerCase() === 'off duty' ? 'bg-[#F1EFE8] text-[#5F5E5A]' : 'bg-[#FCEBEB] text-[#A32D2D]');
 
-        const scoreBg = row.performance_score >= 85
-            ? 'bg-[#EAF3DE] text-[#3B6D11]'
-            : (row.performance_score >= 70 ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-[#FCEBEB] text-[#A32D2D]');
+        const scoreBg = scorePillClasses(row.performance_score);
 
         const tr = document.createElement('tr');
         tr.className = 'hover:bg-slate-50 cursor-pointer transition-colors';
@@ -164,11 +184,11 @@ function updateDriverTableDOM(drivers) {
         tr.setAttribute('data-driver_name', row.driver_name);
         tr.setAttribute('data-assigned_route', row.assigned_route);
         tr.setAttribute('data-status', row.status);
-        tr.setAttribute('data-trips_completed', row.trips_completed);
-        tr.setAttribute('data-total_passengers_moved', row.total_passengers_moved);
+        tr.setAttribute('data-trips_run', row.trips_run);
+        tr.setAttribute('data-recorded_boarded', row.recorded_boarded ?? row.total_passengers_moved ?? 0);
         tr.setAttribute('data-incidents', row.incidents);
         tr.setAttribute('data-avg_trip_time_minutes', row.avg_trip_time_minutes);
-        tr.setAttribute('data-performance_score', row.performance_score);
+        tr.setAttribute('data-performance_score', row.performance_score ?? '');
 
         const incidentMarkup = row.incidents > 0
             ? `<span class="text-[#A32D2D] font-bold">${row.incidents}</span>`
@@ -195,14 +215,14 @@ function updateDriverTableDOM(drivers) {
             <td class="py-3 px-4">
                 <span class="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide ${statusBg}">${row.status}</span>
             </td>
-            <td class="py-3 px-4 text-center font-mono-custom text-slate-700">${row.trips_completed}</td>
-            <td class="py-3 px-4 text-center font-mono-custom text-slate-700">${formatNumber(row.total_passengers_moved)}</td>
+            <td class="py-3 px-4 text-center font-mono-custom text-slate-700">${row.trips_run}</td>
+            <td class="py-3 px-4 text-center font-mono-custom text-slate-700">${formatNumber(row.recorded_boarded ?? row.total_passengers_moved ?? 0)}</td>
             <td class="py-3 px-4 text-center font-mono-custom">${incidentMarkup}</td>
             <td class="py-3 px-4 text-center font-mono-custom text-slate-700">
-                ${row.avg_trip_time_minutes > 0 ? row.avg_trip_time_minutes + ' min' : 'Ã¢â‚¬â€'}
+                ${row.avg_trip_time_minutes > 0 ? row.avg_trip_time_minutes + ' min' : 'No data'}
             </td>
             <td class="py-3 px-4 text-center">
-                <span class="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide ${scoreBg}">${row.performance_score}</span>
+                <span class="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide ${scoreBg}">${formatScore(row.performance_score)}</span>
             </td>
         `;
         tbody.appendChild(tr);
@@ -272,12 +292,19 @@ function initDriverScoreChart(initialDrivers) {
 function updateScoreDistributionChart(drivers) {
     if (!driverScoreChart) return;
 
-    const sorted = [...drivers].sort((a, b) => a.performance_score - b.performance_score);
+    const scoredDrivers = drivers.filter(driver => driver.performance_score !== null && driver.performance_score !== undefined);
+    const sorted = [...scoredDrivers].sort((a, b) => a.performance_score - b.performance_score);
     const labels = sorted.map(d => d.driver_name);
     const scores = sorted.map(d => d.performance_score);
     const colors = scores.map(s => s >= 85 ? '#639922' : s >= 70 ? '#BA7517' : '#E24B4A');
 
     driverScoreChart.setOption({
+        title: {
+            text: scoredDrivers.length ? '' : 'No score data',
+            left: 'center',
+            top: 'middle',
+            textStyle: { fontFamily: 'Plus Jakarta Sans', color: '#94a3b8', fontSize: 13, fontWeight: 'normal' }
+        },
         yAxis: { data: labels },
         series: [{
             data: scores.map((s, idx) => ({
@@ -355,27 +382,36 @@ function renderDrawerData(driver, trips, incidents) {
         </div>
     `;
 
-    const scoreColor = driver.performance_score >= 85 ? 'text-[#3B6D11]' : (driver.performance_score >= 70 ? 'text-[#BA7517]' : 'text-[#A32D2D]');
-    const barFill = driver.performance_score >= 85 ? 'bg-[#3B6D11]' : (driver.performance_score >= 70 ? 'bg-[#BA7517]' : 'bg-[#A32D2D]');
+    const hasScore = driver.performance_score !== null && driver.performance_score !== undefined;
+    const scoreColor = !hasScore
+        ? 'text-slate-400'
+        : (driver.performance_score >= 85 ? 'text-[#3B6D11]' : (driver.performance_score >= 70 ? 'text-[#BA7517]' : 'text-[#A32D2D]'));
+    const barFill = !hasScore
+        ? 'bg-slate-300'
+        : (driver.performance_score >= 85 ? 'bg-[#3B6D11]' : (driver.performance_score >= 70 ? 'bg-[#BA7517]' : 'bg-[#A32D2D]'));
 
     // Trips list
     let tripsHtml = '';
     if (trips.length === 0) {
-        tripsHtml = '<p class="text-slate-400 text-xs italic">No schedule records for this driver yet.</p>';
+        tripsHtml = '<p class="text-slate-400 text-xs italic">No Trip records for this driver in the selected period.</p>';
     } else {
         trips.forEach(t => {
             const badge = t.incident
-                ? '<span class="mt-1 self-start rounded bg-[#FAEEDA] text-[#854F0B] px-1.5 py-0.5 text-[10px] font-bold tracking-wide">Delayed</span>'
-                : '<span class="mt-1 self-start rounded bg-[#E1F5EE] text-[#0F6E56] px-1.5 py-0.5 text-[10px] font-bold tracking-wide">On time</span>';
+                ? '<span class="mt-1 self-start rounded bg-[#FCEBEB] text-[#A32D2D] px-1.5 py-0.5 text-[10px] font-bold tracking-wide">Incident</span>'
+                : '<span class="mt-1 self-start rounded bg-slate-100 text-slate-500 px-1.5 py-0.5 text-[10px] font-bold tracking-wide">No incident</span>';
             tripsHtml += `
                 <div class="bg-white border border-slate-100 rounded p-2.5 flex flex-col gap-1 text-[13px] shadow-sm">
                     <div class="flex items-center justify-between font-semibold">
                         <span class="text-[#001F44]">${t.date}</span>
-                        <span class="text-slate-600">${t.passengers} pax</span>
+                        <span class="text-slate-600">${t.status}</span>
                     </div>
                     <div class="flex items-center justify-between text-slate-400 text-[11px]">
                         <span>${t.route}</span>
-                        <span>${t.duration} min</span>
+                        <span>${t.duration > 0 ? t.duration + ' min' : 'No duration'}</span>
+                    </div>
+                    <div class="flex items-center justify-between text-slate-500 text-[11px]">
+                        <span>${t.recorded_boarded} boarded / ${t.recorded_alighted} alighted</span>
+                        <span>Peak ${t.peak_load}</span>
                     </div>
                     ${badge}
                 </div>
@@ -411,12 +447,16 @@ function renderDrawerData(driver, trips, incidents) {
     mainBody.innerHTML = `
         <div class="grid grid-cols-2 gap-3">
             <div class="bg-slate-50 rounded p-3 flex flex-col justify-between">
-                <span class="text-[11px] text-slate-500 uppercase font-semibold">Trips completed</span>
-                <span class="text-[20px] font-semibold text-[#001F44] mt-1">${driver.trips_completed}</span>
+                <span class="text-[11px] text-slate-500 uppercase font-semibold">Trips run</span>
+                <span class="text-[20px] font-semibold text-[#001F44] mt-1">${driver.trips_run}</span>
             </div>
             <div class="bg-slate-50 rounded p-3 flex flex-col justify-between">
-                <span class="text-[11px] text-slate-500 uppercase font-semibold">Passengers moved</span>
-                <span class="text-[20px] font-semibold text-[#001F44] mt-1">${formatNumber(driver.total_passengers_moved)}</span>
+                <span class="text-[11px] text-slate-500 uppercase font-semibold">Recorded boarded</span>
+                <span class="text-[20px] font-semibold text-[#001F44] mt-1">${formatNumber(driver.recorded_boarded ?? 0)}</span>
+            </div>
+            <div class="bg-slate-50 rounded p-3 flex flex-col justify-between">
+                <span class="text-[11px] text-slate-500 uppercase font-semibold">Recorded alighted</span>
+                <span class="text-[20px] font-semibold text-[#001F44] mt-1">${formatNumber(driver.recorded_alighted ?? 0)}</span>
             </div>
             <div class="bg-slate-50 rounded p-3 flex flex-col justify-between">
                 <span class="text-[11px] text-slate-500 uppercase font-semibold">Incidents reported</span>
@@ -427,7 +467,7 @@ function renderDrawerData(driver, trips, incidents) {
             <div class="bg-slate-50 rounded p-3 flex flex-col justify-between">
                 <span class="text-[11px] text-slate-500 uppercase font-semibold">Avg trip duration</span>
                 <span class="text-[20px] font-semibold text-[#001F44] mt-1">
-                    ${driver.avg_trip_time_minutes > 0 ? driver.avg_trip_time_minutes + ' min' : 'Ã¢â‚¬â€'}
+                    ${driver.avg_trip_time_minutes > 0 ? driver.avg_trip_time_minutes + ' min' : 'No data'}
                 </span>
             </div>
         </div>
@@ -436,10 +476,11 @@ function renderDrawerData(driver, trips, incidents) {
 
         <div>
             <span class="text-[11px] text-slate-500 uppercase font-bold tracking-wider block">Performance score</span>
-            <span class="text-[32px] font-semibold ${scoreColor} mt-1 block">${driver.performance_score}</span>
+                <span class="text-[32px] font-semibold ${scoreColor} mt-1 block">${formatScore(driver.performance_score)}</span>
             <div class="relative w-full h-2 bg-slate-100 rounded-full mt-2">
-                <div class="h-full rounded-full ${barFill}" style="width: ${Math.min(100, driver.performance_score)}%"></div>
+                <div class="h-full rounded-full ${barFill}" style="width: ${hasScore ? Math.min(100, driver.performance_score) : 0}%"></div>
             </div>
+            <span class="text-[11px] text-slate-400 mt-2 block">Actual trips run and qualifying incidents</span>
         </div>
 
         <div class="border-t border-slate-100"></div>
@@ -584,8 +625,6 @@ function exportDriverReport() {
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 let activeRouteTab = 'all';
-let selectedDeviationTypes = [];
-
 async function fetchRoutesData() {
     const startDate = document.getElementById('route-start-date')?.value || '';
     const endDate = document.getElementById('route-end-date')?.value || '';
@@ -597,16 +636,13 @@ async function fetchRoutesData() {
             route_id: activeRouteTab
         });
 
-        // Append active deviation filter types
-        selectedDeviationTypes.forEach(t => queryParams.append('deviation_types[]', t));
-
         const response = await fetch(`${window.FleetPerformanceConfig.routesUrl}?${queryParams.toString()}`);
         if (!response.ok) throw new Error('Failed to fetch routes data');
         const data = await response.json();
 
         updateRouteMetricsDOM(data.routePerformanceSummary);
         updateRouteHealthDOM(data.routeHealthScore);
-        updateRouteChartsData(data.headwayData, data.scheduleCompliance);
+        updateRouteChartsData(data.headwayData, data.tripDurationData);
 
         // Save stops globally and display first page
         allStopsData = data.stops;
@@ -614,7 +650,7 @@ async function fetchRoutesData() {
         updateStopsTableDOM();
 
         // Update incidents list
-        updateDeviationsDOM(data.deviationLog);
+        updateIncidentsDOM(data.incidentLog);
     } catch (e) {
         console.error('Error fetching routes data:', e);
     }
@@ -648,89 +684,92 @@ function selectRouteTab(routeId) {
 }
 
 function updateRouteMetricsDOM(summary) {
+    const tripsRunEl = document.getElementById('metric-trips-run');
     const completedEl = document.getElementById('metric-trips-completed');
-    const otRateEl = document.getElementById('metric-on-time-rate');
-    const headwayEl = document.getElementById('metric-avg-headway');
-    const deviationsEl = document.getElementById('metric-incidents');
-    const adherenceEl = document.getElementById('metric-stop-adherence');
+    const ongoingEl = document.getElementById('metric-trips-ongoing');
+    const dispatchedEl = document.getElementById('metric-trips-dispatched');
+    const cancelledEl = document.getElementById('metric-trips-cancelled');
+    const durationEl = document.getElementById('metric-avg-trip-duration');
 
-    if (completedEl) completedEl.innerText = summary.trips_completed;
-
-    if (otRateEl) {
-        otRateEl.innerText = `${summary.on_time_rate}%`;
-        const otColor = summary.on_time_rate >= summary.on_time_target ? 'text-[#3B6D11]' : 'text-[#A32D2D]';
-        otRateEl.className = `text-[24px] font-medium ${otColor} leading-none`;
-    }
-
-    if (headwayEl) {
-        headwayEl.innerText = summary.avg_headway > 0 ? `${summary.avg_headway} min` : 'N/A';
-        const hwColor = summary.avg_headway <= summary.headway_target ? 'text-[#3B6D11]' : 'text-[#A32D2D]';
-        headwayEl.className = `text-[24px] font-medium ${hwColor} leading-none`;
-    }
-
-    if (deviationsEl) {
-        deviationsEl.innerText = summary.deviations_count;
-        const devColor = summary.deviations_count > 0 ? 'text-[#A32D2D]' : 'text-[#3B6D11]';
-        deviationsEl.className = `text-[24px] font-medium leading-none mt-2 ${devColor}`;
-    }
-
-    if (adherenceEl) {
-        adherenceEl.innerText = `${summary.stop_adherence_rate}%`;
-    }
+    if (tripsRunEl) tripsRunEl.innerText = summary.trips_run ?? 0;
+    if (completedEl) completedEl.innerText = summary.completed_trips ?? summary.trips_completed ?? 0;
+    if (ongoingEl) ongoingEl.innerText = summary.ongoing_trips ?? 0;
+    if (dispatchedEl) dispatchedEl.innerText = summary.dispatched_trips ?? 0;
+    if (cancelledEl) cancelledEl.innerText = summary.cancelled_trips ?? 0;
+    if (durationEl) durationEl.innerText = summary.avg_trip_duration_label || 'No data';
 }
 
 function updateRouteHealthDOM(health) {
     const scoreEl = document.getElementById('health-overall-score');
     const labelEl = document.getElementById('health-score-label');
-    const progressBars = {
-        ot: document.getElementById('progress-health-ot'),
-        hw: document.getElementById('progress-health-hw'),
-        stop: document.getElementById('progress-health-stop'),
-        dev: document.getElementById('progress-health-dev')
-    };
+    const noteEl = document.getElementById('health-data-note');
 
-    if (scoreEl) {
-        scoreEl.innerText = health.overall_score;
-        const scoreColor = health.overall_score >= 80 ? 'text-[#3B6D11]' : (health.overall_score >= 60 ? 'text-[#854F0B]' : 'text-[#A32D2D]');
-        scoreEl.className = `text-[48px] font-medium leading-none ${scoreColor}`;
+    const hasScore = health && health.overall_score !== null && health.overall_score !== undefined;
+    if (scoreEl && !hasScore) {
+        scoreEl.innerText = 'No score';
+        scoreEl.className = 'text-[24px] font-medium leading-none text-slate-400 mt-3';
+        if (labelEl) {
+            labelEl.innerText = health?.data_status_label || 'Insufficient evidence';
+            labelEl.className = 'text-[12px] font-bold mt-2 uppercase tracking-wide text-slate-400';
+        }
+    } else if (scoreEl) {
+        scoreEl.innerText = `${health.overall_score}%`;
+        const scoreColor = health.overall_score >= 85 ? 'text-[#3B6D11]' : (health.overall_score >= 70 ? 'text-[#854F0B]' : 'text-[#A32D2D]');
+        scoreEl.className = `text-[48px] font-medium leading-none mt-3 ${scoreColor}`;
         if (labelEl) {
             labelEl.innerText = health.score_label;
-            labelEl.className = `text-[14px] font-bold mt-1 uppercase tracking-wide ${scoreColor}`;
+            labelEl.className = `text-[14px] font-bold mt-2 uppercase tracking-wide ${scoreColor}`;
         }
     }
 
-    if (progressBars.ot) {
-        progressBars.ot.style.width = `${(health.on_time_score / 25) * 100}%`;
-        progressBars.ot.parentNode.parentNode.querySelector('span:last-child').innerText = `${health.on_time_score} / 25`;
+    if (noteEl) {
+        noteEl.innerText = hasScore
+            ? 'Complete actual evidence. Each component has equal weight.'
+            : `${health?.data_status_label || 'Insufficient evidence'}. ${health?.missing_evidence?.[0] || 'Actual operational records are required.'}`;
     }
-    if (progressBars.hw) {
-        progressBars.hw.style.width = `${(health.headway_score / 25) * 100}%`;
-        progressBars.hw.parentNode.parentNode.querySelector('span:last-child').innerText = `${health.headway_score} / 25`;
-    }
-    if (progressBars.stop) {
-        progressBars.stop.style.width = `${(health.stop_adherence_score / 25) * 100}%`;
-        progressBars.stop.parentNode.parentNode.querySelector('span:last-child').innerText = `${health.stop_adherence_score} / 25`;
-    }
-    if (progressBars.dev) {
-        progressBars.dev.style.width = `${(health.deviation_score / 25) * 100}%`;
-        progressBars.dev.parentNode.parentNode.querySelector('span:last-child').innerText = `${health.deviation_score} / 25`;
-    }
+
+    const updateComponent = (barId, scoreId, evidenceId, score, evidence) => {
+        const bar = document.getElementById(barId);
+        const scoreLabel = document.getElementById(scoreId);
+        const evidenceLabel = document.getElementById(evidenceId);
+        const available = score !== null && score !== undefined;
+
+        if (bar) bar.style.width = `${available ? score : 0}%`;
+        if (scoreLabel) {
+            scoreLabel.innerText = available ? `${score}%` : 'No data';
+            scoreLabel.className = `font-mono-custom ${available ? 'text-[#001F44]' : 'text-slate-400'}`;
+        }
+        if (evidenceLabel) evidenceLabel.innerText = evidence || 'No actual evidence';
+    };
+
+    updateComponent('progress-health-completion', 'health-completion-score', 'health-completion-evidence', health?.completion_score, health?.completion_evidence);
+    updateComponent('progress-health-hw', 'health-headway-score', 'health-headway-evidence', health?.headway_score, health?.headway_evidence);
+    updateComponent('progress-health-incidents', 'health-incident-score', 'health-incident-evidence', health?.incident_free_score, health?.incident_evidence);
 }
 
-function initRouteCharts(headway, schedule) {
+function initRouteCharts(headway, durations) {
     const hwContainer = document.getElementById('headwayRegularityChart');
     if (hwContainer) {
         headwayChart = echarts.init(hwContainer);
         const headwayOption = {
             tooltip: {
-                trigger: 'axis',
-                axisPointer: { type: 'line' }
+                trigger: 'item',
+                formatter: function(params) {
+                    const row = params.data.meta;
+                    return [
+                        `<strong>${row.route_name} ${row.direction_label}</strong>`,
+                        `${row.origin_name} to ${row.destination_name}`,
+                        `Average: ${row.average_headway_minutes} min`,
+                        `Range: ${row.minimum_headway_minutes}-${row.maximum_headway_minutes} min`,
+                        `Observed gaps: ${row.observed_intervals}`
+                    ].join('<br>');
+                }
             },
             grid: {
-                left: '3%',
-                right: '4%',
+                left: '4%',
+                right: '3%',
                 top: '10%',
-                bottom: '5%',
+                bottom: '8%',
                 containLabel: true
             },
             xAxis: {
@@ -738,86 +777,89 @@ function initRouteCharts(headway, schedule) {
                 data: [],
                 axisTick: { show: false },
                 axisLine: { lineStyle: { color: '#cbd5e1' } },
-                axisLabel: { fontFamily: 'Plus Jakarta Sans', color: '#64748b' }
+                axisLabel: { fontFamily: 'Plus Jakarta Sans', color: '#64748b', interval: 0 }
             },
             yAxis: {
                 type: 'value',
                 min: 0,
                 splitLine: { lineStyle: { color: '#f1f5f9' } },
-                axisLabel: { fontFamily: 'Plus Jakarta Sans', color: '#64748b' }
-            },
-            series: [
-                {
-                    name: 'Actual Headway',
-                    type: 'line',
-                    data: [],
-                    smooth: true,
-                    lineStyle: { color: '#378ADD', width: 2.5 },
-                    itemStyle: { color: '#378ADD' }
-                },
-                {
-                    name: 'Target Headway',
-                    type: 'line',
-                    data: [],
-                    symbol: 'none',
-                    lineStyle: { type: 'dashed', color: '#888780', width: 1.5 }
+                axisLabel: {
+                    fontFamily: 'Plus Jakarta Sans',
+                    color: '#64748b',
+                    formatter: '{value} min'
                 }
-            ]
+            },
+            series: [{
+                name: 'Average actual headway',
+                type: 'bar',
+                data: [],
+                barMaxWidth: 44,
+                itemStyle: { borderRadius: [4, 4, 0, 0] }
+            }]
         };
         headwayChart.setOption(headwayOption);
     }
 
-    const scContainer = document.getElementById('scheduleComplianceChart');
-    if (scContainer) {
-        scheduleComplianceChart = echarts.init(scContainer);
-        const complianceOption = {
+    const durationContainer = document.getElementById('tripDurationChart');
+    if (durationContainer) {
+        tripDurationChart = echarts.init(durationContainer);
+        const durationOption = {
             tooltip: {
-                trigger: 'axis',
-                axisPointer: { type: 'shadow' },
+                trigger: 'item',
                 formatter: function(params) {
-                    const val = params[0].value;
-                    if (val === 0) return params[0].name + ': On time';
-                    if (val > 0) return params[0].name + ': ' + val + ' min late';
-                    return params[0].name + ': ' + Math.abs(val) + ' min early';
+                    const row = params.data.meta;
+                    return [
+                        `<strong>${row.route_name} ${row.direction_label}</strong>`,
+                        `${row.origin_name} to ${row.destination_name}`,
+                        `Average: ${row.average_duration_minutes} min`,
+                        `Range: ${row.minimum_duration_minutes}-${row.maximum_duration_minutes} min`,
+                        `Valid durations: ${row.valid_duration_trips}`
+                    ].join('<br>');
                 }
             },
             grid: {
-                left: '3%',
-                right: '4%',
-                top: '5%',
-                bottom: '5%',
+                left: '4%',
+                right: '3%',
+                top: '10%',
+                bottom: '8%',
                 containLabel: true
             },
             xAxis: {
-                type: 'value',
-                splitLine: { lineStyle: { color: '#f1f5f9' } },
-                axisLabel: { fontFamily: 'Plus Jakarta Sans', color: '#64748b' }
-            },
-            yAxis: {
                 type: 'category',
                 data: [],
                 axisTick: { show: false },
-                axisLine: { show: false },
-                axisLabel: { fontFamily: 'Plus Jakarta Sans', color: '#64748b' }
+                axisLine: { lineStyle: { color: '#cbd5e1' } },
+                axisLabel: { fontFamily: 'Plus Jakarta Sans', color: '#64748b', interval: 0 }
+            },
+            yAxis: {
+                type: 'value',
+                min: 0,
+                splitLine: { lineStyle: { color: '#f1f5f9' } },
+                axisLabel: {
+                    fontFamily: 'Plus Jakarta Sans',
+                    color: '#64748b',
+                    formatter: '{value} min'
+                }
             },
             series: [{
-                name: 'Variance',
+                name: 'Average actual duration',
                 type: 'bar',
                 data: [],
-                itemStyle: { borderRadius: [0, 4, 4, 0] }
+                barMaxWidth: 44,
+                itemStyle: { borderRadius: [4, 4, 0, 0] }
             }]
         };
-        scheduleComplianceChart.setOption(complianceOption);
+        tripDurationChart.setOption(durationOption);
     }
 
-    updateRouteChartsData(headway, schedule);
+    updateRouteChartsData(headway, durations);
 }
 
-function updateRouteChartsData(headway, schedule) {
+function updateRouteChartsData(headway, durations) {
     const headwayEmpty = document.getElementById('routeHeadwayEmptyState');
     const headwayWrapper = document.getElementById('headwayRegularityChart');
-    const complianceEmpty = document.getElementById('routeComplianceEmptyState');
-    const complianceWrapper = document.getElementById('scheduleComplianceChart');
+    const durationEmpty = document.getElementById('routeDurationEmptyState');
+    const durationWrapper = document.getElementById('tripDurationChart');
 
     if (headwayChart) {
         if (!headway || headway.length === 0) {
@@ -827,48 +869,34 @@ function updateRouteChartsData(headway, schedule) {
             if (headwayEmpty) headwayEmpty.classList.add('hidden');
             if (headwayWrapper) headwayWrapper.classList.remove('invisible');
 
-            const tripSequences = headway.map(h => h.trip_sequence);
-            const actualHeadways = headway.map(h => h.actual_headway);
-            const targetHeadways = headway.map(h => h.target_headway);
-
             headwayChart.setOption({
-                xAxis: { data: tripSequences },
-                series: [
-                    {
-                        data: actualHeadways.map((v, i) => {
-                            const isLate = v - targetHeadways[i] > 5;
-                            return {
-                                value: v,
-                                symbolSize: isLate ? 10 : 6,
-                                itemStyle: { color: isLate ? '#E24B4A' : '#378ADD' }
-                            };
-                        })
-                    },
-                    { data: targetHeadways }
-                ]
+                xAxis: { data: headway.map(row => row.display_label) },
+                series: [{
+                    data: headway.map(row => ({
+                        value: row.average_headway_minutes,
+                        meta: row,
+                        itemStyle: { color: row.route_color || '#378ADD' }
+                    }))
+                }]
             });
         }
     }
 
-    if (scheduleComplianceChart) {
-        if (!schedule || schedule.length === 0) {
-            if (complianceEmpty) complianceEmpty.classList.remove('hidden');
-            if (complianceWrapper) complianceWrapper.classList.add('invisible');
+    if (tripDurationChart) {
+        if (!durations || durations.length === 0) {
+            if (durationEmpty) durationEmpty.classList.remove('hidden');
+            if (durationWrapper) durationWrapper.classList.add('invisible');
         } else {
-            if (complianceEmpty) complianceEmpty.classList.add('hidden');
-            if (complianceWrapper) complianceWrapper.classList.remove('invisible');
+            if (durationEmpty) durationEmpty.classList.add('hidden');
+            if (durationWrapper) durationWrapper.classList.remove('invisible');
 
-            const sorted = [...schedule].reverse();
-            const tripLabels = sorted.map(s => s.trip_label);
-            const variances = sorted.map(s => s.variance_minutes);
-            const colors = variances.map(v => v <= 0 ? '#639922' : (v <= 5 ? '#BA7517' : '#E24B4A'));
-
-            scheduleComplianceChart.setOption({
-                yAxis: { data: tripLabels },
+            tripDurationChart.setOption({
+                xAxis: { data: durations.map(row => row.display_label) },
                 series: [{
-                    data: variances.map((v, idx) => ({
-                        value: v,
-                        itemStyle: { color: colors[idx] }
+                    data: durations.map(row => ({
+                        value: row.average_duration_minutes,
+                        meta: row,
+                        itemStyle: { color: row.route_color || '#639922' }
                     }))
                 }]
             });
@@ -903,39 +931,40 @@ function updateStopsTableDOM() {
     const paginated = allStopsData.slice(startIdx, startIdx + stopPerPage);
 
     paginated.forEach(row => {
-        const rowBg = row.status === 'No Service' ? 'bg-[#FCEBEB]/50 hover:bg-[#FCEBEB]' : 'hover:bg-slate-50';
-        const statusBg = row.status === 'Served'
-            ? 'bg-[#EAF3DE] text-[#3B6D11]'
-            : 'bg-[#FCEBEB] text-[#A32D2D]';
+        const isAttributed = row.is_attributed === true;
+        const rowBg = isAttributed ? 'hover:bg-slate-50' : 'bg-amber-50/40 hover:bg-amber-50/70';
+        const stopName = escapeMarkup(row.stop_name);
+        const routeName = escapeMarkup(row.route_name);
+        const direction = escapeMarkup(row.direction_label);
+        const routeColor = safeRouteColor(row.route_color);
 
         const tr = document.createElement('tr');
         tr.className = `transition-colors ${rowBg}`;
         tr.setAttribute('data-stop_name', row.stop_name);
-        tr.setAttribute('data-route_name', row.route_name);
-        tr.setAttribute('data-sequence', row.sequence);
-        tr.setAttribute('data-scheduled_time', row.scheduled_time);
-        tr.setAttribute('data-status', row.status);
-        tr.setAttribute('data-buses_passed', row.buses_passed);
+        tr.setAttribute('data-display_label', row.display_label);
+        tr.setAttribute('data-sequence', row.sequence ?? '');
+        tr.setAttribute('data-recorded_boarded', row.recorded_boarded);
+        tr.setAttribute('data-recorded_alighted', row.recorded_alighted);
+        tr.setAttribute('data-trips_recorded', row.trips_recorded);
 
         tr.innerHTML = `
             <td class="py-3 px-4">
                 <span class="flex items-center gap-2">
-                    <i class="ti ti-map-pin text-slate-400 text-[14px]"></i>
-                    <span class="font-medium text-[#001F44]">${row.stop_name}</span>
+                    <i class="ti ${isAttributed ? 'ti-map-pin' : 'ti-map-pin-question'} text-slate-400 text-[14px]"></i>
+                    <span class="font-medium text-[#001F44]">${stopName}</span>
                 </span>
             </td>
             <td class="py-3 px-4">
-                <span class="flex items-center gap-1.5">
-                    <span class="w-2 h-2 rounded-full inline-block shrink-0" style="background-color: ${row.route_color}"></span>
-                    <span class="text-slate-600 text-[12px] font-medium">${row.route_name}</span>
-                </span>
+                <div class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full inline-block shrink-0" style="background-color: ${routeColor}"></span>
+                    <span class="text-slate-600 text-[12px] font-medium">${routeName}</span>
+                    <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">${direction}</span>
+                </div>
             </td>
-            <td class="py-3 px-4 text-center font-mono-custom text-slate-600">${row.sequence}</td>
-            <td class="py-3 px-4 text-center font-mono-custom text-slate-700">${row.scheduled_time}</td>
-            <td class="py-3 px-4">
-                <span class="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide ${statusBg}">${row.status}</span>
-            </td>
-            <td class="py-3 px-4 text-center font-mono-custom text-slate-700">${row.buses_passed}</td>
+            <td class="py-3 px-4 text-center font-mono-custom text-slate-600">${escapeMarkup(row.sequence_label)}</td>
+            <td class="py-3 px-4 text-center font-mono-custom font-semibold text-[#003F87]">${formatNumber(row.recorded_boarded)}</td>
+            <td class="py-3 px-4 text-center font-mono-custom font-semibold text-[#854F0B]">${formatNumber(row.recorded_alighted)}</td>
+            <td class="py-3 px-4 text-center font-mono-custom text-slate-700">${formatNumber(row.trips_recorded)}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -992,62 +1021,65 @@ window.gotoStopPage = function(page) {
     updateStopsTableDOM();
 };
 
-function updateDeviationsDOM(deviations) {
+function updateIncidentsDOM(incidents) {
     const feed = document.getElementById('incidents-log-feed');
     const badge = document.getElementById('incidents-log-badge');
 
     if (!feed) return;
 
     if (badge) {
-        badge.innerText = `${deviations.length} ${deviations.length === 1 ? 'incident' : 'incidents'}`;
-        badge.className = `rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${deviations.length > 0 ? 'bg-[#FCEBEB] text-[#A32D2D]' : 'bg-slate-100 text-slate-500'}`;
+        badge.innerText = `${incidents.length} ${incidents.length === 1 ? 'incident' : 'incidents'}`;
+        badge.className = `rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${incidents.length > 0 ? 'bg-[#FCEBEB] text-[#A32D2D]' : 'bg-slate-100 text-slate-500'}`;
     }
 
     feed.innerHTML = '';
-    if (deviations.length === 0) {
+    if (incidents.length === 0) {
         feed.innerHTML = `
             <div class="flex flex-col items-center justify-center py-10 min-h-[120px] text-center">
                 <i class="ti ti-circle-check text-[36px] text-[#0F6E56]"></i>
                 <h3 class="text-[14px] font-medium text-[#001F44] mt-2">No incidents recorded</h3>
-                <p class="text-[13px] text-slate-400 mt-1">All buses followed assigned routes for this period.</p>
+                <p class="text-[13px] text-slate-400 mt-1">No operational incidents were recorded for this period.</p>
             </div>
         `;
         return;
     }
 
-    deviations.forEach(dev => {
-        const severityBorder = dev.severity === 'High'
-            ? 'border-l-[#E24B4A]'
-            : (dev.severity === 'Medium' ? 'border-l-[#BA7517]' : 'border-l-[#639922]');
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;'
+    })[character]);
 
-        const severityBadge = dev.severity === 'High'
+    incidents.forEach(incident => {
+        const statusBadge = incident.status === 'active' || incident.status === 'reported'
             ? 'bg-[#FCEBEB] text-[#A32D2D]'
-            : (dev.severity === 'Medium' ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-[#EAF3DE] text-[#3B6D11]');
+            : (incident.status === 'under_review' ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-slate-100 text-slate-600');
 
         const div = document.createElement('div');
-        div.className = `bg-white border-[0.5px] border-slate-200 border-l-[3px] ${severityBorder} rounded-md p-3.5 shadow-sm flex flex-col gap-2`;
+        div.className = 'bg-white border-[0.5px] border-slate-200 border-l-[3px] border-l-[#378ADD] rounded-md p-3.5 shadow-sm flex flex-col gap-2';
         div.innerHTML = `
             <div class="flex items-center justify-between">
-                <span class="px-2 py-0.5 rounded bg-slate-100 text-[#001F44] text-[11px] font-semibold">${dev.deviation_type}</span>
-                <span class="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${severityBadge}">${dev.severity} Severity</span>
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="px-2 py-0.5 rounded bg-blue-50 text-[#003F87] text-[10px] font-bold uppercase">Operational incident</span>
+                    <span class="px-2 py-0.5 rounded bg-slate-100 text-[#001F44] text-[11px] font-semibold">${escapeHtml(incident.event_type)}</span>
+                </div>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${statusBadge}">${escapeHtml(incident.status_label)}</span>
             </div>
 
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
-                <span class="font-mono-custom text-[#001F44] font-semibold">${dev.bus_id}</span>
+                <span class="font-mono-custom text-[#001F44] font-semibold">${escapeHtml(incident.bus_id)}</span>
                 <span class="text-slate-400 font-medium">&#8226;</span>
-                <span class="text-slate-500 font-semibold">${dev.driver_name}</span>
+                <span class="text-slate-500 font-semibold">${escapeHtml(incident.driver_name)}</span>
                 <span class="text-slate-400 font-medium">&#8226;</span>
                 <span class="flex items-center gap-1.5">
-                    <span class="w-2.5 h-2.5 rounded-full inline-block" style="background-color: ${dev.route_color}"></span>
-                    <span class="text-[#001F44] font-semibold">${dev.route}</span>
+                    <span class="w-2.5 h-2.5 rounded-full inline-block" style="background-color: ${incident.route_color}"></span>
+                    <span class="text-[#001F44] font-semibold">${escapeHtml(incident.route)}</span>
                 </span>
             </div>
 
-            <p class="text-slate-500 text-[13px] leading-relaxed">${dev.description}</p>
+            <p class="text-slate-500 text-[13px] leading-relaxed">${escapeHtml(incident.description)}</p>
 
             <div class="flex items-center justify-between pt-2 border-t border-slate-50">
-                <span class="text-slate-400 text-xs font-semibold">${dev.recorded_at}</span>
-                <a href="/admin/live-map?highlight=${dev.bus_id}"
+                <span class="text-slate-400 text-xs font-semibold">${escapeHtml(incident.recorded_at)}</span>
+                <a href="/admin/live-map?highlight=${encodeURIComponent(incident.bus_id)}"
                     class="flex items-center gap-1 text-[#003F87] text-xs font-bold hover:underline">
                     <i class="ti ti-map-pin text-[14px]"></i>
                     <span>View on map</span>
@@ -1056,32 +1088,6 @@ function updateDeviationsDOM(deviations) {
         `;
         feed.appendChild(div);
     });
-}
-
-function toggleDeviationFilter(type) {
-    const idx = selectedDeviationTypes.indexOf(type);
-    if (idx > -1) {
-        selectedDeviationTypes.splice(idx, 1);
-    } else {
-        selectedDeviationTypes.push(type);
-    }
-    fetchRoutesData();
-}
-
-function clearDeviationFilters() {
-    selectedDeviationTypes = [];
-
-    // Uncheck checkboxes in DOM
-    document.querySelectorAll('.deviation-filter-checkbox').forEach(cb => {
-        cb.checked = false;
-    });
-
-    fetchRoutesData();
-}
-
-function toggleDeviationDropdown() {
-    const dropdown = document.getElementById('deviation-filter-dropdown');
-    if (dropdown) dropdown.classList.toggle('hidden');
 }
 
 // Client-side Stop Sorting
@@ -1174,7 +1180,7 @@ function initFleetPerformanceModule(screenName = null) {
         fleetPerformanceInitialized.routes = true;
         if (window.GoPasigRoutesInitialData) {
             allStopsData = window.GoPasigRoutesInitialData.stops;
-            initRouteCharts(window.GoPasigRoutesInitialData.headway, window.GoPasigRoutesInitialData.schedule);
+            initRouteCharts(window.GoPasigRoutesInitialData.headway, window.GoPasigRoutesInitialData.duration);
             renderStopPaginationControls();
         }
 
@@ -1182,21 +1188,7 @@ function initFleetPerformanceModule(screenName = null) {
             document.getElementById(id)?.addEventListener('change', fetchRoutesData);
         });
 
-        document.querySelectorAll('.deviation-filter-checkbox').forEach(cb => {
-            cb.addEventListener('change', () => {
-                toggleDeviationFilter(cb.value);
-            });
-        });
-
         document.getElementById('btn-export-routes-csv')?.addEventListener('click', exportRouteReport);
-
-        document.addEventListener('click', (e) => {
-            const dropdown = document.getElementById('deviation-filter-dropdown');
-            const toggleBtn = document.getElementById('btn-deviation-dropdown-toggle');
-            if (dropdown && toggleBtn && !dropdown.contains(e.target) && !toggleBtn.contains(e.target)) {
-                dropdown.classList.add('hidden');
-            }
-        });
     }
 }
 
@@ -1219,10 +1211,10 @@ window.addEventListener('screen-shown', event => {
     } else if (detail && detail.screen === 'routes') {
         setTimeout(() => {
             if (headwayChart) headwayChart.resize();
-            if (scheduleComplianceChart) scheduleComplianceChart.resize();
+            if (tripDurationChart) tripDurationChart.resize();
 
             if (!headwayChart && window.GoPasigRoutesInitialData) {
-                initRouteCharts(window.GoPasigRoutesInitialData.headway, window.GoPasigRoutesInitialData.schedule);
+                initRouteCharts(window.GoPasigRoutesInitialData.headway, window.GoPasigRoutesInitialData.duration);
             }
         }, 100);
     }
@@ -1231,5 +1223,5 @@ window.addEventListener('screen-shown', event => {
 window.addEventListener('resize', () => {
     if (driverScoreChart) driverScoreChart.resize();
     if (headwayChart) headwayChart.resize();
-    if (scheduleComplianceChart) scheduleComplianceChart.resize();
+    if (tripDurationChart) tripDurationChart.resize();
 });

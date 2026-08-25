@@ -23,7 +23,7 @@ new class extends Component
     public $availableBusesCount   = 0;
     public $availableDriversCount = 0;
     public $activeDispatchesCount  = 0;
-    public $pendingDispatchesCount = 0;
+    public $operationalBusesCount  = 0;
  
     // --- Full dropdown data (all resources with selectable flags) ---
     public $allBuses   = [];
@@ -190,7 +190,7 @@ new class extends Component
         $this->availableBusesCount   = collect($this->allBuses)->where('selectable', true)->count();
         $this->availableDriversCount = collect($this->allDrivers)->where('selectable', true)->count();
         $this->activeDispatchesCount  = Trip::where('status', 'ongoing')->count();
-        $this->pendingDispatchesCount = Trip::where('status', 'pending')->count();
+        $this->operationalBusesCount  = $allBusesCollection->whereIn('status', ['ready', 'operating'])->count();
     }
  
     #[On('refresh-dispatch-data')]
@@ -408,17 +408,17 @@ x-on:request-dispatch-runtime-refresh.window="requestDispatchRefresh()">
             </div>
         </div>
 
-        <!-- Card 4: Pending Dispatches -->
+        <!-- Card 4: Operational Buses -->
         <div class="relative bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-[92px] shadow-sm hover:shadow-md transition-all duration-200 border-l-[3px] border-l-[#BA7517]">
             <div class="flex justify-between items-start">
-                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest truncate">Pending Dispatches</span>
+                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest truncate">Operational Buses</span>
                 <div class="h-6 w-6 rounded bg-amber-50 flex items-center justify-center text-[#BA7517]">
-                    <i class="ti ti-clock text-sm"></i>
+                    <i class="ti ti-engine text-sm"></i>
                 </div>
             </div>
             <div class="mt-1 flex items-baseline gap-1.5">
-                <span class="text-[20px] font-black text-slate-900 leading-none">{{ $pendingDispatchesCount }}</span>
-                <span class="text-[9px] text-slate-500 font-semibold truncate">Awaiting start time</span>
+                <span class="text-[20px] font-black text-slate-900 leading-none">{{ $operationalBusesCount }}</span>
+                <span class="text-[9px] text-slate-500 font-semibold truncate">Assigned or operating</span>
             </div>
         </div>
     </div>

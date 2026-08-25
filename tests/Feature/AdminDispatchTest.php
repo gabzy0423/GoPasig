@@ -86,6 +86,40 @@ class AdminDispatchTest extends TestCase
             ->assertSee('PAS-123')
             ->assertSee('Juan Dela Cruz');
     }
+
+    public function test_dispatch_summary_uses_canonical_standby_and_operational_bus_states(): void
+    {
+        $this->actingAsAdmin();
+
+        foreach (range(1, 5) as $number) {
+            Bus::create([
+                'plate_number' => "PAS-STANDBY-{$number}",
+                'status' => 'inactive',
+                'capacity' => 40,
+                'lat' => 14.5690,
+                'lng' => 121.0680,
+                'speed' => 0,
+                'passengers' => 0,
+            ]);
+        }
+
+        Bus::create([
+            'plate_number' => 'PAS-OPERATIONAL-1',
+            'status' => 'ready',
+            'capacity' => 40,
+            'lat' => 14.5690,
+            'lng' => 121.0680,
+            'speed' => 0,
+            'passengers' => 0,
+        ]);
+
+        Livewire::test('admin.dispatch-builder')
+            ->assertSet('availableBusesCount', 5)
+            ->assertSet('operationalBusesCount', 1)
+            ->assertSee('Operational Buses')
+            ->assertSee('Assigned or operating')
+            ->assertDontSee('Pending Dispatches');
+    }
  
     public function test_dispatch_builder_native_controls_use_explicit_change_handlers(): void
     {
@@ -468,7 +502,7 @@ class AdminDispatchTest extends TestCase
             'bus_id'     => $bus->id,
             'old_status' => 'operating',
             'new_status' => 'breakdown',
-            'reason'     => 'Incident report: breakdown',
+            'reason'     => 'Incident Report: Breakdown',
         ]);
     }
  

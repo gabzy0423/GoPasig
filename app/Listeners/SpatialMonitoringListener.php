@@ -33,8 +33,6 @@ class SpatialMonitoringListener
                 'position_id'      => $event->position->id,
                 'nearby_geofences' => count($context->nearbyGeofences ?? []),
                 'has_trip'         => (bool) $context->trip,
-                'has_corridor'     => (bool) $context->corridor,
-                'corridor_source'  => $context->corridorSource,
             ]);
 
             $this->engine->process($event->position, $context);

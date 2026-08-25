@@ -28,6 +28,7 @@ async function fetchDispatchData() {
     simulatedDay = document.getElementById('simulatedDay')?.value || 'Monday';
     simulatedTimeSlot = document.getElementById('simulatedTimeSlot')?.value || '06:00-08:00';
     selectedRouteId = document.getElementById('selectedRouteId')?.value || 1;
+    updatePhaseLabelDisplay();
 
     try {
         const queryParams = new URLSearchParams({
@@ -44,7 +45,7 @@ async function fetchDispatchData() {
         updateAlertsFeedDOM(data.activeAlerts);
         updateDemandBoardDOM(data.routesData);
         updateRecentDispatchesDOM(data.recentDispatches);
-        updateMlAccuracyTrackerDOM(data.historicalPatterns);
+        updateDemandInsightsDOM(data.historicalPatterns, data.forecastShadow, data.demandForecast);
 
         // Update custom threshold override value if route settings matched
         const customInput = document.getElementById('customThreshold');
@@ -96,12 +97,12 @@ function updateAlertsFeedDOM(alerts) {
             <div class="shrink-0 pt-0.5">${icon}</div>
             <div class="flex-grow space-y-1">
                 <div class="flex items-center justify-between">
-                    <h4 class="text-xs font-black uppercase tracking-wider ${alertText}">${alert.title}</h4>
+                    <h4 class="text-xs font-black uppercase tracking-wider ${alertText}">${escapeDispatchText(alert.title)}</h4>
                     <span class="inline-flex rounded px-1.5 py-0.2 text-[8px] font-black uppercase tracking-wide ${badgeColor}">
-                        ${alert.severity}
+                        ${escapeDispatchText(alert.severity)}
                     </span>
                 </div>
-                <p class="text-[12.5px] text-slate-700 font-semibold leading-relaxed">${alert.message}</p>
+                <p class="text-[12.5px] text-slate-700 font-semibold leading-relaxed">${escapeDispatchText(alert.message)}</p>
                 <div class="pt-2">
                     <button onclick="dispatchNowAction(${alert.route_id}, ${alert.route_variant_id || 'null'})" class="h-7 px-3 text-[10px] font-black text-white bg-[#003F87] hover:bg-[#002D62] rounded-lg transition uppercase tracking-wider">
                         Dispatch Bus Now
@@ -130,6 +131,19 @@ function dispatchVariantSelectMarkup(route) {
     return `<select id="dispatch-variant-${route.id}" data-dispatch-variant-route="${route.id}" class="w-full h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-[#003F87]">${options.join('')}</select>`;
 }
 
+function updatePhaseLabelDisplay() {
+    const label = document.getElementById('phase-label-display');
+    if (!label) return;
+
+    const labels = {
+        1: 'Reactive Live Demand',
+        2: 'Predictive Pre-Dispatch',
+        3: 'Self-Monitoring',
+    };
+
+    label.textContent = labels[Number(selectedPhase)] || labels[1];
+}
+
 function directionDemandMarkup(route) {
     const variants = Array.isArray(route.variants) ? route.variants : [];
     const directionCells = variants.map(variant => `
@@ -151,8 +165,8 @@ function directionDemandMarkup(route) {
                 ${directionCells || '<span class="text-[10px] text-slate-400 font-bold">No route directions configured</span>'}
             </div>
             <div class="mt-2 pt-2 border-t border-slate-200 flex justify-between text-[9px] font-bold text-slate-500 uppercase tracking-wide">
-                <span>Resolved total: ${route.total || 0}</span>
-                <span>Simulator: ${route.manual_count || 0}</span>
+                <span>Live total: ${route.total || 0}</span>
+                <span>Simulator: ${route.simulator_total || 0}</span>
             </div>
             ${unresolvedMarkup}
         </div>
@@ -223,11 +237,27 @@ function updateDemandBoardDOM(routesData) {
         const loadPercent = r.threshold > 0 ? Math.min(100, Math.round(((r.max_direction_waiting_count || 0) / r.threshold) * 100)) : 0;
         
         let predictionMarkup = '';
-        if (selectedPhase >= 2) {
+        if (Number(selectedPhase) === 2) {
+            const summary = r.forecast_summary || {};
+            const peak = summary.peak || null;
+            const forecastBody = peak
+                ? `
+                    <div class="flex items-center justify-between gap-2">
+                        <span>Tomorrow peak:</span>
+                        <strong class="font-mono">${peak.expected_commuters} pax</strong>
+                    </div>
+                    <p class="mt-1 text-[9px] font-bold text-[#0C447C]/75">${peak.direction_label} | ${peak.time_slot} | ${peak.confidence_label} confidence</p>
+                `
+                : `
+                    <div class="flex items-center justify-between gap-2">
+                        <span>Tomorrow forecast:</span>
+                        <strong>${summary.status_label || 'Insufficient finalized history'}</strong>
+                    </div>
+                `;
             predictionMarkup = `
-                <div class="p-2 bg-[#E6F1FB] border border-[#003F87]/15 rounded-xl text-[11px] text-[#0C447C] font-semibold flex items-center justify-between">
-                    <span>Expected Peak:</span>
-                    <strong class="font-mono">${r.historical_avg} pax</strong>
+                <div class="p-2 bg-[#E6F1FB] border border-[#003F87]/15 rounded-xl text-[11px] text-[#0C447C] font-semibold">
+                    ${forecastBody}
+                    <p class="mt-1 text-[9px] font-bold uppercase tracking-wide text-[#0C447C]/60">Advisory only</p>
                 </div>
             `;
         }
@@ -252,10 +282,10 @@ function updateDemandBoardDOM(routesData) {
         card.innerHTML = `
             <div class="space-y-1">
                 <div class="flex justify-between items-start">
-                    <h4 class="text-sm font-extrabold text-[#001F44]">${r.name || `Route ${r.id}`}</h4>
+                    <h4 class="text-sm font-extrabold text-[#001F44]">${escapeDispatchText(r.name || 'Official route')}</h4>
                     <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${badgeClass}">${badgeText}</span>
                 </div>
-                <p class="text-[11px] text-slate-400 font-semibold leading-tight line-clamp-2 h-[32px]">${r.description}</p>
+                <p class="text-[11px] text-slate-400 font-semibold leading-tight line-clamp-2 h-[32px]">${escapeDispatchText(r.description || '')}</p>
             </div>
 
             ${demandMarkup}
@@ -306,88 +336,237 @@ function updateRecentDispatchesDOM(recentDispatches) {
         div.innerHTML = `
             <span class="absolute h-2.5 w-2.5 rounded-full border-2 border-white shadow-sm -left-[22px] top-4 z-10" style="background-color: ${routeColor}"></span>
             <div class="flex items-center justify-between">
-                <span class="text-xs font-black text-[#001F44] truncate">Route ${log.route_id} (${log.route_name})</span>
+                <span class="text-xs font-black text-[#001F44] truncate">${escapeDispatchText(log.route_name || 'Route')}</span>
                 <span class="text-[10px] text-slate-400 font-bold font-mono">${log.time_diff}</span>
             </div>
             <div class="text-[11px] text-slate-500 font-semibold space-y-0.5">
-                <div>Bus: <strong class="text-slate-700 font-mono">${log.bus_plate}</strong> Ãƒâ€šÃ‚Â· Driver: <strong class="text-slate-700">${log.driver_name}</strong></div>
-                <div class="italic text-[10px] opacity-90 mt-0.5">${log.notes}</div>
+                <div>Bus: <strong class="text-slate-700 font-mono">${escapeDispatchText(log.bus_plate || '-')}</strong> - Driver: <strong class="text-slate-700">${escapeDispatchText(log.driver_name || '-')}</strong></div>
+                <div class="italic text-[10px] opacity-90 mt-0.5">${escapeDispatchText(log.notes || '')}</div>
             </div>
         `;
         list.appendChild(div);
     });
 }
 
-function updateMlAccuracyTrackerDOM(patterns) {
+function escapeDispatchText(value) {
+    const element = document.createElement('div');
+    element.textContent = value == null ? '' : String(value);
+    return element.innerHTML;
+}
+
+function predictiveForecastPanelMarkup(forecast = {}) {
+    const summary = forecast?.overall_summary || {};
+    const rows = Array.isArray(forecast?.rows) ? forecast.rows : [];
+    const routeSummaries = Array.isArray(forecast?.route_summaries) ? forecast.route_summaries : [];
+    const readyRows = rows.filter(row => row.status === 'ready').slice(0, 6);
+    const minBuses = summary.minimum_bus_slots == null ? '-' : summary.minimum_bus_slots;
+    const routeSummaryMarkup = routeSummaries.map(routeSummary => {
+        const peak = routeSummary.peak || null;
+        const peakMarkup = peak
+            ? `
+                <div class="grid grid-cols-2 gap-2 text-[10px] font-bold">
+                    <span class="text-slate-400">Peak</span>
+                    <strong class="text-right text-slate-700">${escapeDispatchText(peak.direction_label)} ${escapeDispatchText(peak.time_slot)}</strong>
+                    <span class="text-slate-400">Expected</span>
+                    <strong class="text-right text-[#003F87] font-mono">${escapeDispatchText(peak.expected_commuters)} pax</strong>
+                    <span class="text-slate-400">Suggested buses</span>
+                    <strong class="text-right text-slate-700 font-mono">${escapeDispatchText(peak.minimum_buses)}</strong>
+                </div>
+            `
+            : '<p class="text-[10px] font-semibold text-slate-400">No advisory slot yet. Finalized same-weekday history is still insufficient.</p>';
+
+        return `
+            <div class="rounded-xl border border-slate-100 bg-slate-50 p-3 space-y-2">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <p class="text-xs font-black text-[#001F44] truncate">${escapeDispatchText(routeSummary.route_name || 'Route')}</p>
+                        <p class="text-[10px] font-bold text-slate-400">${escapeDispatchText(routeSummary.status_label || 'Awaiting forecast')}</p>
+                    </div>
+                    <span class="rounded bg-white px-1.5 py-0.5 text-[9px] font-black text-[#003F87]">${escapeDispatchText(routeSummary.ready_slots || 0)}/${escapeDispatchText(routeSummary.service_slots || 0)}</span>
+                </div>
+                ${peakMarkup}
+            </div>
+        `;
+    }).join('');
+    const rowMarkup = readyRows.length > 0
+        ? readyRows.map(row => `
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                <div class="min-w-0">
+                    <p class="text-[11px] font-black text-slate-700 truncate">${escapeDispatchText(row.route_name)} | ${escapeDispatchText(row.direction_label)} | ${escapeDispatchText(row.time_slot)}</p>
+                    <p class="text-[10px] text-slate-400 font-semibold">${escapeDispatchText(row.basis)}</p>
+                </div>
+                <div class="flex items-center gap-3 text-[10px] font-bold shrink-0">
+                    <span>Expected demand: <strong class="font-mono text-[#003F87]">${escapeDispatchText(row.expected_commuters)} pax</strong></span>
+                    <span>Suggested buses: <strong class="font-mono text-slate-700">${escapeDispatchText(row.minimum_buses)}</strong></span>
+                    <span>Confidence: <strong class="font-mono text-slate-700">${escapeDispatchText(row.confidence_label)}</strong></span>
+                </div>
+            </div>
+        `).join('')
+        : `
+            <div class="py-6 text-center">
+                <p class="text-xs font-bold text-slate-600">${escapeDispatchText(summary.status_label || 'No advisory forecast available yet.')}</p>
+                <p class="text-[10px] text-slate-400 font-semibold mt-1">Requires finalized, training-eligible demand history for the same weekday. No dispatch is generated from insufficient history.</p>
+            </div>
+        `;
+
+    return `
+        <div id="predictive-forecast-panel" class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-4">
+            <div class="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div class="flex items-center gap-2 min-w-0">
+                    <i class="ti ti-chart-arrows-vertical text-lg text-[#003F87]"></i>
+                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-tight truncate">Predictive Demand Forecast</h3>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <span class="rounded-full px-2 py-0.5 text-[9px] font-black uppercase bg-[#E6F1FB] text-[#003F87]">Advisory only</span>
+                    <span class="rounded-full px-2 py-0.5 text-[9px] font-black uppercase bg-slate-100 text-slate-500">Manual dispatch</span>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-100 border border-slate-100 rounded-lg overflow-hidden">
+                <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Target</span><strong class="text-xs font-black text-slate-800 font-mono">${escapeDispatchText(forecast.target_date || 'Tomorrow')}</strong></div>
+                <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Status</span><strong class="text-xs font-black text-[#003F87]">${escapeDispatchText(summary.status_label || 'Awaiting forecast')}</strong></div>
+                <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Ready direction-slots</span><strong class="text-base font-black text-[#3B6D11] font-mono">${escapeDispatchText(summary.ready_slots || 0)}/${escapeDispatchText(summary.service_slots || 0)}</strong></div>
+                <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Suggested bus slots</span><strong class="text-base font-black text-slate-800 font-mono">${escapeDispatchText(minBuses)}</strong></div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">${routeSummaryMarkup}</div>
+            <div class="space-y-2">
+                <p class="text-[10px] font-black uppercase tracking-wider text-slate-400">Top advisory time slots</p>
+                ${rowMarkup}
+            </div>
+            <p class="text-[10px] text-slate-400 font-semibold">Uses finalized direction-aware demand history. This is an advisory only; a dispatcher must still choose a direction and dispatch manually.</p>
+        </div>
+    `;
+}
+
+function reactiveLiveDemandPanelMarkup() {
+    return `
+        <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div class="flex items-center gap-2">
+                    <i class="ti ti-radar-2 text-lg text-[#003F87]"></i>
+                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-tight">Reactive Live Demand Contract</h3>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
+                    <span class="text-[10px] text-slate-400 font-extrabold uppercase block tracking-wider">Live trigger</span>
+                    <strong class="text-xs font-black text-[#001F44] block">WAITING commuters by route direction</strong>
+                    <p class="text-[10px] text-slate-500 font-semibold">Only active app commuter journeys crossing the threshold create reactive alerts.</p>
+                </div>
+                <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
+                    <span class="text-[10px] text-slate-400 font-extrabold uppercase block tracking-wider">Driver evidence</span>
+                    <strong class="text-xs font-black text-[#001F44] block">Passenger +/- supports load history</strong>
+                    <p class="text-[10px] text-slate-500 font-semibold">Driver passenger changes are live operational evidence, not the immediate reactive dispatch trigger.</p>
+                </div>
+                <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
+                    <span class="text-[10px] text-slate-400 font-extrabold uppercase block tracking-wider">Dispatch rule</span>
+                    <strong class="text-xs font-black text-[#001F44] block">Manual dispatch only</strong>
+                    <p class="text-[10px] text-slate-500 font-semibold">The system recommends action; a dispatcher must still choose the direction and dispatch manually.</p>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function forecastShadowEvaluationPanelMarkup(shadow = {}) {
+    const summary = shadow?.summary || {};
+    const rows = Array.isArray(shadow?.rows) ? shadow.rows : [];
+    const meanAbsoluteError = summary.mean_absolute_error == null
+        ? '-'
+        : `${Number(summary.mean_absolute_error).toFixed(1)} pax`;
+    const rowsMarkup = rows.length > 0
+        ? rows.map(row => {
+            const predicted = row.predicted_commuters == null ? '-' : `${row.predicted_commuters} pax`;
+            const actual = row.actual_commuters == null ? '-' : `${row.actual_commuters} pax`;
+            const error = row.absolute_error == null ? '-' : `${row.absolute_error} pax`;
+            const direction = String(row.direction || '');
+            const directionLabel = direction.charAt(0).toUpperCase() + direction.slice(1);
+
+            return `
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                    <div class="min-w-0">
+                        <p class="text-[11px] font-black text-slate-700 truncate">${escapeDispatchText(row.route_name)} | ${escapeDispatchText(directionLabel)} | ${escapeDispatchText(row.time_slot)}</p>
+                        <p class="text-[10px] text-slate-400 font-semibold">Target ${escapeDispatchText(row.target_date)} | ${escapeDispatchText(row.status_label)}</p>
+                    </div>
+                    <div class="flex items-center gap-3 text-[10px] font-bold shrink-0">
+                        <span>Forecast: <strong class="font-mono text-[#003F87]">${escapeDispatchText(predicted)}</strong></span>
+                        <span>Actual: <strong class="font-mono text-slate-700">${escapeDispatchText(actual)}</strong></span>
+                        <span>Error: <strong class="font-mono text-slate-700">${escapeDispatchText(error)}</strong></span>
+                    </div>
+                </div>
+            `;
+        }).join('')
+        : `
+            <div class="py-6 text-center">
+                <p class="text-xs font-bold text-slate-600">No forecast shadow snapshots yet.</p>
+                <p class="text-[10px] text-slate-400 font-semibold mt-1">The next scheduled capture will preserve a future advisory forecast for evaluation.</p>
+            </div>
+        `;
+
+    return `
+        <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-4">
+            <div class="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div class="flex items-center gap-2 min-w-0">
+                    <i class="ti ti-chart-dots text-lg text-[#003F87]"></i>
+                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-tight truncate">Forecast Shadow Evaluation</h3>
+                </div>
+                <span class="rounded-full px-2 py-0.5 text-[9px] font-black uppercase bg-slate-100 text-slate-500 shrink-0">Advisory only</span>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-100 border border-slate-100 rounded-lg overflow-hidden">
+                <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Captured</span><strong class="text-base font-black text-slate-800 font-mono">${summary.captured || 0}</strong></div>
+                <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Forecast ready</span><strong class="text-base font-black text-[#003F87] font-mono">${summary.forecast_ready || 0}</strong></div>
+                <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Evaluated</span><strong class="text-base font-black text-[#3B6D11] font-mono">${summary.evaluated || 0}</strong></div>
+                <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Mean abs. error</span><strong class="text-base font-black text-slate-800 font-mono">${escapeDispatchText(meanAbsoluteError)}</strong></div>
+            </div>
+            <div class="space-y-2">${rowsMarkup}</div>
+            <p class="text-[10px] text-slate-400 font-semibold">Self-monitoring compares forecast snapshots against finalized actual DemandHistory. It does not create dispatches. Awaiting target: ${summary.awaiting_target || 0} | Pending finalized actual: ${summary.pending_actual || 0} | Actual without forecast: ${summary.actual_without_forecast || 0}</p>
+        </div>
+    `;
+}
+
+function updateDemandInsightsDOM(patterns = [], shadow = {}, forecast = {}) {
     const container = document.getElementById('accuracy-or-patterns-container');
     if (!container) return;
 
-    if (selectedPhase == 3) {
-        // ISSUE-034 FIX: The previous implementation used Math.random() to fabricate ML accuracy
-        // data and showed a hardcoded '96.4% Acc' badge ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â all fake. Until a real ML model is
-        // integrated, show an honest empty state instead of misleading mock data.
-        container.innerHTML = `
-            <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-4">
-                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div class="flex items-center gap-2">
-                        <i class="ti ti-chart-bar text-lg text-[#003F87]"></i>
-                        <h3 class="text-sm font-bold text-slate-800 uppercase tracking-tight">ML Model Accuracy Tracker</h3>
-                    </div>
-                    <span class="rounded-full px-2 py-0.5 text-[9px] font-black uppercase bg-slate-100 text-slate-500">Not Available</span>
-                </div>
-                <div class="py-10 flex flex-col items-center justify-center text-center space-y-3">
-                    <div class="h-12 w-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center">
-                        <i class="ti ti-brain text-2xl"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs font-bold text-slate-700">ML Model Not Yet Integrated</p>
-                        <p class="text-[11px] text-slate-400 font-semibold mt-1 max-w-xs">Real-time accuracy tracking will appear here once a trained model is connected to the dispatch pipeline.</p>
-                    </div>
-                </div>
-            </div>
-        `;
-    } else {
-        container.innerHTML = `
-            <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-4">
-                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div class="flex items-center gap-2">
-                        <i class="ti ti-history text-lg text-[#003F87]"></i>
-                        <h3 class="text-sm font-bold text-slate-800 uppercase tracking-tight">Recorded Peak Demand Patterns</h3>
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3" id="peak-demand-boxes"></div>
-            </div>
-        `;
-
-        const boxesContainer = document.getElementById('peak-demand-boxes');
-        patterns.slice(0, 4).forEach(p => {
-            const box = document.createElement('div');
-            box.className = 'p-3 bg-slate-50 border border-slate-100 rounded-xl text-center space-y-1';
-            box.innerHTML = `
-                <span class="text-[10px] text-slate-400 font-extrabold uppercase block tracking-wider">${p.day_of_week}</span>
-                <span class="text-[11px] font-bold text-slate-700 block truncate">Route ${p.route_id}</span>
-                <strong class="text-lg font-black text-[#003F87] font-mono block">${p.total_commuters} pax</strong>
-                <span class="text-[9px] text-slate-400 font-bold block">${p.time_slot}</span>
-            `;
-            boxesContainer.appendChild(box);
-        });
+    if (Number(selectedPhase) === 2) {
+        container.innerHTML = predictiveForecastPanelMarkup(forecast);
+        return;
     }
+
+    if (Number(selectedPhase) === 3) {
+        container.innerHTML = forecastShadowEvaluationPanelMarkup(shadow);
+        return;
+    }
+
+    container.innerHTML = reactiveLiveDemandPanelMarkup();
 }
 
 // SIMULATOR ACTIONS
 async function addCommuterAction(routeId) {
     try {
+        const selectedRouteVariantId = selectedDispatchVariantId(routeId);
+        const payload = { route_id: routeId };
+        if (selectedRouteVariantId) {
+            payload.route_variant_id = selectedRouteVariantId;
+        }
+
         const response = await fetch(window.FleetDispatchConfig.addCommuterUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': window.FleetDispatchConfig.csrfToken
             },
-            body: JSON.stringify({ route_id: routeId })
+            body: JSON.stringify(payload)
         });
-        if (response.ok) fetchDispatchData();
+        const data = await response.json();
+        if (response.ok && data.success) {
+            showDispatchNotification(data.message || 'Simulated app commuter added.');
+            fetchDispatchData();
+        } else {
+            showDispatchNotification(data.message || 'Failed to add simulated app commuter.', true);
+        }
     } catch (e) {
         console.error('Simulator app commuter error:', e);
+        showDispatchNotification('Failed to add simulated app commuter.', true);
     }
 }
 
@@ -399,31 +578,55 @@ async function addManualTickerAction(routeId) {
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': window.FleetDispatchConfig.csrfToken
             },
-            body: JSON.stringify({ route_id: routeId })
-        });
-        if (response.ok) fetchDispatchData();
-    } catch (e) {
-        console.error('Simulator manual ticker error:', e);
-    }
-}
-
-async function simulateRushSpurtAction(routeId) {
-    try {
-        const response = await fetch(window.FleetDispatchConfig.simulateSpurtUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': window.FleetDispatchConfig.csrfToken
-            },
             body: JSON.stringify({
                 route_id: routeId,
                 day: simulatedDay,
                 time_slot: simulatedTimeSlot
             })
         });
-        if (response.ok) fetchDispatchData();
+        const data = await response.json();
+        if (response.ok && data.success) {
+            showDispatchNotification(data.message || 'Simulated driver passenger count added.');
+            fetchDispatchData();
+        } else {
+            showDispatchNotification(data.message || 'Failed to add simulated driver count.', true);
+        }
+    } catch (e) {
+        console.error('Simulator manual ticker error:', e);
+        showDispatchNotification('Failed to add simulated driver count.', true);
+    }
+}
+
+async function simulateRushSpurtAction(routeId) {
+    try {
+        const selectedRouteVariantId = selectedDispatchVariantId(routeId);
+        const payload = {
+            route_id: routeId,
+            day: simulatedDay,
+            time_slot: simulatedTimeSlot
+        };
+        if (selectedRouteVariantId) {
+            payload.route_variant_id = selectedRouteVariantId;
+        }
+
+        const response = await fetch(window.FleetDispatchConfig.simulateSpurtUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': window.FleetDispatchConfig.csrfToken
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+            showDispatchNotification(data.message || 'Simulated commuter spurt added.');
+            fetchDispatchData();
+        } else {
+            showDispatchNotification(data.message || 'Failed to simulate commuter spurt.', true);
+        }
     } catch (e) {
         console.error('Simulator spurt error:', e);
+        showDispatchNotification('Failed to simulate commuter spurt.', true);
     }
 }
 
@@ -535,7 +738,7 @@ function showDispatchNotification(message, isError = false) {
 
 // Document ready and events
 let fleetDispatchModuleInitialized = false;
-let fleetDispatchPollingId = null;
+let fleetDispatchPollingRegistration = null;
 
 function initFleetDispatchModule() {
     if (fleetDispatchModuleInitialized || !document.getElementById('demand-board-grid')) return;
@@ -585,13 +788,19 @@ function initFleetDispatchModule() {
         // Fetch initially
         fetchDispatchData();
 
-        // Polling loop
-        if (!fleetDispatchPollingId) {
-            fleetDispatchPollingId = setInterval(fetchDispatchData, 10000);
+        if (!fleetDispatchPollingRegistration) {
+            fleetDispatchPollingRegistration = window.GoPasigFleetModules?.registerPoller
+                ? window.GoPasigFleetModules.registerPoller('dispatch-intelligence', 'demand-data', fetchDispatchData, 10000)
+                : setInterval(fetchDispatchData, 10000);
         }
 }
 
 window.initFleetDispatchModule = initFleetDispatchModule;
+window.addCommuterAction = addCommuterAction;
+window.addManualTickerAction = addManualTickerAction;
+window.simulateRushSpurtAction = simulateRushSpurtAction;
+window.clearSimulatorDataAction = clearSimulatorDataAction;
+window.dispatchNowAction = dispatchNowAction;
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initFleetDispatchModule, { once: true });

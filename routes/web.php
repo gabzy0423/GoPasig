@@ -17,14 +17,12 @@ use App\Http\Controllers\Admin\ProfileController as AdminProfileController;
 use App\Http\Controllers\Fleet\FleetController;
 use App\Http\Controllers\Fleet\DriverPerformanceController;
 use App\Http\Controllers\Fleet\RoutePerformanceController;
-use App\Http\Controllers\Fleet\ScheduleComplianceController;
 use App\Http\Controllers\Fleet\IncidentController;
 use App\Http\Controllers\Fleet\MaintenanceManagementController;
 use App\Http\Controllers\Fleet\AnalyticsController as FleetAnalyticsController;
 use App\Http\Controllers\Fleet\DispatchIntelligenceController;
 use App\Http\Controllers\Fleet\ProfileController as FleetProfileController;
 use App\Http\Controllers\Driver\DriverController;
-
 
 Route::redirect('/', '/commuter/dashboard')->middleware('commuter_session');
 
@@ -47,7 +45,7 @@ Route::prefix('commuter')->middleware('commuter_session')->name('commuter.')->gr
 
 Route::get('/api/commuter/buses', [CommuterController::class, 'busesApi']);
 
-// Driver Location & Operations Telemetry API (Phase 4)
+// Driver Location & Operations Telemetry API 
 Route::post('/api/driver/trips/{trip}/location', [\App\Http\Controllers\Api\DriverApiController::class, 'updateLocation'])->name('api.driver.location');
 Route::post('/api/driver/trips/{trip}/start', [\App\Http\Controllers\Api\DriverApiController::class, 'startTrip'])->name('api.driver.start');
 Route::post('/api/driver/trips/{trip}/complete', [\App\Http\Controllers\Api\DriverApiController::class, 'completeTrip'])->name('api.driver.complete');
@@ -68,7 +66,7 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::get('/maintenance/{id}/edit', [AdminMaintenanceController::class, 'editPage'])->name('maintenance.edit');
     Route::get('/alerts/history', [AdminServiceAlertController::class, 'history'])->name('alerts.history');
 
-    // Admin Profile Management (Phase 1, Phase 3, Phase 4)
+    // Admin Profile Management 
     Route::get('/api/profile', [AdminProfileController::class, 'show'])->name('api.profile.show');
     Route::put('/api/profile', [AdminProfileController::class, 'update'])->name('api.profile.update');
     Route::post('/api/profile/photo', [AdminProfileController::class, 'uploadPhoto'])->name('api.profile.photo.upload');
@@ -156,6 +154,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
 Route::middleware(['auth', 'role:fleet_manager'])->prefix('fleet')->name('fleet.')->group(function () {
     Route::get('/dashboard', [FleetController::class, 'dashboard'])->name('dashboard');
     Route::get('/api/overview-data', [FleetController::class, 'getOverviewData'])->name('api.overview-data');
+    Route::get('/api/utilization-data', [FleetController::class, 'getUtilizationData'])->name('api.utilization-data');
     Route::post('/api/incidents', [FleetController::class, 'submitIncident'])->name('api.incidents.store');
     Route::post('/api/incidents/{id}/resolve', [FleetController::class, 'resolveIncident'])->name('api.incidents.resolve');
     Route::post('/api/announcements', [FleetController::class, 'submitAnnouncement'])->name('api.announcements.store');
@@ -173,16 +172,13 @@ Route::middleware(['auth', 'role:fleet_manager'])->prefix('fleet')->name('fleet.
     Route::get('/api/routes-data', [RoutePerformanceController::class, 'getRoutesData'])->name('api.routes-data');
     Route::get('/api/routes-export', [RoutePerformanceController::class, 'exportCsv'])->name('api.routes-export');
 
-    Route::get('/schedule', fn() => redirect()->route('fleet.dashboard', ['tab' => 'schedule']))->name('schedule');
-    Route::get('/api/schedule-compliance-data', [ScheduleComplianceController::class, 'getComplianceDataAjax'])->name('api.schedule-compliance-data');
-    Route::get('/api/schedule-compliance-export', [ScheduleComplianceController::class, 'exportCsv'])->name('api.schedule-compliance-export');
+    Route::get('/schedule', fn() => redirect()->route('fleet.dashboard'))->name('schedule');
 
     Route::get('/incidents', fn() => redirect()->route('fleet.dashboard', ['tab' => 'incidents']))->name('incidents');
     Route::get('/api/incidents-data', [IncidentController::class, 'getIncidentsData'])->name('api.incidents-data');
     Route::get('/api/trips-details/{id}', [IncidentController::class, 'getTripDetails'])->name('api.trips-details');
     Route::post('/api/incidents-store', [IncidentController::class, 'store'])->name('api.incidents-store');
     Route::post('/api/incidents-update-status/{id}', [IncidentController::class, 'updateStatus'])->name('api.incidents-update-status');
-    Route::delete('/api/incidents-delete/{id}', [IncidentController::class, 'destroy'])->name('api.incidents-delete');
     Route::get('/api/incidents-export', [IncidentController::class, 'exportCsv'])->name('api.incidents-export');
 
     Route::get('/maintenance', [MaintenanceManagementController::class, 'indexPage'])->name('maintenance');
@@ -244,10 +240,10 @@ Route::middleware(['auth', 'role:driver'])->prefix('driver')->name('driver.')->g
     Route::post('/trip/toggle', [DriverController::class, 'toggleTrip'])->name('trip.toggle');
     Route::post('/trip/next', [DriverController::class, 'startNextTrip'])->name('trip.next');
     Route::post('/trip/incident', [DriverController::class, 'reportIncident'])->name('trip.incident');
-  Route::post('/trip/pax', [DriverController::class, 'updatePassengers'])->name('trip.pax');
-  Route::post('/trip/stop', [DriverController::class, 'updateStop'])->name('trip.stop');
-  Route::post('/trip/developer-gps', [DriverController::class, 'updateDeveloperGPS'])->name('trip.developer-gps');
-  Route::post('/trip/gps', [DriverController::class, 'updateGPS'])->middleware('throttle:15,1')->name('trip.gps');
+    Route::post('/trip/pax', [DriverController::class, 'updatePassengers'])->name('trip.pax');
+    Route::post('/trip/stop', [DriverController::class, 'updateStop'])->name('trip.stop');
+    Route::post('/trip/developer-gps', [DriverController::class, 'updateDeveloperGPS'])->name('trip.developer-gps');
+    Route::post('/trip/gps', [DriverController::class, 'updateGPS'])->middleware('throttle:15,1')->name('trip.gps');
 });
 
 

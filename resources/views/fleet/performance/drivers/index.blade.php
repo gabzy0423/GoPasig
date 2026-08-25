@@ -78,7 +78,7 @@
         <!-- Metric Card 2 -->
         <div class="bg-slate-50 rounded-md p-4 flex flex-col justify-between h-[96px] shadow-sm">
             <div class="flex justify-between items-start">
-                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">On duty today</span>
+                <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Drivers with trips</span>
                 <i class="ti ti-steering-wheel text-[16px] text-[#0F6E56]"></i>
             </div>
             <span id="metric-on-duty-today" class="text-[24px] font-medium text-[#001F44] leading-none mt-2">{{ $driverMetrics->on_duty_today }}</span>
@@ -90,7 +90,7 @@
                 <span class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">Avg performance score</span>
                 <i class="ti ti-star text-[16px] text-amber-500"></i>
             </div>
-            <span id="metric-avg-score" class="text-[24px] font-medium text-[#001F44] leading-none mt-2">{{ $driverMetrics->avg_performance_score }}</span>
+            <span id="metric-avg-score" class="text-[24px] font-medium text-[#001F44] leading-none mt-2">{{ $driverMetrics->avg_performance_score ?? 'No data' }}</span>
         </div>
 
         <!-- Metric Card 4 -->
@@ -132,9 +132,12 @@
                             default => 'bg-purple-200 text-purple-800',
                         };
                         $rowStyle = $top['rank'] === 1 ? 'border-l-[3px] border-[#003F87] bg-[#E6F1FB] pl-3' : '';
-                        $scorePill = $top['performance_score'] >= 85
-                            ? 'bg-[#EAF3DE] text-[#3B6D11]'
-                            : ($top['performance_score'] >= 70 ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-[#FCEBEB] text-[#A32D2D]');
+                        $scorePill = $top['performance_score'] === null
+                            ? 'bg-slate-100 text-slate-400'
+                            : ($top['performance_score'] >= 85
+                                ? 'bg-[#EAF3DE] text-[#3B6D11]'
+                                : ($top['performance_score'] >= 70 ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-[#FCEBEB] text-[#A32D2D]'));
+                        $scoreLabel = $top['performance_score'] ?? 'No data';
                     @endphp
                     <div class="flex items-center justify-between py-2.5 transition-all duration-150 {{ $rowStyle }}">
                         <div class="flex items-center gap-3">
@@ -151,8 +154,8 @@
                             </div>
                         </div>
                         <div class="flex flex-col items-end gap-1">
-                            <span class="px-2 py-0.5 rounded text-[13px] font-semibold tracking-wide {{ $scorePill }}">{{ $top['performance_score'] }}</span>
-                            <span class="text-[11px] text-slate-400 font-medium">{{ $top['trips_completed'] }} trips</span>
+                            <span class="px-2 py-0.5 rounded text-[13px] font-semibold tracking-wide {{ $scorePill }}">{{ $scoreLabel }}</span>
+                            <span class="text-[11px] text-slate-400 font-medium">{{ $top['trips_run'] }} trips</span>
                         </div>
                     </div>
                 @empty
@@ -218,11 +221,11 @@
                         <th class="py-3 px-4 w-[10%] cursor-pointer select-none" onclick="sortDriverTable('status')">
                             <span class="flex items-center">Status <i id="sort-icon-status" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
                         </th>
-                        <th class="py-3 px-4 w-[10%] text-center cursor-pointer select-none" onclick="sortDriverTable('trips_completed')">
-                            <span class="flex items-center justify-center">Trips Done <i id="sort-icon-trips_completed" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
+                        <th class="py-3 px-4 w-[10%] text-center cursor-pointer select-none" onclick="sortDriverTable('trips_run')">
+                            <span class="flex items-center justify-center">Trips Run <i id="sort-icon-trips_run" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
                         </th>
-                        <th class="py-3 px-4 w-[12%] text-center cursor-pointer select-none" onclick="sortDriverTable('total_passengers_moved')">
-                            <span class="flex items-center justify-center">Passengers <i id="sort-icon-total_passengers_moved" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
+                        <th class="py-3 px-4 w-[12%] text-center cursor-pointer select-none" onclick="sortDriverTable('recorded_boarded')">
+                            <span class="flex items-center justify-center">Recorded Boarded <i id="sort-icon-recorded_boarded" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
                         </th>
                         <th class="py-3 px-4 w-[10%] text-center cursor-pointer select-none" onclick="sortDriverTable('incidents')">
                             <span class="flex items-center justify-center">Incidents <i id="sort-icon-incidents" class="ti ti-arrows-sort text-slate-300 ml-1 sort-icon"></i></span>
@@ -243,17 +246,20 @@
                                 'off duty'  => 'bg-[#F1EFE8] text-[#5F5E5A]',
                                 default     => 'bg-[#FCEBEB] text-[#A32D2D]',
                             };
-                            $scoreBg = $row['performance_score'] >= 85
-                                ? 'bg-[#EAF3DE] text-[#3B6D11]'
-                                : ($row['performance_score'] >= 70 ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-[#FCEBEB] text-[#A32D2D]');
+                            $scoreBg = $row['performance_score'] === null
+                                ? 'bg-slate-100 text-slate-400'
+                                : ($row['performance_score'] >= 85
+                                    ? 'bg-[#EAF3DE] text-[#3B6D11]'
+                                    : ($row['performance_score'] >= 70 ? 'bg-[#FAEEDA] text-[#854F0B]' : 'bg-[#FCEBEB] text-[#A32D2D]'));
+                            $scoreLabel = $row['performance_score'] ?? 'No data';
                         @endphp
                         <tr class="hover:bg-slate-50 cursor-pointer transition-colors"
                             onclick="openDriverDrawer('{{ $row['driver_id'] }}')"
                             data-driver_name="{{ $row['driver_name'] }}"
                             data-assigned_route="{{ $row['assigned_route'] }}"
                             data-status="{{ $row['status'] }}"
-                            data-trips_completed="{{ $row['trips_completed'] }}"
-                            data-total_passengers_moved="{{ $row['total_passengers_moved'] }}"
+                            data-trips_run="{{ $row['trips_run'] }}"
+                            data-recorded_boarded="{{ $row['recorded_boarded'] }}"
                             data-incidents="{{ $row['incidents'] }}"
                             data-avg_trip_time_minutes="{{ $row['avg_trip_time_minutes'] }}"
                             data-performance_score="{{ $row['performance_score'] }}">
@@ -277,8 +283,8 @@
                             <td class="py-3 px-4">
                                 <span class="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide {{ $statusBg }}">{{ $row['status'] }}</span>
                             </td>
-                            <td class="py-3 px-4 text-center font-mono-custom text-slate-700">{{ $row['trips_completed'] }}</td>
-                            <td class="py-3 px-4 text-center font-mono-custom text-slate-700">{{ number_format($row['total_passengers_moved']) }}</td>
+                            <td class="py-3 px-4 text-center font-mono-custom text-slate-700">{{ $row['trips_run'] }}</td>
+                            <td class="py-3 px-4 text-center font-mono-custom text-slate-700">{{ number_format($row['recorded_boarded']) }}</td>
                             <td class="py-3 px-4 text-center font-mono-custom">
                                 @if($row['incidents'] > 0)
                                     <span class="text-[#A32D2D] font-bold">{{ $row['incidents'] }}</span>
@@ -287,10 +293,10 @@
                                 @endif
                             </td>
                             <td class="py-3 px-4 text-center font-mono-custom text-slate-700">
-                                {{ $row['avg_trip_time_minutes'] > 0 ? $row['avg_trip_time_minutes'] . ' min' : '—' }}
+                                {{ $row['avg_trip_time_minutes'] > 0 ? $row['avg_trip_time_minutes'] . ' min' : 'No data' }}
                             </td>
                             <td class="py-3 px-4 text-center">
-                                <span class="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide {{ $scoreBg }}">{{ $row['performance_score'] }}</span>
+                                <span class="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide {{ $scoreBg }}">{{ $scoreLabel }}</span>
                             </td>
                         </tr>
                     @endforeach
@@ -342,4 +348,3 @@
     </script>
 
 </section>
-

@@ -3,8 +3,12 @@
 namespace Tests\Feature;
 
 use Tests\TestCase;
+use App\Models\Bus;
+use App\Models\Driver;
+use App\Models\Route;
 use App\Models\Trip;
 use App\Models\VehiclePosition;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class LiveGpsApiTest extends TestCase
@@ -44,12 +48,11 @@ class LiveGpsApiTest extends TestCase
 
     public function test_bus_gps_positions_api_returns_correct_presentation_payload()
     {
-        $user = \App\Models\User::factory()->create(['role' => 'fleet_manager']);
-        $route = \App\Models\Route::create([
-            'name' => 'Route Gold',
-            'status' => 'active'
+        $user = User::factory()->create(['role' => 'fleet_manager']);
+        $route = Route::factory()->official('Route 2')->create([
+            'status' => 'active',
         ]);
-        $bus = \App\Models\Bus::factory()->create([
+        $bus = Bus::factory()->create([
             'plate_number' => 'PAS-999',
             'status' => 'active',
             'lat' => 14.5,
@@ -58,7 +61,7 @@ class LiveGpsApiTest extends TestCase
             'route_id' => $route->id
         ]);
 
-        $driver = \App\Models\Driver::create([
+        $driver = Driver::create([
             'user_id' => $user->id,
             'first_name' => 'John',
             'last_name' => 'Doe',
@@ -70,7 +73,7 @@ class LiveGpsApiTest extends TestCase
             'assigned_route' => $route->id,
         ]);
 
-        $trip = \App\Models\Trip::create([
+        $trip = Trip::create([
             'bus_id' => $bus->id,
             'driver_id' => $driver->id,
             'route_id' => $route->id,
@@ -79,7 +82,7 @@ class LiveGpsApiTest extends TestCase
         ]);
 
         // Create a VehiclePosition record (which serves as the latest state of the vehicle)
-        $position = \App\Models\VehiclePosition::create([
+        $position = VehiclePosition::create([
             'bus_id' => $bus->id,
             'trip_id' => $trip->id,
             'lat' => 14.55,
@@ -87,7 +90,6 @@ class LiveGpsApiTest extends TestCase
             'speed' => 22.0,
             'heading' => 90.0,
             'status' => 'active',
-            'corridor_distance' => 12.5,
             'last_updated_at' => now(),
         ]);
 
@@ -97,7 +99,6 @@ class LiveGpsApiTest extends TestCase
             'completed_stops_count' => 4,
             'remaining_stops_count' => 2,
             'trip_percentage' => 66.7,
-            'route_adherence' => 'On Route',
         ]);
 
         // Access the API endpoint
@@ -113,8 +114,6 @@ class LiveGpsApiTest extends TestCase
                         'speed',
                         'nearest_stop',
                         'current_fence',
-                        'route_adherence',
-                        'corridor_distance',
                         'dwell_time_seconds',
                         'trip_id',
                         'coordinate_source',
@@ -128,8 +127,7 @@ class LiveGpsApiTest extends TestCase
                         ]
                     ]
                 ],
-                'geofences',
-                'variant_corridors'
+                'geofences'
             ]);
 
         // Assert exact values are returned directly from DB state
@@ -146,8 +144,9 @@ class LiveGpsApiTest extends TestCase
         $this->assertTrue($busData['has_live_telemetry']);
         $this->assertFalse($busData['state_mismatch']);
         $this->assertNotNull($busData['last_gps_at']);
-        $this->assertEquals('On Route', $busData['route_adherence']);
-        $this->assertEquals(12.5, $busData['corridor_distance']);
+        $this->assertArrayNotHasKey('route_adherence', $busData);
+        $this->assertArrayNotHasKey('corridor_distance', $busData);
+        $this->assertArrayNotHasKey('variant_corridors', $data);
         $this->assertEquals(4, $busData['trip_progress']['completed_stops']);
         $this->assertEquals(2, $busData['trip_progress']['remaining_stops']);
         $this->assertEquals(66.7, $busData['trip_progress']['completion_percentage']);
@@ -164,6 +163,68 @@ class LiveGpsApiTest extends TestCase
         $this->assertTrue($adminBus['has_live_telemetry']);
         $this->assertFalse($adminBus['state_mismatch']);
         $this->assertNotNull($adminBus['last_gps_at']);
+        $this->assertArrayNotHasKey('route_adherence', $adminBus);
+        $this->assertArrayNotHasKey('corridor_distance', $adminBus);
+    }
+
+    public function test_bus_gps_positions_api_excludes_non_official_route_gps_rows()
+    {
+        $user = User::factory()->create(['role' => 'fleet_manager']);
+        $officialRoute = Route::factory()->official('Route 2')->create();
+        $legacyRoute = Route::factory()->create(['name' => 'Route 9', 'status' => 'active']);
+        $driver = Driver::factory()->create();
+        $officialBus = Bus::factory()->create([
+            'plate_number' => 'PAS-OFFICIAL',
+            'status' => 'operating',
+            'route_id' => $officialRoute->id,
+        ]);
+        $legacyBus = Bus::factory()->create([
+            'plate_number' => 'PAS-LEGACY',
+            'status' => 'breakdown',
+            'route_id' => $legacyRoute->id,
+        ]);
+
+        $officialTrip = Trip::factory()->create([
+            'bus_id' => $officialBus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $officialRoute->id,
+            'status' => 'ongoing',
+            'started_at' => now()->subMinutes(5),
+        ]);
+        $legacyTrip = Trip::factory()->create([
+            'bus_id' => $legacyBus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $legacyRoute->id,
+            'status' => 'ongoing',
+            'started_at' => now()->subMinutes(5),
+        ]);
+
+        VehiclePosition::create([
+            'bus_id' => $officialBus->id,
+            'trip_id' => $officialTrip->id,
+            'lat' => 14.5602934,
+            'lng' => 121.0797616,
+            'speed' => 1.5,
+            'status' => 'active',
+            'last_updated_at' => now(),
+        ]);
+        VehiclePosition::create([
+            'bus_id' => $legacyBus->id,
+            'trip_id' => $legacyTrip->id,
+            'lat' => 14.6,
+            'lng' => 121.1,
+            'speed' => 1.5,
+            'status' => 'active',
+            'last_updated_at' => now(),
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/fleet/api/bus-gps-positions');
+        $response->assertOk();
+
+        $plates = collect($response->json('buses'))->pluck('plate_number')->all();
+
+        $this->assertContains('PAS-OFFICIAL', $plates);
+        $this->assertNotContains('PAS-LEGACY', $plates);
     }
 
     public function test_sequential_utc_packets_remain_processed_after_persistence()

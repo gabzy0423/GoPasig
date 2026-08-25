@@ -14,6 +14,9 @@ function initAnalyticsDashboard() {
     if (typeof renderTopStopsTable === 'function') {
         renderTopStopsTable();
     }
+    if (typeof switchPredictionRoute === 'function') {
+        switchPredictionRoute('all');
+    }
     if (typeof updateAnalyticsKPIs === 'function') {
         updateAnalyticsKPIs();
     }
@@ -313,59 +316,72 @@ function initAnalyticsDashboard() {
         });
     }
 
-    // 6. Initialize Chart 5: 30-Day Historical Trend (4C)
+    // 6. Initialize Chart 5: finalized, direction-aware 30-day demand
     if (charts['trend']) {
         charts['trend'].destroy();
         delete charts['trend'];
     }
 
-    const hasTrendData = (typeof historicalTrendData !== 'undefined' && historicalTrendData && historicalTrendData.length > 0);
+    const historicalPayload = (typeof historicalDemandData !== 'undefined' && historicalDemandData)
+        ? historicalDemandData
+        : null;
+    const historicalDates = historicalPayload && Array.isArray(historicalPayload.dates)
+        ? historicalPayload.dates
+        : [];
+    const historicalSeries = historicalPayload && Array.isArray(historicalPayload.series)
+        ? historicalPayload.series
+        : [];
+    const hasTrendData = historicalSeries.some(series =>
+        Array.isArray(series.points) && series.points.some(point => point.value !== null)
+    );
+    const trendRange = document.getElementById('historical-demand-range');
+    const trendCoverage = document.getElementById('historical-demand-coverage');
+    const trendLegend = document.getElementById('historical-demand-legend');
+
+    if (trendRange && historicalPayload && historicalPayload.range) {
+        trendRange.textContent = `${historicalPayload.range.start} to ${historicalPayload.range.end} | ${historicalPayload.range.timezone}`;
+    }
+    if (trendCoverage) {
+        trendCoverage.textContent = historicalPayload && historicalPayload.coverage
+            ? `${historicalPayload.basis}. ${historicalPayload.coverage.label}.`
+            : 'Finalized actual commuter check-ins only.';
+    }
+    if (trendLegend) {
+        trendLegend.replaceChildren();
+        historicalSeries.forEach(series => {
+            const item = document.createElement('span');
+            item.className = 'inline-flex items-center gap-1';
+
+            const swatch = document.createElement('span');
+            swatch.className = 'inline-block w-4 border-t-2';
+            swatch.style.borderTopColor = series.color;
+            swatch.style.borderTopStyle = series.direction === 'inbound' ? 'dashed' : 'solid';
+
+            const label = document.createElement('span');
+            label.textContent = series.label;
+
+            item.append(swatch, label);
+            trendLegend.appendChild(item);
+        });
+    }
+
     showChartEmptyState('historical-trend-chart', !hasTrendData);
 
     if (hasTrendData && document.getElementById('historical-trend-chart')) {
-        let trendLabels = historicalTrendData.map(d => d.label);
-        let trendDatasets = [];
-        let todayPax = null;
-
-        if (typeof kpisData !== 'undefined' && kpisData && kpisData.total_pax_today) {
-            const parsedTodayPax = parseInt(String(kpisData.total_pax_today).replace(/,/g, ''));
-            todayPax = Number.isFinite(parsedTodayPax) ? parsedTodayPax : null;
-        }
-
-        // Dynamic datasets builder
-        trendDatasets.push({
-            label: 'Total',
-            data: historicalTrendData.map(d => d.total || 0),
-            borderColor: '#003F87',
-            backgroundColor: '#003F87',
-            borderWidth: 2,
-            pointRadius: function(context) {
-                return context.dataIndex === (trendLabels.length - 1) ? 5 : 2;
-            },
-            fill: false,
-            tension: 0.15
-        });
-
-        // Extract dynamic route names
-        let routeNames = [];
-        if (typeof routeComparisonData !== 'undefined' && routeComparisonData && routeComparisonData.length > 0) {
-            routeNames = routeComparisonData.map(r => r.route);
-        }
-
-        routeNames.forEach((name, idx) => {
-            const rObj = routeComparisonData.find(r => r.route === name);
-            const color = rObj?.color || ['#185FA5', '#639922', '#BA7517', '#E24B4A'][idx % 4];
-            trendDatasets.push({
-                label: name,
-                data: historicalTrendData.map(d => d[name] || 0),
-                borderColor: color,
+        const trendLabels = historicalDates.map(date => date.label);
+        const trendDatasets = historicalSeries.map(series => ({
+                label: series.label,
+                data: series.points.map(point => point.value),
+                borderColor: series.color,
+                backgroundColor: series.color,
                 borderWidth: 1.5,
-                borderDash: idx % 2 === 0 ? [6, 3] : [2, 4],
-                pointRadius: 0,
+                borderDash: series.direction === 'inbound' ? [6, 3] : [],
+                pointRadius: context => series.points[context.dataIndex]?.coverage === 'partial' ? 4 : 2,
+                pointHoverRadius: 5,
                 fill: false,
+                spanGaps: false,
                 tension: 0.15
-            });
-        });
+            }));
 
         const ctxTrend = document.getElementById('historical-trend-chart').getContext('2d');
         charts['trend'] = new Chart(ctxTrend, {
@@ -389,30 +405,27 @@ function initAnalyticsDashboard() {
                     },
                     y: {
                         min: 0,
+                        beginAtZero: true,
                         ticks: { font: { family: 'Plus Jakarta Sans', size: 9, weight: '600' } },
-                        grid: { color: '#F1F5F9' }
+                        grid: { color: '#F1F5F9' },
+                        title: {
+                            display: true,
+                            text: 'Commuter check-ins',
+                            font: { family: 'Plus Jakarta Sans', size: 9, weight: '700' },
+                            color: '#64748B'
+                        }
                     }
                 },
                 plugins: {
                     legend: { display: false },
-                    annotation: {
-                        annotations: todayPax === null ? {} : {
-                            todayLine: {
-                                type: 'line',
-                                yMin: todayPax,
-                                yMax: todayPax,
-                                borderColor: '#003F87',
-                                borderWidth: 1.2,
-                                borderDash: [4, 4],
-                                label: {
-                                    display: true,
-                                    content: `Today: ${todayPax.toLocaleString()} pax`,
-                                    position: 'end',
-                                    font: { size: 8, weight: 'bold', family: 'Plus Jakarta Sans' },
-                                    color: '#003F87',
-                                    backgroundColor: 'rgba(230, 241, 251, 0.95)',
-                                    padding: 2
-                                }
+                    tooltip: {
+                        callbacks: {
+                            label(context) {
+                                const series = historicalSeries[context.datasetIndex];
+                                const point = series.points[context.dataIndex];
+                                const coverage = point.coverage === 'partial' ? ' (partial coverage)' : '';
+
+                                return `${series.label}: ${point.value} check-ins${coverage}`;
                             }
                         }
                     }

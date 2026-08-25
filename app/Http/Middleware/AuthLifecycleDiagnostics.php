@@ -7,15 +7,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
-/**
- * Temporary, secret-safe diagnostics for the browser auth/session lifecycle.
- * Remove after the asymmetric 419 is identified.
- */
 class AuthLifecycleDiagnostics
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (! $this->isTarget($request)) {
+        if (!$this->isTarget($request)) {
             return $next($request);
         }
 
@@ -89,7 +85,7 @@ class AuthLifecycleDiagnostics
             'submitted_token_hash' => $this->hashValue($submittedToken),
             'session_cookie_names' => array_keys($request->cookies->all()),
             'session_cookie_present' => $request->cookies->has(config('session.cookie')),
-            'request_cookie_hashes' => array_map(fn ($value) => $this->hashValue((string) $value), array_intersect_key($request->cookies->all(), array_flip(['XSRF-TOKEN', config('session.cookie')]))),
+            'request_cookie_hashes' => array_map(fn($value) => $this->hashValue((string) $value), array_intersect_key($request->cookies->all(), array_flip(['XSRF-TOKEN', config('session.cookie')]))),
             'session_cookie_name' => config('session.cookie'),
             'session_cookie_config' => [
                 'path' => config('session.path'),
@@ -142,14 +138,14 @@ class AuthLifecycleDiagnostics
         return [
             'form_count' => count($forms[0] ?? []),
             'token_input_count' => count($tokens[1] ?? []),
-            'token_input_hashes' => array_map(fn (string $token) => $this->hashValue($token), $tokens[1] ?? []),
+            'token_input_hashes' => array_map(fn(string $token) => $this->hashValue($token), $tokens[1] ?? []),
             'csrf_meta_count' => count($metaTokens[1] ?? []),
-            'csrf_meta_hashes' => array_map(fn (string $token) => $this->hashValue($token), $metaTokens[1] ?? []),
+            'csrf_meta_hashes' => array_map(fn(string $token) => $this->hashValue($token), $metaTokens[1] ?? []),
         ];
     }
     private function hasNestedLogoutForm(string $html): bool
     {
-        if (! class_exists(\DOMDocument::class)) {
+        if (!class_exists(\DOMDocument::class)) {
             return false;
         }
 

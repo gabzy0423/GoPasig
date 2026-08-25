@@ -48,17 +48,14 @@
             <select id="filter-incidents-route" class="rounded-lg border border-black/10 bg-white px-3 py-2 text-[13px] text-slate-700 outline-none focus:border-[#003F87] cursor-pointer">
                 <option value="all">All Routes</option>
                 @foreach($routes as $route)
-                    <option value="{{ $route->name }}" {{ $routeFilter == $route->name ? 'selected' : '' }}>{{ $route->name }}</option>
+                    <option value="{{ $route->id }}" {{ (string) $routeFilter === (string) $route->id || $routeFilter == $route->name ? 'selected' : '' }}>{{ $route->name }}</option>
                 @endforeach
             </select>
             <select id="filter-incidents-type" class="rounded-lg border border-black/10 bg-white px-3 py-2 text-[13px] text-slate-700 outline-none focus:border-[#003F87] cursor-pointer">
                 <option value="all" {{ $typeFilter == 'all' ? 'selected' : '' }}>All Types</option>
-                <option value="Breakdown" {{ $typeFilter == 'Breakdown' ? 'selected' : '' }}>Breakdown</option>
-                <option value="Accident" {{ $typeFilter == 'Accident' ? 'selected' : '' }}>Accident</option>
-                <option value="Delay" {{ $typeFilter == 'Delay' ? 'selected' : '' }}>Delay</option>
-                <option value="Route Deviation" {{ $typeFilter == 'Route Deviation' ? 'selected' : '' }}>Route Deviation</option>
-                <option value="Passenger Disturbance" {{ $typeFilter == 'Passenger Disturbance' ? 'selected' : '' }}>Passenger Disturbance</option>
-                <option value="Other" {{ $typeFilter == 'Other' ? 'selected' : '' }}>Other</option>
+                @foreach (\App\Models\Incident::getTypes() as $incidentType)
+                    <option value="{{ $incidentType }}" {{ $typeFilter === $incidentType ? 'selected' : '' }}>{{ $incidentType }}</option>
+                @endforeach
             </select>
             <select id="filter-incidents-status" class="rounded-lg border border-black/10 bg-white px-3 py-2 text-[13px] text-slate-700 outline-none focus:border-[#003F87] cursor-pointer">
                 <option value="all" {{ $statusFilter == 'all' ? 'selected' : '' }}>All Statuses</option>
@@ -66,7 +63,7 @@
                 <option value="Under Investigation" {{ $statusFilter == 'Under Investigation' ? 'selected' : '' }}>Under Investigation</option>
                 <option value="Resolved" {{ $statusFilter == 'Resolved' ? 'selected' : '' }}>Resolved</option>
             </select>
-            <button wire:click="exportIncidentReport" class="inline-flex items-center gap-1.5 rounded-lg border border-black/15 bg-white px-3.5 py-2 text-[14px] font-medium text-[#001F44] hover:bg-slate-50 cursor-pointer transition-colors shadow-sm">
+            <button id="btn-export-incidents-report" type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-black/15 bg-white px-3.5 py-2 text-[14px] font-medium text-[#001F44] hover:bg-slate-50 cursor-pointer transition-colors shadow-sm">
                 <i class="ti ti-table-export text-[16px] text-slate-500"></i>
                 <span>Export report</span>
             </button>
@@ -81,7 +78,7 @@
     <section class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <article class="rounded-xl bg-slate-100/70 p-4 border border-black/5 hover:shadow-sm transition-shadow">
             <div class="flex items-center justify-between text-[12px] text-slate-500">
-                <span>Total incidents today</span>
+                <span>Total incidents in period</span>
                 <i class="ti ti-alert-triangle text-[16px] text-[#E24B4A]"></i>
             </div>
             <p id="metric-incidents-today" class="mt-2 text-[24px] font-medium text-[#001F44]">{{ $incidentMetrics->total_today }}</p>
@@ -102,7 +99,7 @@
         </article>
         <article class="rounded-xl bg-slate-100/70 p-4 border border-black/5 hover:shadow-sm transition-shadow">
             <div class="flex items-center justify-between text-[12px] text-slate-500">
-                <span>Resolved today</span>
+                <span>Resolved in period</span>
                 <i class="ti ti-circle-check text-[16px] text-teal-600"></i>
             </div>
             <p id="metric-incidents-resolved-today" class="mt-2 text-[24px] font-medium text-[#001F44]">{{ $incidentMetrics->resolved_today }}</p>
@@ -146,7 +143,7 @@
                         <div class="mt-1 h-[46px] w-[3px] shrink-0 rounded-full {{ $incident->status === 'reported' ? 'bg-[#BA7517]' : 'bg-[#378ADD]' }}"></div>
                         <div class="min-w-0 flex-1 space-y-1.5">
                             <h3 class="truncate text-[14px] font-medium text-[#001F44]">{{ $incident->title }}</h3>
-                            <p class="text-[12px] text-slate-500">{{ $incident->incident_id }} • {{ $incident->bus_plate }} • {{ $incident->driver_name }} • {{ $incident->route_name }}</p>
+                            <p class="text-[12px] text-slate-500">{{ $incident->incident_id }} | {{ $incident->bus_plate }} | {{ $incident->driver_name }} | {{ $incident->route_name }}</p>
                         </div>
                         <div class="min-w-[150px] space-y-1 text-right">
                             <p class="text-[12px] text-slate-400">Reported {{ $incident->reported_at->timezone('Asia/Manila')->diffForHumans() }}</p>
@@ -279,25 +276,10 @@
                 <i class="ti ti-circle-check text-teal-600 text-lg"></i>
                 <span>Confirm resolution</span>
             </h4>
-            <p class="mt-2 text-[13px] text-slate-500">Are you sure you want to mark this incident as resolved? If this incident was a <strong>Breakdown</strong>, the associated bus will be restored to <strong>active</strong> status.</p>
+            <p class="mt-2 text-[13px] text-slate-500">Mark this incident record as resolved? A breakdown bus will remain in breakdown state until Maintenance explicitly clears it.</p>
             <div class="mt-4 flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
                 <button onclick="closeResolveIncidentModal()" class="rounded-lg border border-black/10 px-3 py-2 text-[13px] text-slate-600 hover:bg-slate-50 cursor-pointer font-medium">Cancel</button>
                 <button onclick="executeResolveIncident()" class="rounded-lg bg-teal-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-teal-700 cursor-pointer shadow-sm">Confirm & Resolve</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Confirm Delete Modal -->
-    <div id="confirm-delete-modal" class="hidden fixed inset-0 z-[60] grid place-items-center bg-black/40 px-4 transition-all">
-        <div class="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl border border-black/10 animate-fade-in-up">
-            <h4 class="text-[16px] font-semibold text-[#A32D2D] flex items-center gap-1.5">
-                <i class="ti ti-alert-triangle text-[#A32D2D] text-lg"></i>
-                <span>Confirm delete record</span>
-            </h4>
-            <p class="mt-2 text-[13px] text-slate-500">Are you sure you want to permanently delete this incident record? This action cannot be undone.</p>
-            <div class="mt-4 flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
-                <button onclick="closeDeleteIncidentModal()" class="rounded-lg border border-black/10 px-3 py-2 text-[13px] text-slate-600 hover:bg-slate-50 cursor-pointer font-medium">Cancel</button>
-                <button onclick="executeDeleteIncident()" class="rounded-lg bg-red-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-red-700 cursor-pointer shadow-sm">Delete</button>
             </div>
         </div>
     </div>
@@ -325,7 +307,7 @@
                         <option value="">Select an ongoing trip...</option>
                         @foreach ($ongoingTrips as $trip)
                             <option value="{{ $trip->id }}">
-                                {{ $trip->bus->plate_number }} • {{ $trip->driver->first_name }} {{ $trip->driver->last_name }} • {{ $trip->route->name }}
+                                {{ $trip->bus?->plate_number ?? 'Unknown Bus' }} | {{ $trip->driver?->first_name }} {{ $trip->driver?->last_name }} | {{ $trip->route?->name ?? 'Unknown Route' }} {{ $trip->direction ? '- '.ucfirst($trip->direction) : '' }}
                             </option>
                         @endforeach
                     </select>
@@ -347,29 +329,13 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
-                    <!-- Type -->
-                    <div class="space-y-1">
-                        <label for="newType" class="text-xs font-semibold text-slate-700">Incident Type <span class="text-red-500">*</span></label>
-                        <select id="newType" class="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none focus:border-[#003F87] cursor-pointer">
-                            <option value="Breakdown">Breakdown</option>
-                            <option value="Accident">Accident</option>
-                            <option value="Delay">Delay</option>
-                            <option value="Route Deviation">Route Deviation</option>
-                            <option value="Passenger Disturbance">Passenger Disturbance</option>
-                            <option value="Other">Other</option>
-                        </select>
-                    </div>
-
-                    <!-- Status -->
-                    <div class="space-y-1">
-                        <label for="newStatus" class="text-xs font-semibold text-slate-700">Initial Status <span class="text-red-500">*</span></label>
-                        <select id="newStatus" class="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none focus:border-[#003F87] cursor-pointer">
-                            <option value="reported">Open (Reported)</option>
-                            <option value="under_review">Under Investigation</option>
-                            <option value="resolved">Resolved</option>
-                        </select>
-                    </div>
+                <div class="space-y-1">
+                    <label for="newType" class="text-xs font-semibold text-slate-700">Incident Type <span class="text-red-500">*</span></label>
+                    <select id="newType" class="w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none focus:border-[#003F87] cursor-pointer">
+                        @foreach (\App\Models\Incident::getTypes() as $incidentType)
+                            <option value="{{ $incidentType }}">{{ $incidentType }}</option>
+                        @endforeach
+                    </select>
                 </div>
 
                 <!-- Description -->
@@ -397,4 +363,3 @@
     </script>
 
 </section>
-

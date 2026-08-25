@@ -2,6 +2,11 @@
 
 namespace App\Providers;
 
+use App\Events\PositionUpdated;
+use App\Listeners\ETAListener;
+use App\Listeners\SpatialMonitoringListener;
+use App\Listeners\TripProgressListener;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -43,9 +48,6 @@ class AppServiceProvider extends ServiceProvider
             $registry->register(\App\Enums\GeofenceType::GARAGE, $app->make(\App\Services\Spatial\Handlers\DepotGeofenceHandler::class));
             return $registry;
         });
-        $this->app->singleton(
-            \App\Services\Spatial\RouteCorridorEngine::class
-        );
         $this->app->singleton(
             \App\Services\Spatial\SpatialMonitoringEngine::class
         );
@@ -107,9 +109,6 @@ class AppServiceProvider extends ServiceProvider
             \App\Services\Routing\GPSValidationService::class
         );
         $this->app->singleton(
-            \App\Services\Routing\RouteAdherenceService::class
-        );
-        $this->app->singleton(
             \App\Services\Routing\ETAEngine::class
         );
         $this->app->singleton(
@@ -128,23 +127,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Event::listen(PositionUpdated::class, SpatialMonitoringListener::class);
+        Event::listen(PositionUpdated::class, TripProgressListener::class);
+        Event::listen(PositionUpdated::class, ETAListener::class);
+
         if (\Illuminate\Support\Facades\DB::getDriverName() === 'sqlite') {
             \Illuminate\Support\Facades\DB::statement('PRAGMA ignore_check_constraints = ON;');
         }
 
-        // Register Phase 5 Event Listeners
-        \Illuminate\Support\Facades\Event::listen(
-            \App\Events\PositionUpdated::class,
-            \App\Listeners\SpatialMonitoringListener::class
-        );
-        \Illuminate\Support\Facades\Event::listen(
-            \App\Events\PositionUpdated::class,
-            \App\Listeners\TripProgressListener::class
-        );
-        \Illuminate\Support\Facades\Event::listen(
-            \App\Events\PositionUpdated::class,
-            \App\Listeners\ETAListener::class
-        );
         // ------------------------------------------------------------
         // Reverse-proxy / ngrok support
         // When the app is accessed through ngrok or any other HTTPS
@@ -195,92 +185,13 @@ class AppServiceProvider extends ServiceProvider
         });
 
         \Illuminate\Support\Facades\View::composer('fleet.utilization.index', function ($view) {
-            $buses = \App\Models\Bus::with('route')->get();
-            $routes = \App\Models\Route::getAllCached();
-            
-            // Generate last 30 days chart data dynamically
-            $chartData = [];
-            for ($i = 29; $i >= 0; $i--) {
-                $date = \Carbon\Carbon::today('Asia/Manila')->subDays($i);
-                $seed = ($date->day * 3) + ($date->month * 7);
-                $active = 75 + ($seed % 10);
-                $maint = 8 + ($seed % 6);
-                $idle = 100 - $active - $maint;
-                
-                $chartData[] = [
-                    'date' => $date->format('j M'),
-                    'active' => $active,
-                    'maintenance' => $maint,
-                    'idle' => $idle,
-                ];
-            }
+            $view->with(app(\App\Services\FleetUtilizationService::class)->snapshot());
+            return;
 
-            // Calculate today's per-bus efficiency cards dynamically
-            $busCards = [];
-            foreach ($buses as $bus) {
-                // Count trips today
-                $tripsCount = \App\Models\Schedule::where('bus_id', $bus->id)->count();
-                
-                // Sum passengers today
-                $paxSum = \App\Models\Schedule::where('bus_id', $bus->id)->sum('passengers');
-                
-                // Estimated kilometers
-                $kmSum = $tripsCount * 18;
-                
-                // Calculate utilization percentage
-                $util = 0;
-                if ($tripsCount > 0 && $bus->capacity > 0) {
-                    $util = min(100, (int) round(($paxSum / ($tripsCount * $bus->capacity)) * 100));
-                } elseif ($bus->status === 'active') {
-                    $util = 75; // default for active buses
-                }
-                
-                // Map status classes
-                if ($bus->status === 'active') {
-                    if ($bus->capacity > 0 && ($bus->passengers / $bus->capacity) >= 0.8) {
-                        $statusText = 'Near Full';
-                        $statusClass = 'bg-[#FAEEDA] text-[#854F0B]';
-                    } else {
-                        $statusText = 'Active';
-                        $statusClass = 'bg-[#E6F1FB] text-[#0C447C]';
-                    }
-                } elseif ($bus->status === 'maintenance') {
-                    $statusText = 'Maintenance';
-                    $statusClass = 'bg-[#FCEBEB] text-[#A32D2D]';
-                    $util = 0;
-                } else {
-                    $statusText = 'Idle';
-                    $statusClass = 'bg-[#F1EFE8] text-[#5F5E5A]';
-                    $util = 0;
-                }
+            /*
 
-                // Get last active time from last schedule
                 $lastActive = 'Ã¢â‚¬â€';
-                $lastSchedule = \App\Models\Schedule::where('bus_id', $bus->id)->orderBy('arrival_time', 'desc')->first();
-                if ($lastSchedule) {
-                    $lastActive = \Carbon\Carbon::parse($lastSchedule->arrival_time)->format('g:i A');
-                }
-
-                $busCards[] = [
-                    'plate' => $bus->plate_number,
-                    'status' => $statusText,
-                    'status_class' => $statusClass,
-                    'trips' => $tripsCount,
-                    'pax' => $paxSum,
-                    'km' => $kmSum,
-                    'util' => $util,
-                    'route' => $bus->route_id ?? 'None',
-                    'routeLabel' => $bus->route ? $bus->route->name : 'Standby',
-                    'last' => $lastActive,
-                ];
-            }
-
-            // Sort by utilization descending to highlight top efficiency
-            usort($busCards, function ($a, $b) {
-                return $b['util'] <=> $a['util'];
-            });
-
-            $view->with(compact('busCards', 'chartData', 'routes'));
+            */
         });
 
         \Illuminate\Support\Facades\View::composer('fleet.analytics.index', function ($view) {
@@ -290,7 +201,12 @@ class AppServiceProvider extends ServiceProvider
                 $selectedRoute = 'all';
                 $reportType = 'daily';
 
-                $availableRoutes = \App\Models\Route::orderBy('id')->get(['id', 'name'])->toArray();
+                $availableRoutes = \App\Models\Route::query()
+                    ->publicCommuterActiveService()
+                    ->get(['id', 'name'])
+                    ->map(fn ($route) => ['id' => (int) $route->id, 'name' => $route->name])
+                    ->values()
+                    ->toArray();
 
                 $analyticsController = app(\App\Http\Controllers\Fleet\AnalyticsController::class);
                 $analyticsData = $analyticsController->fetchSummaryData($startDate, $endDate, $selectedRoute);
@@ -315,8 +231,11 @@ class AppServiceProvider extends ServiceProvider
                 $statusFilter = 'all';
                 $activeSort = 'newest';
 
-                $routes = \App\Models\Route::orderBy('id')->get(['id', 'name']);
-                $ongoingTrips = \App\Models\Trip::where('status', 'ongoing')->with(['bus', 'driver', 'route'])->get();
+                $routes = \App\Models\Route::publicCommuterActiveService()->get(['id', 'name']);
+                $ongoingTrips = app(\App\Services\IncidentWorkflowService::class)
+                    ->eligibleOngoingTripsQuery()
+                    ->with(['bus', 'driver', 'route'])
+                    ->get();
 
                 $controller = app(\App\Http\Controllers\Fleet\IncidentController::class);
                 $metrics = $controller->getIncidentMetrics();
@@ -360,7 +279,8 @@ class AppServiceProvider extends ServiceProvider
                     ->first();
                 $customThreshold = $threshold ? $threshold->threshold_count : \App\Models\SystemSetting::get('default_demand_threshold', 20);
 
-                $historicalPatterns = \App\Models\DemandHistory::with('route')
+                $historicalPatterns = \App\Models\DemandHistory::forecastEligible()
+                    ->with(['route', 'routeVariant'])
                     ->whereIn('route_id', $activePublicRouteIds)
                     ->orderBy('total_commuters', 'desc')
                     ->take(8)
@@ -371,6 +291,8 @@ class AppServiceProvider extends ServiceProvider
                     ->take(6)
                     ->get();
 
+                $forecastShadow = app(\App\Services\DemandForecastShadowService::class)->dashboard();
+
                 $view->with([
                     'selectedPhase' => $selectedPhase,
                     'simulatedDay' => $simulatedDay,
@@ -378,6 +300,7 @@ class AppServiceProvider extends ServiceProvider
                     'selectedRouteId' => $selectedRouteId,
                     'customThreshold' => $customThreshold,
                     'routesData' => $routesData,
+                    'forecastShadow' => $forecastShadow,
                     'historicalPatterns' => $historicalPatterns,
                     'recentDispatches' => $recentDispatches,
                 ]);
@@ -416,15 +339,15 @@ class AppServiceProvider extends ServiceProvider
 
         \Illuminate\Support\Facades\View::composer('fleet.performance.routes.index', function ($view) {
             if (!$view->offsetExists('startDate')) {
-                $startDate = \Carbon\Carbon::today()->subDays(30)->toDateString();
-                $endDate   = \Carbon\Carbon::today()->toDateString();
+                $startDate = \Carbon\Carbon::today('Asia/Manila')->subDays(30)->toDateString();
+                $endDate   = \Carbon\Carbon::today('Asia/Manila')->toDateString();
                 $selectedRoute = 'all';
                 $page = 1;
 
-                $availableRoutes = \App\Models\Route::orderBy('id')->get(['id', 'name'])->toArray();
-
                 $controller = app(\App\Http\Controllers\Fleet\RoutePerformanceController::class);
                 $data = $controller->getRoutePerformanceData($startDate, $endDate, $selectedRoute);
+                $availableRoutes = $data['available_routes'];
+                $selectedRoute = $data['selected_route'];
 
                 $stopsCollection = collect($data['stops']);
                 $perPage = 10;
@@ -443,62 +366,19 @@ class AppServiceProvider extends ServiceProvider
                     'availableRoutes' => $availableRoutes,
                     'routePerformanceSummary' => $data['summary'],
                     'headwayData' => $data['headway'],
-                    'scheduleCompliance' => $data['schedule'],
+                    'tripDurationData' => $data['trip_durations'],
+                    'stopActivityData' => $data['stops'],
                     'stopAdherence' => $paginatedStops,
-                    'deviationLog' => $data['deviations'],
+                    'incidentLog' => $data['incidents'],
                     'routeHealthScore' => $data['health'],
                 ]);
             }
         });
 
-        \Illuminate\Support\Facades\View::composer('fleet.schedule.index', function ($view) {
-            if (!$view->offsetExists('dateFrom')) {
-                $dateFrom = \Carbon\Carbon::today()->subDays(30)->toDateString();
-                $dateTo   = \Carbon\Carbon::today()->toDateString();
-                $selectedRoute = 'all';
-                $selectedDriver = 'all';
-                $selectedStatus = 'all';
-                $page = 1;
-
-                $availableRoutes  = \App\Models\Route::orderBy('id')->get(['id', 'name'])->toArray();
-                $availableDrivers = \App\Models\Driver::orderBy('last_name')
-                    ->get(['id', 'first_name', 'last_name'])
-                    ->map(fn($d) => ['id' => $d->id, 'name' => "{$d->first_name} {$d->last_name}"])
-                    ->toArray();
-
-                $controller = app(\App\Http\Controllers\Fleet\ScheduleComplianceController::class);
-                $data = $controller->getComplianceData($dateFrom, $dateTo, $selectedRoute, $selectedDriver, $selectedStatus);
-
-                $tripsCollection = collect($data['tripLogs']);
-                $perPage = 10;
-                $paginatedTrips = new \Illuminate\Pagination\LengthAwarePaginator(
-                    $tripsCollection->slice(($page - 1) * $perPage, $perPage)->values(),
-                    $tripsCollection->count(),
-                    $perPage,
-                    $page,
-                    ['path' => request()->url(), 'query' => request()->query()]
-                );
-
-                $view->with([
-                    'dateFrom' => $dateFrom,
-                    'dateTo' => $dateTo,
-                    'selectedRoute' => $selectedRoute,
-                    'selectedDriver' => $selectedDriver,
-                    'selectedStatus' => $selectedStatus,
-                    'availableRoutes' => $availableRoutes,
-                    'availableDrivers' => $availableDrivers,
-                    'complianceSummary' => $data['complianceSummary'],
-                    'routeCompliance' => $data['routeCompliance'],
-                    'delayTrend' => $data['delayTrend'],
-                    'tripLogs' => $paginatedTrips,
-                    'rawTripLogsCount' => $tripsCollection->count(),
-                    'delayedRoutes' => $data['delayedRoutes'],
-                    'lateDrivers' => $data['lateDrivers'],
-                ]);
-            }
-        });
-
-        \Illuminate\Support\Facades\View::composer('fleet.maintenance.index', function ($view) {
+        \Illuminate\Support\Facades\View::composer([
+            'fleet.maintenance.index',
+            'fleet.maintenance.fragment',
+        ], function ($view) {
             if (!$view->offsetExists('maintenanceSummary')) {
                 $logTypeFilter = 'all';
                 $logStatusFilter = 'all';

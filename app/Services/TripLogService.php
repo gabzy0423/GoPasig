@@ -18,37 +18,43 @@ class TripLogService
     public static function logTrip(Trip $trip, array $data = []): ?TripLog
     {
         try {
-            if (!$trip->id) {
-                return null;
-            }
-
-            $peakPassengers = (int) ($data['peak_passengers'] ?? $trip->peak_passengers ?? 0);
-            $status = $data['status'] ?? (is_object($trip->status) ? $trip->status->value : $trip->status);
-            $eventSummary = self::passengerEventSummary($trip->id);
-
-            $tripLog = TripLog::updateOrCreate([
-                'trip_id' => $trip->id,
-            ], [
-                'driver_id' => $trip->driver_id,
-                'bus_id' => $trip->bus_id,
-                'route_id' => $trip->route_id,
-                'started_at' => $data['started_at'] ?? $trip->started_at,
-                'completed_at' => $data['completed_at'] ?? $trip->ended_at ?? now(),
-                'passengers' => $data['passengers'] ?? $eventSummary['boarded'],
-                'alighted_passengers' => $data['alighted_passengers'] ?? $eventSummary['alighted'],
-                'peak_passengers' => $peakPassengers,
-                'status' => $status,
-                'is_on_time' => $data['is_on_time'] ?? true,
-                'delay_minutes' => $data['delay_minutes'] ?? 0,
-                'notes' => $data['notes'] ?? null,
-            ]);
-
-            return $tripLog;
+            return self::logTripOrFail($trip, $data);
         } catch (\Throwable $e) {
             // Log error but don't break trip completion
             \Log::error('Failed to log trip: ' . $e->getMessage());
             return null;
         }
+    }
+
+    /**
+     * Persist a final TripLog and let failures roll back the lifecycle caller.
+     */
+    public static function logTripOrFail(Trip $trip, array $data = []): TripLog
+    {
+        if (! $trip->id) {
+            throw new \InvalidArgumentException('A persisted Trip is required for TripLog finalization.');
+        }
+
+        $peakPassengers = (int) ($data['peak_passengers'] ?? $trip->peak_passengers ?? 0);
+        $status = $data['status'] ?? (is_object($trip->status) ? $trip->status->value : $trip->status);
+        $eventSummary = self::passengerEventSummary($trip->id);
+
+        return TripLog::updateOrCreate([
+            'trip_id' => $trip->id,
+        ], [
+            'driver_id' => $trip->driver_id,
+            'bus_id' => $trip->bus_id,
+            'route_id' => $trip->route_id,
+            'started_at' => $data['started_at'] ?? $trip->started_at,
+            'completed_at' => $data['completed_at'] ?? $trip->ended_at ?? now(),
+            'passengers' => $data['passengers'] ?? $eventSummary['boarded'],
+            'alighted_passengers' => $data['alighted_passengers'] ?? $eventSummary['alighted'],
+            'peak_passengers' => $peakPassengers,
+            'status' => $status,
+            'is_on_time' => $data['is_on_time'] ?? true,
+            'delay_minutes' => $data['delay_minutes'] ?? 0,
+            'notes' => $data['notes'] ?? null,
+        ]);
     }
 
     private static function passengerEventSummary(int $tripId): array

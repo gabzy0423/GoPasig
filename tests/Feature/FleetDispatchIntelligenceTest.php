@@ -10,6 +10,7 @@ use App\Http\Controllers\Fleet\DispatchIntelligenceController;
 use App\Models\Bus;
 use App\Models\CommuterSession;
 use App\Models\CommuterTrip;
+use App\Models\DemandHistory;
 use App\Models\DemandThreshold;
 use App\Models\DispatchSimulatorCount;
 use App\Models\Driver;
@@ -19,6 +20,7 @@ use App\Models\RouteVariant;
 use App\Models\RouteVariantStop;
 use App\Models\Schedule;
 use App\Models\Stop;
+use App\Models\TimeSlotConfiguration;
 use App\Models\User;
 use App\Services\Commuter\CommuterJourneyCoordinator;
 use App\Services\ReactiveDispatchDecisionService;
@@ -120,8 +122,12 @@ class FleetDispatchIntelligenceTest extends TestCase
         $this->assertStringContainsString('captureDispatchVariantSelections(container);', $script);
         $this->assertStringContainsString('data-dispatch-variant-route="${route.id}"', $script);
         $this->assertStringContainsString("showDispatchNotification('Select a direction for this route before dispatching.', true);", $script);
-        $this->assertStringContainsString('${r.name || `Route ${r.id}`}', $script);
+        $this->assertStringContainsString("escapeDispatchText(r.name || 'Official route')", $script);
+        $this->assertStringNotContainsString('${r.name || `Route ${r.id}`}', $script);
+        $this->assertStringNotContainsString('Ã', $script);
+        $this->assertStringNotContainsString('Route {{ $log->trip->route_id }}', $view);
         $this->assertStringContainsString('{{ $r->name }}', $view);
+        $this->assertStringNotContainsString('Route {{ $r->id }}', $view);
         $this->assertStringContainsString('data-dispatch-variant-route="{{ $r->id }}"', $view);
     }
 
@@ -151,17 +157,160 @@ class FleetDispatchIntelligenceTest extends TestCase
                 '*' => [
                     'auto_count',
                     'unresolved_waiting_count',
+                    'simulated_app_count',
+                    'simulator_total',
                     'max_direction_waiting_count',
                     'variants' => [
-                        '*' => ['id', 'direction', 'waiting_count'],
+                        '*' => ['id', 'direction', 'waiting_count', 'simulated_waiting_count'],
                     ],
                 ],
             ],
             'activeAlerts',
+            'demandForecast' => [
+                'target_date',
+                'advisory_only',
+                'rows',
+                'route_summaries',
+            ],
+            'forecastShadow' => [
+                'forecast_version',
+                'advisory_only',
+                'summary' => [
+                    'captured',
+                    'forecast_ready',
+                    'evaluated',
+                    'pending_actual',
+                    'mean_absolute_error',
+                ],
+                'rows',
+            ],
             'customThreshold',
             'recentDispatches',
             'historicalPatterns',
         ]);
+    }
+
+    public function test_dispatch_intelligence_phase_ui_separates_reactive_predictive_and_self_monitoring(): void
+    {
+        $view = file_get_contents(resource_path('views/fleet/dispatch-intelligence/index.blade.php'));
+        $script = file_get_contents(public_path('js/fleet-dashboard/dispatch-intelligence.js'));
+
+        $this->assertStringContainsString('Phase 1: Reactive Live Demand', $view);
+        $this->assertStringContainsString('Phase 2: Predictive Pre-Dispatch', $view);
+        $this->assertStringContainsString('Phase 3: Self-Monitoring', $view);
+        $this->assertStringContainsString('Reactive Live Demand Contract', $view);
+        $this->assertStringContainsString('WAITING commuters by route direction', $view);
+        $this->assertStringContainsString('Passenger +/- supports load history', $view);
+        $this->assertStringContainsString('Predictive Demand Forecast', $view);
+        $this->assertStringContainsString('Top advisory time slots', $view);
+        $this->assertStringContainsString('Expected demand', $view);
+        $this->assertStringContainsString('Suggested bus slots', $view);
+        $this->assertStringContainsString('Forecast Shadow Evaluation', $view);
+        $this->assertStringContainsString('Self-monitoring compares forecast snapshots against finalized actual DemandHistory', $view);
+        $this->assertStringContainsString('Advisory only', $view);
+        $this->assertStringContainsString('Manual dispatch', $view);
+        $this->assertStringContainsString('a dispatcher must still choose a direction and dispatch manually', $view);
+        $this->assertStringContainsString('updateDemandInsightsDOM(data.historicalPatterns, data.forecastShadow, data.demandForecast);', $script);
+        $this->assertStringContainsString('reactiveLiveDemandPanelMarkup', $script);
+        $this->assertStringContainsString('predictiveForecastPanelMarkup', $script);
+        $this->assertStringContainsString('forecastShadowEvaluationPanelMarkup', $script);
+        $this->assertStringContainsString('route_summaries', $script);
+        $this->assertStringContainsString('Confidence:', $script);
+        $this->assertStringContainsString('Manual dispatch', $script);
+        $this->assertStringContainsString('a dispatcher must still choose a direction and dispatch manually', $script);
+        $this->assertStringContainsString('Forecast Shadow Evaluation', $script);
+        $this->assertStringContainsString('Number(selectedPhase) === 2', $script);
+        $this->assertStringContainsString('Number(selectedPhase) === 3', $script);
+        $this->assertStringContainsString('payload.route_variant_id = selectedRouteVariantId', $script);
+        $this->assertStringContainsString('window.addCommuterAction = addCommuterAction;', $script);
+        $this->assertStringContainsString('window.addManualTickerAction = addManualTickerAction;', $script);
+        $this->assertStringContainsString('window.simulateRushSpurtAction = simulateRushSpurtAction;', $script);
+        $this->assertStringContainsString('time_slot: simulatedTimeSlot', $script);
+        $this->assertStringContainsString('showDispatchNotification(data.message', $script);
+        $this->assertStringNotContainsString('ML Model Accuracy Tracker', $script);
+        $this->assertStringNotContainsString('Phase 3: Self-Improving', $view);
+    }
+
+    public function test_predictive_forecast_is_trusted_direction_aware_and_advisory_only(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-02 08:00:00', 'Asia/Manila'));
+        $inbound = $this->makeUsableVariant($this->route, $this->stop2, $this->stop1, 'inbound');
+        TimeSlotConfiguration::create([
+            'name' => 'Forecast 08-10',
+            'start_time' => '08:00:00',
+            'end_time' => '10:00:00',
+            'time_slot_display' => '08:00-10:00',
+            'order' => 1,
+            'is_active' => true,
+        ]);
+        RouteServiceSchedule::create([
+            'route_id' => $this->route->id,
+            'route_variant_id' => $inbound->id,
+            'first_trip_time' => '06:00:00',
+            'last_trip_time' => '09:00:00',
+            'service_configuration' => 'with_designated_stops',
+            'service_days' => ['mon'],
+            'is_active' => true,
+            'source' => RouteServiceSchedule::SOURCE_BENEFICIARY_OFFICIAL,
+        ]);
+        DemandThreshold::create([
+            'route_id' => $this->route->id,
+            'day_of_week' => 'Monday',
+            'time_slot' => '08:00-10:00',
+            'threshold_count' => 5,
+        ]);
+        DemandHistory::create([
+            'route_id' => $this->route->id,
+            'date' => '2026-07-20',
+            'time_slot' => '08:00-10:00',
+            'day_of_week' => 'Monday',
+            'total_commuters' => 99,
+            'buses_dispatched' => 1,
+        ]);
+        foreach ([
+            ['2026-07-13', $this->variant, 6],
+            ['2026-07-20', $this->variant, 9],
+            ['2026-07-27', $this->variant, 12],
+            ['2026-07-13', $inbound, 3],
+            ['2026-07-20', $inbound, 3],
+            ['2026-07-27', $inbound, 3],
+        ] as [$date, $variant, $commuters]) {
+            DemandHistory::create([
+                'route_id' => $this->route->id,
+                'route_variant_id' => $variant->id,
+                'date' => $date,
+                'time_slot' => '08:00-10:00',
+                'day_of_week' => 'Monday',
+                'total_commuters' => $commuters,
+                'buses_dispatched' => 1,
+                'source' => DemandHistory::SOURCE_ACTUAL_REBUILD,
+                'is_training_eligible' => true,
+                'finalized_at' => $date.' 10:00:00',
+            ]);
+        }
+
+        $response = $this->actingAs($this->dispatcher)->getJson('/fleet/api/dispatch-data?'.http_build_query([
+            'phase' => 2,
+            'day' => 'Monday',
+            'time_slot' => '08:00-10:00',
+            'route_id' => $this->route->id,
+        ]));
+
+        $response->assertOk();
+        $response->assertJsonCount(6, 'historicalPatterns');
+        $response->assertJsonPath('demandForecast.target_date', '2026-08-03');
+        $response->assertJsonPath('demandForecast.advisory_only', true);
+        $this->assertSame([], $response->json('activeAlerts'));
+
+        $forecastRows = collect($response->json('demandForecast.rows'));
+        $outbound = $forecastRows->firstWhere('route_variant_id', $this->variant->id);
+        $inboundForecast = $forecastRows->firstWhere('route_variant_id', $inbound->id);
+
+        $this->assertSame(9, $outbound['expected_commuters']);
+        $this->assertSame('outbound', $outbound['direction']);
+        $this->assertSame(3, $inboundForecast['expected_commuters']);
+        $this->assertSame('inbound', $inboundForecast['direction']);
+        $this->assertDatabaseCount('trips', 0);
     }
 
     public function test_can_update_threshold(): void
@@ -193,9 +342,65 @@ class FleetDispatchIntelligenceTest extends TestCase
 
         $this->assertDatabaseHas('commuter_trips', [
             'route_id' => $this->route->id,
+            'route_variant_id' => $this->variant->id,
+            'origin_route_variant_stop_id' => $this->variantOrigin->id,
+            'destination_route_variant_stop_id' => $this->variantDestination->id,
             'status' => 'WAITING',
             'is_simulated' => true,
         ]);
+    }
+
+    public function test_simulator_commuter_activity_can_target_selected_direction(): void
+    {
+        $inbound = $this->makeUsableVariant($this->route, $this->stop2, $this->stop1, 'inbound');
+        $inboundOrigin = $inbound->stops->first();
+        $inboundDestination = $inbound->stops->last();
+
+        $response = $this->actingAs($this->dispatcher)->post('/fleet/api/dispatch-add-commuter', [
+            'route_id' => $this->route->id,
+            'route_variant_id' => $inbound->id,
+        ]);
+
+        $response->assertStatus(200);
+        $response->assertJson(['success' => true]);
+
+        $this->assertDatabaseHas('commuter_trips', [
+            'route_id' => $this->route->id,
+            'route_variant_id' => $inbound->id,
+            'origin_route_variant_stop_id' => $inboundOrigin->id,
+            'destination_route_variant_stop_id' => $inboundDestination->id,
+            'status' => 'WAITING',
+            'is_simulated' => true,
+        ]);
+    }
+
+    public function test_simulator_spurt_creates_variant_aware_waiting_rows(): void
+    {
+        DemandThreshold::create([
+            'route_id' => $this->route->id,
+            'day_of_week' => 'Monday',
+            'time_slot' => '08:00-10:00',
+            'threshold_count' => 5,
+        ]);
+
+        $response = $this->actingAs($this->dispatcher)->post('/fleet/api/dispatch-simulate-spurt', [
+            'route_id' => $this->route->id,
+            'route_variant_id' => $this->variant->id,
+            'day' => 'Monday',
+            'time_slot' => '08:00-10:00',
+        ]);
+
+        $response->assertStatus(200);
+        $response->assertJson(['success' => true]);
+
+        $this->assertGreaterThan(0, CommuterTrip::query()
+            ->where('route_id', $this->route->id)
+            ->where('route_variant_id', $this->variant->id)
+            ->where('origin_route_variant_stop_id', $this->variantOrigin->id)
+            ->where('destination_route_variant_stop_id', $this->variantDestination->id)
+            ->where('status', 'WAITING')
+            ->where('is_simulated', true)
+            ->count());
     }
 
     public function test_real_commuter_request_remains_non_simulated(): void
@@ -263,7 +468,9 @@ class FleetDispatchIntelligenceTest extends TestCase
 
         $this->assertSame(1, $routeData->auto_count);
         $this->assertSame(1, $routeData->total);
+        $this->assertSame(1, $routeData->simulated_app_count);
         $this->assertSame(4, $routeData->simulator_total);
+        $this->assertSame(1, $routeData->variants->firstWhere('id', $this->variant->id)['simulated_waiting_count']);
     }
 
     public function test_real_waiting_demand_is_grouped_by_direction_and_unresolved_rows_are_excluded(): void

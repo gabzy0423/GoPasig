@@ -36,13 +36,13 @@
         <!-- Simulation Phase Pill Selector -->
         <div class="flex items-center bg-slate-100 p-1.5 rounded-xl border border-black/5" data-active-phase="{{ $selectedPhase }}">
             <button class="px-4 py-2 rounded-lg text-xs font-extrabold uppercase tracking-wider transition-all {{ $selectedPhase == 1 ? 'bg-[#003F87] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800' }}">
-                Phase 1: Reactive
+                Phase 1: Reactive Live Demand
             </button>
             <button class="px-4 py-2 rounded-lg text-xs font-extrabold uppercase tracking-wider transition-all {{ $selectedPhase == 2 ? 'bg-[#003F87] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800' }}">
-                Phase 2: Predictive
+                Phase 2: Predictive Pre-Dispatch
             </button>
             <button class="px-4 py-2 rounded-lg text-xs font-extrabold uppercase tracking-wider transition-all {{ $selectedPhase == 3 ? 'bg-[#003F87] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800' }}">
-                Phase 3: Self-Improving
+                Phase 3: Self-Monitoring
             </button>
         </div>
     </div>
@@ -120,7 +120,7 @@
                     @foreach($routesData as $r)
                         <div class="p-2.5 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between gap-2">
                             <div class="min-w-0">
-                                <span class="text-xs font-extrabold text-[#001F44] block truncate">Route {{ $r->id }}</span>
+                                <span class="text-xs font-extrabold text-[#001F44] block truncate">{{ $r->name }}</span>
                                 <span class="text-[10px] text-slate-400 font-semibold block truncate">{{ $r->description }}</span>
                             </div>
                             <div class="flex items-center gap-1.5 shrink-0">
@@ -156,7 +156,7 @@
             </div>
             <div class="flex items-center gap-1.5 text-xs text-slate-400 font-semibold">
                 <span>Phase: </span>
-                <strong id="phase-label-display" class="text-[#003F87] uppercase">Reactive (Thresholds)</strong>
+                <strong id="phase-label-display" class="text-[#003F87] uppercase">Reactive Live Demand</strong>
             </div>
         </div>
 
@@ -190,8 +190,8 @@
                             @endforelse
                         </div>
                         <div class="mt-2 pt-2 border-t border-slate-200 flex justify-between text-[9px] font-bold text-slate-500 uppercase tracking-wide">
-                            <span>Resolved total: {{ $r->total }}</span>
-                            <span>Simulator: {{ $r->manual_count }}</span>
+                            <span>Live total: {{ $r->total }}</span>
+                            <span>Simulator: {{ $r->simulator_total }}</span>
                         </div>
                         @if($r->unresolved_waiting_count > 0)
                             <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-bold text-amber-800">
@@ -211,10 +211,26 @@
                         </div>
                     </div>
 
-                    @if($selectedPhase >= 2)
-                        <div class="p-2 bg-[#E6F1FB] border border-[#003F87]/15 rounded-xl text-[11px] text-[#0C447C] font-semibold flex items-center justify-between">
-                            <span>Expected Peak:</span>
-                            <strong class="font-mono">{{ $r->historical_avg }} pax</strong>
+                    @if((int) $selectedPhase === 2)
+                        @php
+                            $forecastSummary = $r->forecast_summary ?? null;
+                        @endphp
+                        <div class="p-2 bg-[#E6F1FB] border border-[#003F87]/15 rounded-xl text-[11px] text-[#0C447C] font-semibold">
+                            @if(!empty($forecastSummary['peak']))
+                                <div class="flex items-center justify-between gap-2">
+                                    <span>Tomorrow peak:</span>
+                                    <strong class="font-mono">{{ $forecastSummary['peak']['expected_commuters'] }} pax</strong>
+                                </div>
+                                <p class="mt-1 text-[9px] font-bold text-[#0C447C]/75">
+                                    {{ $forecastSummary['peak']['direction_label'] }} | {{ $forecastSummary['peak']['time_slot'] }} | {{ $forecastSummary['peak']['confidence_label'] }} confidence
+                                </p>
+                            @else
+                                <div class="flex items-center justify-between gap-2">
+                                    <span>Tomorrow forecast:</span>
+                                    <strong>{{ $forecastSummary['status_label'] ?? 'Insufficient finalized history' }}</strong>
+                                </div>
+                            @endif
+                            <p class="mt-1 text-[9px] font-bold uppercase tracking-wide text-[#0C447C]/60">Advisory only</p>
                         </div>
                     @endif
 
@@ -274,28 +290,156 @@
                 </form>
             </div>
 
-            <!-- Dynamic Accuracy ML/Historical Tracker container -->
+            <!-- Dynamic demand history / forecast shadow tracker -->
             <div id="accuracy-or-patterns-container" class="space-y-4">
-                <!-- Fallback Historical Patterns block -->
-                <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-4">
-                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <div class="flex items-center gap-2">
-                            <i class="ti ti-history text-lg text-[#003F87]"></i>
-                            <h3 class="text-sm font-bold text-slate-800 uppercase tracking-tight">Recorded Peak Demand Patterns</h3>
+                @if((int) $selectedPhase === 2)
+                    @php
+                        $forecastSummary = $demandForecast['overall_summary'] ?? [];
+                        $forecastRows = collect($demandForecast['rows'] ?? []);
+                        $readyForecastRows = $forecastRows->where('status', 'ready')->take(6);
+                        $routeForecastSummaries = collect($demandForecast['route_summaries'] ?? []);
+                    @endphp
+                    <div id="predictive-forecast-panel" class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-4">
+                        <div class="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <i class="ti ti-chart-arrows-vertical text-lg text-[#003F87]"></i>
+                                <h3 class="text-sm font-bold text-slate-800 uppercase tracking-tight truncate">Predictive Demand Forecast</h3>
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span class="rounded-full px-2 py-0.5 text-[9px] font-black uppercase bg-[#E6F1FB] text-[#003F87]">Advisory only</span>
+                                <span class="rounded-full px-2 py-0.5 text-[9px] font-black uppercase bg-slate-100 text-slate-500">Manual dispatch</span>
+                            </div>
                         </div>
+
+                        <div class="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-100 border border-slate-100 rounded-lg overflow-hidden">
+                            <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Target</span><strong class="text-xs font-black text-slate-800 font-mono">{{ $demandForecast['target_date'] ?? 'Tomorrow' }}</strong></div>
+                            <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Status</span><strong class="text-xs font-black text-[#003F87]">{{ $forecastSummary['status_label'] ?? 'Awaiting forecast' }}</strong></div>
+                            <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Ready direction-slots</span><strong class="text-base font-black text-[#3B6D11] font-mono">{{ $forecastSummary['ready_slots'] ?? 0 }}/{{ $forecastSummary['service_slots'] ?? 0 }}</strong></div>
+                            <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Suggested bus slots</span><strong class="text-base font-black text-slate-800 font-mono">{{ $forecastSummary['minimum_bus_slots'] ?? '-' }}</strong></div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            @foreach($routeForecastSummaries as $routeSummary)
+                                @php
+                                    $peak = $routeSummary['peak'] ?? null;
+                                @endphp
+                                <div class="rounded-xl border border-slate-100 bg-slate-50 p-3 space-y-2">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="min-w-0">
+                                            <p class="text-xs font-black text-[#001F44] truncate">{{ $routeSummary['route_name'] ?? 'Route' }}</p>
+                                            <p class="text-[10px] font-bold text-slate-400">{{ $routeSummary['status_label'] ?? 'Awaiting forecast' }}</p>
+                                        </div>
+                                        <span class="rounded bg-white px-1.5 py-0.5 text-[9px] font-black text-[#003F87]">{{ $routeSummary['ready_slots'] ?? 0 }}/{{ $routeSummary['service_slots'] ?? 0 }}</span>
+                                    </div>
+                                    @if($peak)
+                                        <div class="grid grid-cols-2 gap-2 text-[10px] font-bold">
+                                            <span class="text-slate-400">Peak</span>
+                                            <strong class="text-right text-slate-700">{{ $peak['direction_label'] }} {{ $peak['time_slot'] }}</strong>
+                                            <span class="text-slate-400">Expected</span>
+                                            <strong class="text-right text-[#003F87] font-mono">{{ $peak['expected_commuters'] }} pax</strong>
+                                            <span class="text-slate-400">Suggested buses</span>
+                                            <strong class="text-right text-slate-700 font-mono">{{ $peak['minimum_buses'] }}</strong>
+                                        </div>
+                                    @else
+                                        <p class="text-[10px] font-semibold text-slate-400">No advisory slot yet. Finalized same-weekday history is still insufficient.</p>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+
+                        <div class="space-y-2">
+                            <p class="text-[10px] font-black uppercase tracking-wider text-slate-400">Top advisory time slots</p>
+                            @forelse($readyForecastRows as $forecastRow)
+                                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                                    <div class="min-w-0">
+                                        <p class="text-[11px] font-black text-slate-700 truncate">{{ $forecastRow['route_name'] }} | {{ $forecastRow['direction_label'] }} | {{ $forecastRow['time_slot'] }}</p>
+                                        <p class="text-[10px] text-slate-400 font-semibold">{{ $forecastRow['basis'] }}</p>
+                                    </div>
+                                    <div class="flex items-center gap-3 text-[10px] font-bold shrink-0">
+                                        <span>Expected demand: <strong class="font-mono text-[#003F87]">{{ $forecastRow['expected_commuters'] }} pax</strong></span>
+                                        <span>Suggested buses: <strong class="font-mono text-slate-700">{{ $forecastRow['minimum_buses'] }}</strong></span>
+                                        <span>Confidence: <strong class="font-mono text-slate-700">{{ $forecastRow['confidence_label'] }}</strong></span>
+                                    </div>
+                                </div>
+                            @empty
+                                <div class="py-6 text-center">
+                                    <p class="text-xs font-bold text-slate-600">{{ $forecastSummary['status_label'] ?? 'No advisory forecast available yet.' }}</p>
+                                    <p class="text-[10px] text-slate-400 font-semibold mt-1">Requires finalized, training-eligible demand history for the same weekday. No dispatch is generated from insufficient history.</p>
+                                </div>
+                            @endforelse
+                        </div>
+
+                        <p class="text-[10px] text-slate-400 font-semibold">Uses finalized direction-aware demand history. This is an advisory only; a dispatcher must still choose a direction and dispatch manually.</p>
                     </div>
 
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        @foreach($historicalPatterns->take(4) as $pattern)
-                            <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center space-y-1">
-                                <span class="text-[10px] text-slate-400 font-extrabold uppercase block tracking-wider">{{ $pattern->day_of_week }}</span>
-                                <span class="text-[11px] font-bold text-slate-700 block truncate">Route {{ $pattern->route_id }}</span>
-                                <strong class="text-lg font-black text-[#003F87] font-mono block">{{ $pattern->total_commuters }} pax</strong>
-                                <span class="text-[9px] text-slate-400 font-bold block">{{ $pattern->time_slot }}</span>
+                @elseif((int) $selectedPhase === 3)
+                    <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-4">
+                        <div class="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <i class="ti ti-chart-dots text-lg text-[#003F87]"></i>
+                                <h3 class="text-sm font-bold text-slate-800 uppercase tracking-tight truncate">Forecast Shadow Evaluation</h3>
                             </div>
-                        @endforeach
+                            <span class="rounded-full px-2 py-0.5 text-[9px] font-black uppercase bg-slate-100 text-slate-500 shrink-0">Advisory only</span>
+                        </div>
+
+                        <div class="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-100 border border-slate-100 rounded-lg overflow-hidden">
+                            <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Captured</span><strong class="text-base font-black text-slate-800 font-mono">{{ $forecastShadow['summary']['captured'] ?? 0 }}</strong></div>
+                            <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Forecast ready</span><strong class="text-base font-black text-[#003F87] font-mono">{{ $forecastShadow['summary']['forecast_ready'] ?? 0 }}</strong></div>
+                            <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Evaluated</span><strong class="text-base font-black text-[#3B6D11] font-mono">{{ $forecastShadow['summary']['evaluated'] ?? 0 }}</strong></div>
+                            <div class="p-3 text-center"><span class="text-[9px] font-black text-slate-400 uppercase block">Mean abs. error</span><strong class="text-base font-black text-slate-800 font-mono">{{ isset($forecastShadow['summary']['mean_absolute_error']) ? $forecastShadow['summary']['mean_absolute_error'].' pax' : '-' }}</strong></div>
+                        </div>
+
+                        <div class="space-y-2">
+                            @forelse(($forecastShadow['rows'] ?? []) as $shadowRow)
+                                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                                    <div class="min-w-0">
+                                        <p class="text-[11px] font-black text-slate-700 truncate">{{ $shadowRow['route_name'] }} | {{ ucfirst($shadowRow['direction']) }} | {{ $shadowRow['time_slot'] }}</p>
+                                        <p class="text-[10px] text-slate-400 font-semibold">Target {{ $shadowRow['target_date'] }} | {{ $shadowRow['status_label'] }}</p>
+                                    </div>
+                                    <div class="flex items-center gap-3 text-[10px] font-bold shrink-0">
+                                        <span>Forecast: <strong class="font-mono text-[#003F87]">{{ $shadowRow['predicted_commuters'] !== null ? $shadowRow['predicted_commuters'].' pax' : '-' }}</strong></span>
+                                        <span>Actual: <strong class="font-mono text-slate-700">{{ $shadowRow['actual_commuters'] !== null ? $shadowRow['actual_commuters'].' pax' : '-' }}</strong></span>
+                                        <span>Error: <strong class="font-mono text-slate-700">{{ $shadowRow['absolute_error'] !== null ? $shadowRow['absolute_error'].' pax' : '-' }}</strong></span>
+                                    </div>
+                                </div>
+                            @empty
+                                <div class="py-6 text-center">
+                                    <p class="text-xs font-bold text-slate-600">No forecast shadow snapshots yet.</p>
+                                    <p class="text-[10px] text-slate-400 font-semibold mt-1">The next scheduled capture will preserve a future advisory forecast for evaluation.</p>
+                                </div>
+                            @endforelse
+                        </div>
+
+                        <p class="text-[10px] text-slate-400 font-semibold">Self-monitoring compares forecast snapshots against finalized actual DemandHistory. It does not create dispatches. Awaiting target: {{ $forecastShadow['summary']['awaiting_target'] ?? 0 }} | Pending finalized actual: {{ $forecastShadow['summary']['pending_actual'] ?? 0 }} | Actual without forecast: {{ $forecastShadow['summary']['actual_without_forecast'] ?? 0 }}</p>
                     </div>
-                </div>
+                @else
+                    <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-4">
+                        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <div class="flex items-center gap-2">
+                                <i class="ti ti-radar-2 text-lg text-[#003F87]"></i>
+                                <h3 class="text-sm font-bold text-slate-800 uppercase tracking-tight">Reactive Live Demand Contract</h3>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
+                                <span class="text-[10px] text-slate-400 font-extrabold uppercase block tracking-wider">Live trigger</span>
+                                <strong class="text-xs font-black text-[#001F44] block">WAITING commuters by route direction</strong>
+                                <p class="text-[10px] text-slate-500 font-semibold">Only active app commuter journeys crossing the threshold create reactive alerts.</p>
+                            </div>
+                            <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
+                                <span class="text-[10px] text-slate-400 font-extrabold uppercase block tracking-wider">Driver evidence</span>
+                                <strong class="text-xs font-black text-[#001F44] block">Passenger +/- supports load history</strong>
+                                <p class="text-[10px] text-slate-500 font-semibold">Driver passenger changes are live operational evidence, not the immediate reactive dispatch trigger.</p>
+                            </div>
+                            <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
+                                <span class="text-[10px] text-slate-400 font-extrabold uppercase block tracking-wider">Dispatch rule</span>
+                                <strong class="text-xs font-black text-[#001F44] block">Manual dispatch only</strong>
+                                <p class="text-[10px] text-slate-500 font-semibold">The system recommends action; a dispatcher must still choose the direction and dispatch manually.</p>
+                            </div>
+                        </div>
+                    </div>
+                @endif
             </div>
         </div>
 
@@ -313,25 +457,22 @@
                 <div id="recent-dispatches-list" class="flex-grow overflow-y-auto space-y-4 max-h-[300px] pr-1 pl-4 border-l border-slate-100 mt-2 relative">
                     @forelse($recentDispatches as $log)
                         @php
-                            $routeColor = match($log->trip->route_id) {
-                                1 => '#003F87',
-                                2 => '#BA7517',
-                                3 => '#639922',
-                                4 => '#E24B4A',
-                                default => '#888780'
-                            };
+                            $routeColor = $log->trip?->route?->color ?: '#888780';
+                            $routeName = $log->trip?->route?->name ?: 'Route';
+                            $busPlate = $log->trip?->bus?->plate_number ?: '-';
+                            $driverName = $log->trip?->driver ? trim($log->trip->driver->first_name . ' ' . $log->trip->driver->last_name) : '-';
                         @endphp
                         <div class="relative py-1 group flex flex-col gap-1 transition-all rounded hover:bg-slate-50 p-2 border border-transparent hover:border-slate-100">
                             <!-- Timeline node circle dot -->
                             <span class="absolute h-2.5 w-2.5 rounded-full border-2 border-white shadow-sm -left-[22px] top-4 z-10" style="background-color: {{ $routeColor }}"></span>
                             
                             <div class="flex items-center justify-between">
-                                <span class="text-xs font-black text-[#001F44] truncate">Route {{ $log->trip->route_id }} ({{ $log->trip->route->name ?? 'Route' }})</span>
+                                <span class="text-xs font-black text-[#001F44] truncate">{{ $routeName }}</span>
                                 <span class="text-[10px] text-slate-400 font-bold font-mono">{{ $log->dispatched_at->diffForHumans() }}</span>
                             </div>
                             
                             <div class="text-[11px] text-slate-500 font-semibold space-y-0.5">
-                                <div>Bus: <strong class="text-slate-700 font-mono">{{ $log->trip->bus->plate_number ?? 'â€”' }}</strong> Â· Driver: <strong class="text-slate-700">{{ $log->trip->driver ? ($log->trip->driver->first_name . ' ' . $log->trip->driver->last_name) : 'â€”' }}</strong></div>
+                                <div>Bus: <strong class="text-slate-700 font-mono">{{ $busPlate }}</strong> - Driver: <strong class="text-slate-700">{{ $driverName }}</strong></div>
                                 <div class="italic text-[10px] opacity-90 mt-0.5">{{ $log->notes }}</div>
                             </div>
                         </div>

@@ -8,7 +8,6 @@ use App\Models\ServiceAlertLog;
 use App\Models\Route;
 use App\Models\User;
 use App\Models\Driver;
-use App\Models\Schedule;
 use App\Models\Trip;
 use App\Services\ValidationService;
 use Illuminate\Http\Request;
@@ -29,26 +28,23 @@ class ServiceAlertController extends Controller
         $totalCommuters = User::where('role', 'passenger')->count();
         $totalDrivers = Driver::count();
         
-        $routes = Route::all();
+        $routes = Route::canonicalProduction()
+            ->whereNotIn('status', ['inactive', 'Inactive'])
+            ->get(['id', 'name', 'status']);
         $routeStats = [];
-        $hasInsufficient = false;
         foreach ($routes as $route) {
-            $commuters = Schedule::where('route_id', $route->id)->sum('passengers');
-            $noCommuterData = ($commuters === 0 || $commuters === null);
-            if ($noCommuterData) {
-                $hasInsufficient = true;
-            }
-
-            // BL-7.4: Count drivers by assigned_route in all formats (int, string, or name)
-            $drivers = Driver::where('assigned_route', $route->id)
-                ->orWhere('assigned_route', (string) $route->id)
-                ->orWhere('assigned_route', $route->name)
+            $drivers = Driver::where(function ($query) use ($route) {
+                $query->where('assigned_route', $route->id)
+                    ->orWhere('assigned_route', (string) $route->id)
+                    ->orWhere('assigned_route', $route->name);
+            })
                 ->count();
 
             $routeStats[$route->name] = [
-                'commuters' => (int) $commuters,
+                'commuters' => 0,
                 'drivers' => (int) $drivers,
-                'no_data' => $noCommuterData,
+                'no_data' => true,
+                'passenger_metric' => 'unavailable',
             ];
         }
 
@@ -57,8 +53,7 @@ class ServiceAlertController extends Controller
             'drivers'   => $totalDrivers,
         ];
 
-        // HC-7.4: Compute dynamically instead of hardcoding to true
-        $insufficientData = $routes->isEmpty() || $hasInsufficient;
+        $insufficientData = true;
 
         $stats = [
             'total_commuters' => $totalCommuters,

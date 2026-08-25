@@ -74,6 +74,43 @@ function renderBusPassengerOccupancyCell(bus, isRuntimeOperational) {
     `;
 }
 
+function getBusLifecycleStatusLabel(normalizedStatus) {
+    if (normalizedStatus === 'operating') return 'Operating';
+    if (normalizedStatus === 'ready') return 'Ready';
+    if (normalizedStatus === 'inactive' || normalizedStatus === 'standby') return 'Standby';
+    if (normalizedStatus === 'maintenance') return 'Maintenance';
+    if (normalizedStatus === 'breakdown') return 'Breakdown';
+    if (normalizedStatus === 'available') return 'Legacy Available';
+    if (normalizedStatus === 'active') return 'Legacy Active';
+    return normalizedStatus ? normalizedStatus.charAt(0).toUpperCase() + normalizedStatus.slice(1) : 'Unknown';
+}
+
+function getBusExportRouteLabel(bus) {
+    if (bus.route && typeof bus.route === 'object' && bus.route.name) {
+        return bus.route.name;
+    }
+
+    if (bus.route && routeNames && routeNames[bus.route]) {
+        return routeNames[bus.route].split('|')[0].trim();
+    }
+
+    if (bus.route && bus.route !== 'None') {
+        return `Route ${bus.route}`;
+    }
+
+    return 'No Route Assigned';
+}
+
+function getBusExportPassengerLabel(bus, normalizedStatus) {
+    if (!isBusPassengerOccupancyAvailable(normalizedStatus)) {
+        return 'Not in Service';
+    }
+
+    const passengers = Math.max(0, Number(bus.passengers) || 0);
+    const capacity = Math.max(0, Number(bus.capacity) || 0);
+    return `${passengers} / ${capacity}`;
+}
+
 // Helper: Retrieve CSRF Token from Head Meta tag or Config
 function getCsrfToken() {
     if (window.GoPasigConfig && window.GoPasigConfig.csrfToken) {
@@ -423,11 +460,14 @@ function exportBusesCSV() {
 
     const headers = ['Plate Number', 'Assigned Route', 'Assigned Driver', 'Capacity', 'Pax Boarded', 'Speed', 'Next Stop', 'Status'];
     const rows = fleetData.map(b => {
-        const routeLabel = routeNames && routeNames[b.route] ? `Route ${b.route}` : 'No Route Assigned';
+        const normalizedStatus = String(b.busStatus || b.operationalStatus || b.status || '').toLowerCase();
+        const isRuntimeOperational = isBusRuntimeOperational(b, normalizedStatus);
+        const routeLabel = getBusExportRouteLabel(b);
         const driverLabel = (b.driver && b.driver !== 'Unassigned') ? b.driver : 'No Driver Assigned';
-        const paxLabel = b.status === 'Active' ? `${b.passengers || 0}` : 'Not in Service';
-        const speedLabel = b.status === 'Active' ? `${b.speed || 0} km/h` : 'Not in Service';
-        const nextStopLabel = b.status === 'Active' ? b.nextStop : 'No Active Trip';
+        const paxLabel = getBusExportPassengerLabel(b, normalizedStatus);
+        const speedLabel = isRuntimeOperational ? `${formatBusRuntimeSpeedKmh(b)} km/h` : 'Not in Service';
+        const nextStopLabel = isRuntimeOperational && b.nextStop && b.nextStop !== 'None' ? b.nextStop : 'No Active Trip';
+        const statusLabel = getBusLifecycleStatusLabel(normalizedStatus);
 
         return [
             b.plate,
@@ -437,7 +477,7 @@ function exportBusesCSV() {
             paxLabel,
             speedLabel,
             nextStopLabel,
-            b.status
+            statusLabel
         ];
     });
 

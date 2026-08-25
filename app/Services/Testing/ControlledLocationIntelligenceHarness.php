@@ -8,7 +8,6 @@ use App\Models\Geofence;
 use App\Models\GeofenceTransition;
 use App\Models\GPSLog;
 use App\Models\Route;
-use App\Models\RouteDeviation;
 use App\Models\StopArrival;
 use App\Models\Trip;
 use App\Models\TripProgress;
@@ -205,7 +204,6 @@ class ControlledLocationIntelligenceHarness
         TripProgress::where('trip_id', $trip->id)->delete();
         StopArrival::where('trip_id', $trip->id)->delete();
         GeofenceTransition::where('bus_id', $bus->id)->where('trip_id', $trip->id)->delete();
-        RouteDeviation::where('trip_id', $trip->id)->delete();
 
         $geofenceIds = Geofence::pluck('id');
         foreach ($geofenceIds as $geofenceId) {
@@ -486,7 +484,6 @@ class ControlledLocationIntelligenceHarness
         $progress = TripProgress::where('trip_id', $trip->id)->first();
         $transition = GeofenceTransition::where('bus_id', $bus->id)->where('trip_id', $trip->id)->latest('id')->first();
         $arrival = StopArrival::where('trip_id', $trip->id)->latest('id')->first();
-        $deviation = RouteDeviation::where('trip_id', $trip->id)->latest('id')->first();
 
         $fleet = $this->getJsonAs($context['dispatcherUser'], '/fleet/api/bus-gps-positions');
         $admin = $this->getJsonAs($context['adminUser'], '/admin/api/fleet-data');
@@ -524,7 +521,6 @@ class ControlledLocationIntelligenceHarness
             'vehicle_position' => $position ? [
                 'lat' => $position->lat,
                 'lng' => $position->lng,
-                'corridor_distance' => $position->corridor_distance,
                 'movement_state' => $position->movement_state,
                 'gps_quality_state' => $position->gps_quality_state,
             ] : null,
@@ -535,7 +531,6 @@ class ControlledLocationIntelligenceHarness
                 'next_route_variant_stop_id' => $progress->next_route_variant_stop_id,
                 'completed_stops_count' => $progress->completed_stops_count,
                 'trip_percentage' => $progress->trip_percentage,
-                'route_adherence' => $progress->route_adherence,
             ] : null,
             'geofence' => $transition ? [
                 'id' => $transition->id,
@@ -550,25 +545,15 @@ class ControlledLocationIntelligenceHarness
                 'arrival_time' => $arrival->arrival_time?->toIso8601String(),
                 'departure_time' => $arrival->departure_time?->toIso8601String(),
             ] : null,
-            'route_deviation' => $deviation ? [
-                'id' => $deviation->id,
-                'distance_meters' => $deviation->distance_meters,
-                'severity' => $deviation->severity,
-                'resolved_at' => $deviation->resolved_at?->toIso8601String(),
-            ] : null,
             'fleet_api' => $fleetBus ? [
                 'next_stop' => $fleetBus['next_stop'] ?? null,
                 'upcoming_stop' => $fleetBus['upcoming_stop'] ?? null,
                 'eta' => $fleetBus['eta'] ?? null,
-                'corridor_distance' => $fleetBus['corridor_distance'] ?? null,
-                'route_adherence' => $fleetBus['route_adherence'] ?? null,
                 'has_live_telemetry' => $fleetBus['has_live_telemetry'] ?? null,
             ] : null,
             'admin_api' => $adminBus ? [
                 'next_stop' => $adminBus['next_stop'] ?? null,
                 'eta' => $adminBus['eta'] ?? null,
-                'corridor_distance' => $adminBus['corridor_distance'] ?? null,
-                'route_adherence' => $adminBus['route_adherence'] ?? null,
                 'has_live_telemetry' => $adminBus['has_live_telemetry'] ?? null,
             ] : null,
             'fleet_admin_mismatches' => $mismatches,
@@ -600,10 +585,6 @@ class ControlledLocationIntelligenceHarness
             if ($fleetValue != $adminValue) {
                 $mismatches[$field] = ['fleet' => $fleetValue, 'admin' => $adminValue];
             }
-        }
-
-        if (array_key_exists('corridor_distance', $fleetBus) && ! array_key_exists('corridor_distance', $adminBus)) {
-            $mismatches['corridor_distance'] = ['fleet' => $fleetBus['corridor_distance'], 'admin' => 'not_exposed'];
         }
 
         return $mismatches;

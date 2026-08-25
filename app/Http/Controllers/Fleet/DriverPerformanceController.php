@@ -3,15 +3,17 @@
 namespace App\Http\Controllers\Fleet;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use App\Models\Driver;
 use App\Models\DriverMessage;
-use App\Models\Schedule;
 use App\Models\Incident;
 use App\Models\Route;
-use App\Models\ColorPalette;
+use App\Models\Trip;
+use App\Models\TripLog;
+use App\Models\TripPassengerEvent;
 use App\Services\DriverPerformanceService;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class DriverPerformanceController extends Controller
@@ -21,13 +23,17 @@ class DriverPerformanceController extends Controller
      */
     public function index(Request $request)
     {
-        $startDate = $request->input('start_date', Carbon::today()->subDays(30)->toDateString());
-        $endDate = $request->input('end_date', Carbon::today()->toDateString());
+        $startDate = $request->input('start_date', Carbon::today('Asia/Manila')->subDays(30)->toDateString());
+        $endDate = $request->input('end_date', Carbon::today('Asia/Manila')->toDateString());
         $selectedRoute = $request->input('route_id', 'all');
         $selectedStatus = $request->input('status', 'all');
         $search = $request->input('search', '');
 
-        $availableRoutes = Route::orderBy('id')->get(['id', 'name'])->toArray();
+        $availableRoutes = Route::query()
+            ->publicCommuterActiveService()
+            ->orderBy('id')
+            ->get(['id', 'name'])
+            ->toArray();
 
         $drivers = $this->getFilteredDriversList($startDate, $endDate, $selectedRoute, $selectedStatus, $search);
         $metrics = $this->getMetrics($drivers);
@@ -43,7 +49,7 @@ class DriverPerformanceController extends Controller
             'driverMetrics' => $metrics,
             'topDrivers' => $topDrivers,
             'driverLogs' => $drivers,
-            'driverPerformance' => $drivers, // For ECharts rendering initial state
+            'driverPerformance' => $drivers,
         ]);
     }
 
@@ -52,8 +58,8 @@ class DriverPerformanceController extends Controller
      */
     public function getDriversData(Request $request)
     {
-        $startDate = $request->input('start_date', Carbon::today()->subDays(30)->toDateString());
-        $endDate = $request->input('end_date', Carbon::today()->toDateString());
+        $startDate = $request->input('start_date', Carbon::today('Asia/Manila')->subDays(30)->toDateString());
+        $endDate = $request->input('end_date', Carbon::today('Asia/Manila')->toDateString());
         $selectedRoute = $request->input('route_id', 'all');
         $selectedStatus = $request->input('status', 'all');
         $search = $request->input('search', '');
@@ -71,66 +77,58 @@ class DriverPerformanceController extends Controller
     }
 
     /**
-     * Get details for a specific driver (trips and incidents for the drawer).
+     * Get details for a specific driver from actual Trip records.
      */
     public function getDriverDetails(Request $request, $id)
     {
-        // Parse DB id from string if it starts with DRV-
         $dbId = (int) ltrim(str_replace('DRV-', '', $id), '0');
+        $driver = Driver::find($dbId);
 
-        $drv = Driver::find($dbId);
-        if (!$drv) {
+        if (!$driver) {
             return response()->json(['success' => false, 'message' => 'Driver not found.'], 404);
         }
 
-        // Get driver record data
-        $startDate = $request->input('start_date', Carbon::today()->subDays(30)->toDateString());
-        $endDate = $request->input('end_date', Carbon::today()->toDateString());
+        $startDate = $request->input('start_date', Carbon::today('Asia/Manila')->subDays(30)->toDateString());
+        $endDate = $request->input('end_date', Carbon::today('Asia/Manila')->toDateString());
+        $driverRows = $this->buildDriverData($startDate, $endDate);
+        $driverRow = collect($driverRows)->firstWhere('db_id', $dbId);
 
-        $allDrivers = $this->buildDriverData($startDate, $endDate);
-        $driverArr = collect($allDrivers)->firstWhere('db_id', $dbId);
-
-        if (!$driverArr) {
+        if (!$driverRow) {
             return response()->json(['success' => false, 'message' => 'Driver data build failed.'], 500);
         }
 
-        $trips = Schedule::with('route')
-            ->where('driver_id', $dbId)
-            ->orderByDesc('created_at')
-            ->limit(5)
-            ->get()->map(function ($s) {
-                $dep = Carbon::parse($s->departure_time);
-                $arr = Carbon::parse($s->arrival_time);
-                $dur = $dep->diffInMinutes($arr);
-                return (object) [
-                    'date' => $s->created_at ? $s->created_at->format('M d, Y') : '—',
-                    'route' => $s->route ? $s->route->name : 'N/A',
-                    'passengers' => (int) $s->passengers,
-                    'duration' => $dur,
-                    'status' => $s->status,
-                    'incident' => strtolower((string) $s->status) === 'delayed',
-                ];
-            });
+        [$periodStart, $periodEnd] = $this->periodBounds($startDate, $endDate);
+        $trips = $this->operationalTrips($periodStart, $periodEnd, $dbId)
+            ->sortByDesc(fn (Trip $trip) => $this->tripActivityTimestamp($trip)?->timestamp ?? 0)
+            ->values();
+        $tripIds = $trips->pluck('id');
+        $tripLogsByTripId = $this->tripLogsByTripId($tripIds);
+        $eventSumsByTrip = $this->eventSumsByTrip($tripIds);
+        $incidents = $this->incidentQuery($periodStart, $periodEnd, $dbId)
+            ->get()
+            ->sortByDesc(fn (Incident $incident) => $this->incidentTimestamp($incident)?->timestamp ?? 0)
+            ->take(5)
+            ->values();
+        $incidentTripIds = $incidents->pluck('trip_id')->filter()->values();
 
-        $incidents = Incident::where('driver_id', $dbId)
-            ->orderByDesc('created_at')
-            ->limit(5)
-            ->get()->map(function ($inc) {
-                $reportedAt = $inc->reported_at
-                    ? Carbon::parse($inc->reported_at)->format('M d, Y')
-                    : ($inc->created_at ? $inc->created_at->format('M d, Y') : '—');
-                return (object) [
-                    'date' => $reportedAt,
-                    'type' => ucwords((string) ($inc->type ?? 'Incident')),
-                    'description' => $inc->description ?: 'No description provided.',
-                ];
-            });
+        $tripRows = $trips->take(5)
+            ->map(fn (Trip $trip) => $this->mapTripRecord($trip, $tripLogsByTripId, $eventSumsByTrip, $incidentTripIds))
+            ->values()
+            ->all();
+
+        $incidentRows = $incidents->map(function (Incident $incident) {
+            return [
+                'date' => $this->incidentTimestamp($incident)?->copy()->timezone('Asia/Manila')->format('M d, Y') ?? 'No timestamp',
+                'type' => ucwords((string) ($incident->type ?? 'Incident')),
+                'description' => $incident->description ?: 'No description provided.',
+            ];
+        })->all();
 
         return response()->json([
             'success' => true,
-            'selectedDriver' => $driverArr,
-            'selectedDriverTrips' => $trips,
-            'selectedDriverIncidents' => $incidents,
+            'selectedDriver' => $driverRow,
+            'selectedDriverTrips' => $tripRows,
+            'selectedDriverIncidents' => $incidentRows,
         ]);
     }
 
@@ -139,8 +137,8 @@ class DriverPerformanceController extends Controller
      */
     public function exportCsv(Request $request)
     {
-        $startDate = $request->input('start_date', Carbon::today()->subDays(30)->toDateString());
-        $endDate = $request->input('end_date', Carbon::today()->toDateString());
+        $startDate = $request->input('start_date', Carbon::today('Asia/Manila')->subDays(30)->toDateString());
+        $endDate = $request->input('end_date', Carbon::today('Asia/Manila')->toDateString());
         $selectedRoute = $request->input('route_id', 'all');
         $selectedStatus = $request->input('status', 'all');
         $search = $request->input('search', '');
@@ -149,39 +147,40 @@ class DriverPerformanceController extends Controller
         $metrics = $this->getMetrics($drivers);
 
         $filename = 'driver-performance-' . $startDate . '-to-' . $endDate . '.csv';
+        $rows = [
+            ['GoPasig Driver Performance Report'],
+            ['Period', $startDate . ' to ' . $endDate],
+            ['Generated At', now()->format('Y-m-d H:i:s')],
+            [],
+            ['=== SUMMARY ==='],
+            ['Total Drivers', $metrics->total_drivers],
+            ['Drivers With Trips', $metrics->drivers_with_trips],
+            ['Avg Performance Score', $metrics->avg_performance_score ?? 'No data'],
+            ['Incidents (Period)', $metrics->incidents_this_period],
+            ['Avg Trips Per Driver', $metrics->avg_trips_per_driver],
+            [],
+            ['=== DRIVER RECORDS ==='],
+            ['Driver ID', 'Name', 'Route', 'Status', 'Trips Run', 'Recorded Boarded', 'Recorded Alighted', 'Incidents', 'Avg Trip (min)', 'Score'],
+        ];
 
-        $rows = [];
-        $rows[] = ['GoPasig Driver Performance Report'];
-        $rows[] = ['Period', $startDate . ' to ' . $endDate];
-        $rows[] = ['Generated At', now()->format('Y-m-d H:i:s')];
-        $rows[] = [];
-        $rows[] = ['=== SUMMARY ==='];
-        $rows[] = ['Total Drivers', $metrics->total_drivers];
-        $rows[] = ['On Duty Today', $metrics->on_duty_today];
-        $rows[] = ['Avg Performance Score', $metrics->avg_performance_score];
-        $rows[] = ['Incidents (Period)', $metrics->incidents_this_period];
-        $rows[] = ['Avg Trips Per Driver', $metrics->avg_trips_per_driver];
-        $rows[] = [];
-        $rows[] = ['=== DRIVER RECORDS ==='];
-        $rows[] = ['Driver ID', 'Name', 'Route', 'Status', 'Trips Done', 'Passengers', 'Incidents', 'Avg Trip (min)', 'Score'];
-
-        foreach ($drivers as $d) {
+        foreach ($drivers as $driver) {
             $rows[] = [
-                $d['driver_id'],
-                $d['driver_name'],
-                $d['assigned_route'],
-                $d['status'],
-                $d['trips_completed'],
-                $d['total_passengers_moved'],
-                $d['incidents'],
-                $d['avg_trip_time_minutes'],
-                $d['performance_score'],
+                $driver['driver_id'],
+                $driver['driver_name'],
+                $driver['assigned_route'],
+                $driver['status'],
+                $driver['trips_run'],
+                $driver['recorded_boarded'],
+                $driver['recorded_alighted'],
+                $driver['incidents'],
+                $driver['avg_trip_time_minutes'] ?: 'No data',
+                $driver['performance_score'] ?? 'No data',
             ];
         }
 
         $csvContent = implode("\n", array_map(function ($row) {
             return implode(',', array_map(
-                fn($v) => '"' . str_replace('"', '""', (string) $v) . '"',
+                fn ($value) => '"' . str_replace('"', '""', (string) $value) . '"',
                 $row
             ));
         }, $rows));
@@ -199,16 +198,15 @@ class DriverPerformanceController extends Controller
      */
     public function messageDriver(Request $request, $id)
     {
-        // Parse DB id from string if it starts with DRV-
         $dbId = (int) ltrim(str_replace('DRV-', '', $id), '0');
-
         $driver = Driver::find($dbId);
+
         if (!$driver) {
             return response()->json(['success' => false, 'message' => 'Driver not found.'], 404);
         }
 
         $validated = $request->validate([
-            'message' => 'required|string|max:1000'
+            'message' => 'required|string|max:1000',
         ]);
 
         DriverMessage::create([
@@ -220,99 +218,108 @@ class DriverPerformanceController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "Message sent to {$driver->first_name}"
+            'message' => "Message sent to {$driver->first_name}",
         ]);
     }
 
     /**
-     * Internal helper: Build driver data.
+     * Build one driver row from actual operational records in the selected period.
      */
     public function buildDriverData($startDate, $endDate): array
     {
-        $start = Carbon::parse($startDate)->startOfDay();
-        $end = Carbon::parse($endDate)->endOfDay();
-
-        $colorPalette = ColorPalette::getColors('analytics');
-
-        $countInRange = Schedule::whereBetween('service_date', [$start->toDateString(), $end->toDateString()])->count();
-        $useAllTime = $countInRange === 0;
-
-        $isSqlite = DB::connection()->getDriverName() === 'sqlite';
-
-        $schedAgg = DB::table('schedules')
-            ->when(!$useAllTime, fn($q) => $q->whereBetween('service_date', [$start->toDateString(), $end->toDateString()]))
-            ->select(
-                'driver_id',
-                DB::raw('COUNT(*) as trips_completed'),
-                DB::raw('SUM(passengers) as total_pax'),
-                $isSqlite
-                ? DB::raw('AVG((strftime("%s", arrival_time) - strftime("%s", departure_time)) / 60) as avg_duration')
-                : DB::raw('AVG(TIMESTAMPDIFF(MINUTE, departure_time, arrival_time)) as avg_duration'),
-                DB::raw('MAX(route_id) as last_route_id')
-            )
-            ->groupBy('driver_id')
+        [$periodStart, $periodEnd] = $this->periodBounds($startDate, $endDate);
+        $routes = Route::query()
+            ->publicCommuterActiveService()
+            ->get(['id', 'name', 'color'])
+            ->keyBy('id');
+        $drivers = Driver::query()->orderBy('last_name')->get();
+        $tripsByDriver = $this->operationalTrips($periodStart, $periodEnd)->groupBy('driver_id');
+        $tripIds = $tripsByDriver->flatten(1)->pluck('id');
+        $tripLogsByTripId = $this->tripLogsByTripId($tripIds);
+        $eventSumsByTrip = $this->eventSumsByTrip($tripIds);
+        $incidentsByDriver = $this->incidentQuery($periodStart, $periodEnd)
             ->get()
-            ->keyBy('driver_id');
-
-        $routes = Route::orderBy('id')->get()->keyBy('id');
-        $drivers = Driver::orderBy('last_name')->get();
+            ->groupBy('driver_id');
 
         $result = [];
-        foreach ($drivers as $drv) {
-            $agg = $schedAgg->get($drv->id);
+        foreach ($drivers as $driver) {
+            /** @var Collection<int, Trip> $driverTrips */
+            $driverTrips = $tripsByDriver->get($driver->id, collect());
+            $completedTrips = $driverTrips->where('status', 'completed')->count();
+            $ongoingTrips = $driverTrips->where('status', 'ongoing')->count();
+            $dispatchedTrips = $driverTrips->where('status', 'dispatched')->count();
+            $cancelledTrips = $driverTrips->where('status', 'cancelled')->count();
+            $tripsRun = $completedTrips + $ongoingTrips;
 
-            $tripsCompleted = $agg ? (int) $agg->trips_completed : 0;
-            $totalPax = $agg ? (int) $agg->total_pax : (int) $drv->pax_today;
-            $avgDuration = $agg ? (int) round($agg->avg_duration) : 0;
-            $lastRouteId = $agg ? (int) $agg->last_route_id : null;
-
-            $assignedRouteId = null;
-            if (!empty($drv->assigned_route)) {
-                $r = $routes->first(fn($r) => $r->name === $drv->assigned_route);
-                $assignedRouteId = $r ? $r->id : null;
+            $recordedBoarded = 0;
+            $recordedAlighted = 0;
+            foreach ($driverTrips as $trip) {
+                $totals = $this->passengerTotalsForTrip($trip, $tripLogsByTripId, $eventSumsByTrip);
+                $recordedBoarded += $totals['boarded'];
+                $recordedAlighted += $totals['alighted'];
             }
-            if (!$assignedRouteId && $lastRouteId && $routes->has($lastRouteId)) {
-                $assignedRouteId = $lastRouteId;
-            }
-            $assignedRouteName = $assignedRouteId && $routes->has($assignedRouteId)
-                ? $routes->get($assignedRouteId)->name
-                : 'Unassigned';
-            $routeColor = ($assignedRouteId && count($colorPalette) > 0)
-                ? ($colorPalette[($assignedRouteId - 1) % count($colorPalette)])
-                : '#94a3b8';
 
-            $uiStatus = match (strtolower((string) $drv->status)) {
+            $durationValues = $driverTrips
+                ->where('status', 'completed')
+                ->filter(fn (Trip $trip) => $trip->started_at && $trip->ended_at)
+                ->map(fn (Trip $trip) => $trip->started_at->diffInMinutes($trip->ended_at));
+            $avgDuration = $durationValues->isEmpty() ? 0 : (int) round($durationValues->avg());
+            $peakLoad = (int) ($driverTrips->whereIn('status', ['completed', 'ongoing'])->max('peak_passengers') ?? 0);
+
+            $driverIncidents = $incidentsByDriver->get($driver->id, collect());
+            $qualifyingIncidents = $driverIncidents
+                ->filter(fn (Incident $incident) => Incident::isBreakdown($incident->type) || Incident::isAccident($incident->type))
+                ->count();
+            $performanceScore = DriverPerformanceService::calculateOperationalScore($tripsRun, $qualifyingIncidents);
+
+            $latestTrip = $driverTrips
+                ->sortByDesc(fn (Trip $trip) => $this->tripActivityTimestamp($trip)?->timestamp ?? 0)
+                ->first();
+            $assignedRoute = $latestTrip?->route;
+            if (!$assignedRoute) {
+                $assignedRoute = $this->resolveOfficialRoute($driver->assigned_route, $routes);
+            }
+
+            $routeIds = $driverTrips->pluck('route_id')->filter()->unique()->values()->all();
+            if ($assignedRoute && !in_array($assignedRoute->id, $routeIds, true)) {
+                $routeIds[] = $assignedRoute->id;
+            }
+
+            $uiStatus = match (strtolower((string) $driver->status)) {
                 'active' => 'On duty',
                 'inactive' => 'Off duty',
                 'suspended' => 'Suspended',
-                default => ucwords((string) $drv->status),
+                default => ucwords((string) $driver->status),
             };
 
-            $incidentsInPeriod = Incident::where('driver_id', $drv->id)
-                ->when(!$useAllTime, fn($q) => $q->whereBetween('created_at', [$start, $end]))
-                ->count();
-            $totalIncidents = max((int) $drv->incidents_30, $incidentsInPeriod);
-
             $result[] = [
-                'driver_id' => 'DRV-' . str_pad($drv->id, 4, '0', STR_PAD_LEFT),
-                'db_id' => $drv->id,
-                'driver_name' => "{$drv->first_name} {$drv->last_name}",
-                'initials' => $drv->initials,
-                'emp_id' => $drv->emp_id,
-                'assigned_route' => $assignedRouteName,
-                'assigned_route_id' => $assignedRouteId,
-                'route_color' => $routeColor,
+                'driver_id' => 'DRV-' . str_pad($driver->id, 4, '0', STR_PAD_LEFT),
+                'db_id' => $driver->id,
+                'driver_name' => "{$driver->first_name} {$driver->last_name}",
+                'initials' => $driver->initials,
+                'emp_id' => $driver->emp_id,
+                'assigned_route' => $assignedRoute?->name ?? 'Unassigned',
+                'assigned_route_id' => $assignedRoute?->id,
+                'route_ids' => array_values($routeIds),
+                'route_color' => $assignedRoute?->color ?: '#94a3b8',
                 'status' => $uiStatus,
-                'trips_completed' => $tripsCompleted,
-                'total_passengers_moved' => $totalPax,
-                'incidents' => $totalIncidents,
+                'trips_run' => $tripsRun,
+                'completed_trips' => $completedTrips,
+                'ongoing_trips' => $ongoingTrips,
+                'dispatched_trips' => $dispatchedTrips,
+                'cancelled_trips' => $cancelledTrips,
+                'trips_completed' => $completedTrips,
+                'recorded_boarded' => $recordedBoarded,
+                'recorded_alighted' => $recordedAlighted,
+                'total_passengers_moved' => $recordedBoarded,
+                'peak_load' => $peakLoad,
+                'incidents' => $driverIncidents->count(),
+                'qualifying_incidents' => $qualifyingIncidents,
                 'avg_trip_time_minutes' => $avgDuration,
-                'performance_score' => DriverPerformanceService::calculateScore(
-                    $drv->id,
-                    $start,
-                    $end,
-                    (float) $drv->performance_score
-                ),
+                'performance_score' => $performanceScore,
+                'performance_score_basis' => 'actual_operations',
+                'performance_score_trips_run' => $tripsRun,
+                'performance_score_qualifying_incidents' => $qualifyingIncidents,
             ];
         }
 
@@ -325,7 +332,6 @@ class DriverPerformanceController extends Controller
     public function getFilteredDriversList($startDate, $endDate, $selectedRoute, $selectedStatus, $search): array
     {
         $all = $this->buildDriverData($startDate, $endDate);
-
         $mappedStatus = strtolower($selectedStatus);
         if ($mappedStatus === 'active') {
             $mappedStatus = 'on duty';
@@ -333,15 +339,13 @@ class DriverPerformanceController extends Controller
             $mappedStatus = 'off duty';
         }
 
-        return array_values(array_filter($all, function ($d) use ($selectedRoute, $mappedStatus, $search) {
+        return array_values(array_filter($all, function ($driver) use ($selectedRoute, $mappedStatus, $search) {
             $matchSearch = empty($search)
-                || str_contains(strtolower($d['driver_name']), strtolower($search));
-
+                || str_contains(strtolower($driver['driver_name']), strtolower($search));
             $matchRoute = $selectedRoute === 'all'
-                || $d['assigned_route_id'] == $selectedRoute;
-
+                || in_array((int) $selectedRoute, $driver['route_ids'], true);
             $matchStatus = $mappedStatus === 'all'
-                || strtolower($d['status']) === $mappedStatus;
+                || strtolower($driver['status']) === $mappedStatus;
 
             return $matchSearch && $matchRoute && $matchStatus;
         }));
@@ -353,11 +357,27 @@ class DriverPerformanceController extends Controller
     public function getTopDrivers(array $filteredDrivers): array
     {
         $sorted = $filteredDrivers;
-        usort($sorted, fn($a, $b) => $b['performance_score'] <=> $a['performance_score']);
+        usort($sorted, function ($left, $right) {
+            return [
+                $right['performance_score'] ?? -1,
+                $right['trips_run'],
+                $right['completed_trips'],
+                $right['peak_load'],
+                $left['driver_name'],
+            ] <=> [
+                $left['performance_score'] ?? -1,
+                $left['trips_run'],
+                $left['completed_trips'],
+                $left['peak_load'],
+                $right['driver_name'],
+            ];
+        });
+
         $top5 = array_slice($sorted, 0, 5);
-        foreach ($top5 as $idx => &$d) {
-            $d['rank'] = $idx + 1;
+        foreach ($top5 as $index => &$driver) {
+            $driver['rank'] = $index + 1;
         }
+
         return $top5;
     }
 
@@ -367,28 +387,161 @@ class DriverPerformanceController extends Controller
     public function getMetrics(array $filteredDrivers): object
     {
         $total = count($filteredDrivers);
-        if ($total === 0) {
-            return (object) [
-                'total_drivers' => 0,
-                'on_duty_today' => 0,
-                'avg_performance_score' => 0,
-                'incidents_this_period' => 0,
-                'avg_trips_per_driver' => 0,
-            ];
-        }
-
-        $onDuty = count(array_filter($filteredDrivers, fn($d) => $d['status'] === 'On duty'));
-        $avgScore = round(array_sum(array_column($filteredDrivers, 'performance_score')) / $total, 1);
-        $sumIncidents = array_sum(array_column($filteredDrivers, 'incidents'));
-        $sumTrips = array_sum(array_column($filteredDrivers, 'trips_completed'));
-        $avgTrips = round($sumTrips / $total, 1);
+        $scores = collect($filteredDrivers)
+            ->pluck('performance_score')
+            ->filter(fn ($score) => $score !== null)
+            ->values();
+        $driversWithTrips = count(array_filter($filteredDrivers, fn ($driver) => $driver['trips_run'] > 0));
 
         return (object) [
             'total_drivers' => $total,
-            'on_duty_today' => $onDuty,
-            'avg_performance_score' => $avgScore,
-            'incidents_this_period' => $sumIncidents,
-            'avg_trips_per_driver' => $avgTrips,
+            'drivers_with_trips' => $driversWithTrips,
+            'on_duty_today' => $driversWithTrips,
+            'avg_performance_score' => $scores->isEmpty() ? null : round($scores->avg(), 1),
+            'incidents_this_period' => array_sum(array_column($filteredDrivers, 'incidents')),
+            'avg_trips_per_driver' => $total > 0
+                ? round(array_sum(array_column($filteredDrivers, 'trips_run')) / $total, 1)
+                : 0,
         ];
+    }
+
+    private function periodBounds($startDate, $endDate): array
+    {
+        return [
+            Carbon::parse($startDate, 'Asia/Manila')->startOfDay()->utc(),
+            Carbon::parse($endDate, 'Asia/Manila')->endOfDay()->utc(),
+        ];
+    }
+
+    private function operationalTrips(Carbon $periodStart, Carbon $periodEnd, $driverId = null): Collection
+    {
+        return Trip::query()
+            ->with(['route', 'bus'])
+            ->when($driverId !== null, fn ($query) => $query->where('driver_id', $driverId))
+            ->whereHas('route', fn ($query) => $query->publicCommuterActiveService())
+            ->where(function ($query) use ($periodStart, $periodEnd) {
+                $query->where(function ($completed) use ($periodStart, $periodEnd) {
+                    $completed->where('status', 'completed')
+                        ->whereBetween('ended_at', [$periodStart, $periodEnd]);
+                })->orWhere(function ($ongoing) use ($periodStart, $periodEnd) {
+                    $ongoing->where('status', 'ongoing')
+                        ->whereBetween('started_at', [$periodStart, $periodEnd]);
+                })->orWhere(function ($dispatched) use ($periodStart, $periodEnd) {
+                    $dispatched->where('status', 'dispatched')
+                        ->whereBetween('dispatched_at', [$periodStart, $periodEnd]);
+                })->orWhere(function ($cancelled) use ($periodStart, $periodEnd) {
+                    $cancelled->where('status', 'cancelled')
+                        ->whereBetween('ended_at', [$periodStart, $periodEnd]);
+                });
+            })
+            ->get();
+    }
+
+    private function incidentQuery(Carbon $periodStart, Carbon $periodEnd, $driverId = null)
+    {
+        return Incident::query()
+            ->with(['trip.route'])
+            ->when($driverId !== null, fn ($query) => $query->where('driver_id', $driverId))
+            ->whereHas('trip.route', fn ($query) => $query->publicCommuterActiveService())
+            ->where(function ($query) use ($periodStart, $periodEnd) {
+                $query->whereBetween('reported_at', [$periodStart, $periodEnd])
+                    ->orWhere(function ($fallback) use ($periodStart, $periodEnd) {
+                        $fallback->whereNull('reported_at')
+                            ->whereBetween('created_at', [$periodStart, $periodEnd]);
+                    });
+            });
+    }
+
+    private function tripLogsByTripId(Collection $tripIds): Collection
+    {
+        if ($tripIds->isEmpty()) {
+            return collect();
+        }
+
+        return TripLog::query()
+            ->whereIn('trip_id', $tripIds)
+            ->get()
+            ->keyBy('trip_id');
+    }
+
+    private function eventSumsByTrip(Collection $tripIds): Collection
+    {
+        if ($tripIds->isEmpty()) {
+            return collect();
+        }
+
+        return TripPassengerEvent::query()
+            ->whereIn('trip_id', $tripIds)
+            ->select('trip_id', 'event_type', DB::raw('SUM(passenger_delta) as total'))
+            ->groupBy('trip_id', 'event_type')
+            ->get()
+            ->groupBy('trip_id');
+    }
+
+    private function passengerTotalsForTrip(Trip $trip, Collection $tripLogsByTripId, Collection $eventSumsByTrip): array
+    {
+        $eventSums = $eventSumsByTrip->get($trip->id, collect());
+        $boardedRow = $eventSums->firstWhere('event_type', TripPassengerEvent::TYPE_BOARDED);
+        $alightedRow = $eventSums->firstWhere('event_type', TripPassengerEvent::TYPE_ALIGHTED);
+        $eventBoarded = $boardedRow ? (int) $boardedRow->total : 0;
+        $eventAlighted = $alightedRow ? (int) $alightedRow->total : 0;
+
+        $tripLog = $tripLogsByTripId->get($trip->id);
+        $isFinalized = in_array((string) $trip->status, ['completed', 'cancelled'], true);
+
+        return [
+            'boarded' => $isFinalized && $tripLog ? (int) $tripLog->passengers : $eventBoarded,
+            'alighted' => $isFinalized && $tripLog ? (int) $tripLog->alighted_passengers : $eventAlighted,
+        ];
+    }
+
+    private function mapTripRecord(Trip $trip, Collection $tripLogsByTripId, Collection $eventSumsByTrip, Collection $incidentTripIds): array
+    {
+        $totals = $this->passengerTotalsForTrip($trip, $tripLogsByTripId, $eventSumsByTrip);
+        $timestamp = $this->tripActivityTimestamp($trip);
+        $duration = $trip->started_at && $trip->ended_at
+            ? (int) $trip->started_at->diffInMinutes($trip->ended_at)
+            : 0;
+
+        return [
+            'trip_no' => 'TRIP-' . str_pad((string) $trip->id, 4, '0', STR_PAD_LEFT),
+            'date' => $timestamp?->copy()->timezone('Asia/Manila')->format('M d, Y g:i A') ?? 'No timestamp',
+            'route' => $trip->route?->name ?? 'No route',
+            'status' => ucfirst((string) $trip->status),
+            'recorded_boarded' => $totals['boarded'],
+            'recorded_alighted' => $totals['alighted'],
+            'peak_load' => (int) ($trip->peak_passengers ?? 0),
+            'duration' => $duration,
+            'incident' => $incidentTripIds->contains($trip->id),
+        ];
+    }
+
+    private function tripActivityTimestamp(Trip $trip): ?Carbon
+    {
+        return match ((string) $trip->status) {
+            'completed', 'cancelled' => $trip->ended_at ?? $trip->updated_at,
+            'ongoing' => $trip->started_at ?? $trip->updated_at,
+            'dispatched' => $trip->dispatched_at ?? $trip->updated_at,
+            default => $trip->updated_at ?? $trip->created_at,
+        };
+    }
+
+    private function incidentTimestamp(Incident $incident): ?Carbon
+    {
+        return $incident->reported_at ?? $incident->created_at;
+    }
+
+    private function resolveOfficialRoute($assignedRoute, Collection $routes): ?Route
+    {
+        $value = trim((string) $assignedRoute);
+        if ($value === '') {
+            return null;
+        }
+
+        if (is_numeric($value) && $routes->has((int) $value)) {
+            return $routes->get((int) $value);
+        }
+
+        return $routes->first(fn (Route $route) => $route->name === $value);
     }
 }

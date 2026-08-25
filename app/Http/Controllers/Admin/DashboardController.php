@@ -28,7 +28,10 @@ class DashboardController extends Controller
         if (Schema::hasTable('dispatch_simulation_defaults')) {
             $missingThresholdKey = !DispatchSimulationDefault::where('key', 'default_demand_threshold')->exists();
         }
-        $routes = Route::with(['variants.stops' => fn ($query) => $query->orderBy('sequence')])->get();
+        $routes = Route::query()
+            ->publicCommuterActiveService()
+            ->with(['variants.stops' => fn ($query) => $query->orderBy('sequence')])
+            ->get();
         $primaryRouteName = $routes->first()?->name
             ?? SystemSetting::get('overview_default_route_name')
             ?? SystemSetting::get('default_route_name', 'Route 1');
@@ -245,8 +248,6 @@ class DashboardController extends Controller
             $bus->coordinate_source = $coordinateSource;
             $bus->has_live_telemetry = $hasLiveTelemetry;
             $bus->last_gps_at = $hasLiveTelemetry && $pos->last_updated_at ? $pos->last_updated_at->toIso8601String() : null;
-            $bus->corridor_distance = $hasLiveTelemetry ? (float) $pos->corridor_distance : null;
-            $bus->route_adherence = null;
             $bus->trip_progress = null;
             $bus->current_stop = null;
             $bus->upcoming_stop = null;
@@ -267,7 +268,6 @@ class DashboardController extends Controller
                 $bus->current_stop = $currentStopModel ? $currentStopModel->name : null;
                 $bus->upcoming_stop = $nextStopModel ? $nextStopModel->name : null;
                 $bus->next_stop = $bus->upcoming_stop;
-                $bus->route_adherence = $prog->route_adherence;
                 $bus->trip_progress = [
                     'current_stop_id' => $prog->current_stop_id,
                     'current_route_variant_stop_id' => $prog->current_route_variant_stop_id,

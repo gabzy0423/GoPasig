@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Bus;
 use App\Models\GPSLog;
+use App\Models\Route;
 use App\Models\Trip;
 use App\Models\User;
 use App\Models\VehiclePosition;
@@ -225,8 +226,13 @@ class HeadingIntegrationTest extends TestCase
     {
         $fleetUser = User::factory()->create(['role' => 'fleet_manager']);
         $adminUser = User::factory()->create(['role' => 'admin']);
-        $bus = Bus::factory()->create(['status' => 'active']);
-        $trip = Trip::factory()->create(['bus_id' => $bus->id, 'status' => 'ongoing']);
+        $route = Route::factory()->official('Route 2')->create();
+        $bus = Bus::factory()->create(['status' => 'active', 'route_id' => $route->id]);
+        $trip = Trip::factory()->create([
+            'bus_id' => $bus->id,
+            'route_id' => $route->id,
+            'status' => 'ongoing',
+        ]);
         VehiclePosition::create([
             'bus_id' => $bus->id,
             'trip_id' => $trip->id,

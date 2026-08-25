@@ -120,7 +120,7 @@ function resetSessionsFiltersAction() {
 
 // Setup polling and input events
 let fleetCommuterSessionsModuleInitialized = false;
-let fleetCommuterSessionsPollingId = null;
+let fleetCommuterSessionsPollingRegistration = null;
 
 function initFleetCommuterSessionsModule() {
     if (fleetCommuterSessionsModuleInitialized || !document.getElementById('sessions-search-input')) return;
@@ -135,14 +135,19 @@ function initFleetCommuterSessionsModule() {
         debounceTimeout = setTimeout(() => fetchCommuterSessions(1), 350);
     });
 
-    // Register active polling loop check
-    if (!fleetCommuterSessionsPollingId) {
-        fleetCommuterSessionsPollingId = setInterval(() => {
+    if (!fleetCommuterSessionsPollingRegistration) {
+        const refreshSessionsWhenVisible = () => {
             const sessionsScreen = document.getElementById('screen-commuter-sessions');
             if (sessionsScreen && !sessionsScreen.classList.contains('hidden')) {
-                fetchCommuterSessions(sessionsCurrentPage);
+                return fetchCommuterSessions(sessionsCurrentPage);
             }
-        }, 15000); // Poll every 15s when tab active
+
+            return undefined;
+        };
+
+        fleetCommuterSessionsPollingRegistration = window.GoPasigFleetModules?.registerPoller
+            ? window.GoPasigFleetModules.registerPoller('commuter-sessions', 'session-data', refreshSessionsWhenVisible, 15000)
+            : setInterval(refreshSessionsWhenVisible, 15000);
     }
 }
 

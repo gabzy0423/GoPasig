@@ -6,7 +6,10 @@ use App\Models\Bus;
 use App\Models\DemandHistory;
 use App\Models\Driver;
 use App\Models\Incident;
+use App\Models\MaintenanceRecord;
 use App\Models\Route;
+use App\Models\RouteServiceSchedule;
+use App\Models\RouteVariant;
 use App\Models\Schedule;
 use App\Models\SystemSetting;
 use App\Models\TimeSlotConfiguration;
@@ -249,8 +252,8 @@ class AdminAnalyticsFleetUtilizationTest extends TestCase
         $response->assertJsonPath('kpis.pax_change_last_week', 'Recorded boarded events in selected period');
         $response->assertJsonPath('kpis.avg_pax_trip', 0);
         $response->assertJsonPath('kpis.avg_pax_trip_change', 'Average peak load per actual trip in selected period');
-        $response->assertJsonPath('kpis.on_time_rate', 'Deferred');
-        $response->assertJsonPath('kpis.delayed_trips', null);
+        $this->assertArrayNotHasKey('on_time_rate', $response->json('kpis'));
+        $this->assertArrayNotHasKey('delayed_trips', $response->json('kpis'));
     }
 
     public function test_passengers_handled_kpi_uses_boarded_passenger_events_in_selected_period(): void
@@ -329,7 +332,7 @@ class AdminAnalyticsFleetUtilizationTest extends TestCase
         $response->assertJsonPath('kpis.total_pax_today', 17);
         $response->assertJsonPath('kpis.pax_change_yesterday', 'Recorded boarded events in selected period');
         $response->assertJsonPath('kpis.avg_pax_trip', 0);
-        $response->assertJsonPath('kpis.on_time_rate', 'Deferred');
+        $this->assertArrayNotHasKey('on_time_rate', $response->json('kpis'));
     }
 
     public function test_selected_period_passengers_kpi_uses_boarded_events_in_selected_period(): void
@@ -419,7 +422,7 @@ class AdminAnalyticsFleetUtilizationTest extends TestCase
         $response->assertJsonPath('kpis.pax_this_week', 11);
         $response->assertJsonPath('kpis.pax_change_last_week', 'Recorded boarded events in selected period');
         $response->assertJsonPath('kpis.avg_pax_trip', 0);
-        $response->assertJsonPath('kpis.on_time_rate', 'Deferred');
+        $this->assertArrayNotHasKey('on_time_rate', $response->json('kpis'));
     }
 
     public function test_selected_period_passengers_excludes_non_official_routes_and_out_of_range_events(): void
@@ -639,7 +642,7 @@ class AdminAnalyticsFleetUtilizationTest extends TestCase
         $response->assertJsonPath('kpis.avg_pax_trip_change', 'Average peak load per actual trip in selected period');
         $response->assertJsonPath('kpis.total_pax_today', 999);
         $response->assertJsonPath('kpis.pax_this_week', 999);
-        $response->assertJsonPath('kpis.on_time_rate', 'Deferred');
+        $this->assertArrayNotHasKey('on_time_rate', $response->json('kpis'));
     }
 
     public function test_bus_operation_load_summary_uses_actual_trip_and_passenger_event_metrics(): void
@@ -784,20 +787,19 @@ class AdminAnalyticsFleetUtilizationTest extends TestCase
         $this->assertStringContainsString('Passengers Handled', $topKpiStrip);
         $this->assertStringContainsString('Passengers in Selected Period', $topKpiStrip);
         $this->assertStringContainsString('Avg Peak Load / Trip', $topKpiStrip);
-        $this->assertStringContainsString('On-Time Performance', $topKpiStrip);
-        $this->assertStringContainsString('Deferred', $topKpiStrip);
         $this->assertStringContainsString('Recorded boarded events in selected period', $topKpiStrip);
         $this->assertStringContainsString('Recorded boarded events in selected period', $topKpiStrip);
         $this->assertStringContainsString('Average peak load per actual trip in selected period', $topKpiStrip);
-        $this->assertStringContainsString('Actual timing source required', $topKpiStrip);
         $this->assertStringContainsString('Actual operations', $topKpiStrip);
         $this->assertStringContainsString('completed trips in selected period', $topKpiStrip);
-        $this->assertStringContainsString('not schedule-status backed', $topKpiStrip);
         $this->assertStringNotContainsString('Fleet Util.', $topKpiStrip);
         $this->assertStringNotContainsString('Total Pax Today', $topKpiStrip);
         $this->assertStringNotContainsString('Pax This Week', $topKpiStrip);
         $this->assertStringNotContainsString('Avg Pax / Trip', $topKpiStrip);
+        $this->assertStringNotContainsString('On-Time Performance', $topKpiStrip);
         $this->assertStringNotContainsString('On-Time Rate', $topKpiStrip);
+        $this->assertStringNotContainsString('Actual timing source required', $topKpiStrip);
+        $this->assertStringNotContainsString('not schedule-status backed', $topKpiStrip);
         $this->assertStringNotContainsString('Delayed trips', $topKpiStrip);
         $this->assertStringNotContainsString('9 of 12 active', $topKpiStrip);
         $this->assertStringNotContainsString('78%', $topKpiStrip);
@@ -814,7 +816,9 @@ class AdminAnalyticsFleetUtilizationTest extends TestCase
 
         $this->assertStringContainsString('buses operated in selected period', $renderer);
         $this->assertStringContainsString('completed trips in selected period', $renderer);
-        $this->assertStringContainsString('not schedule-status backed', $renderer);
+        $this->assertStringNotContainsString('kpi-on-time-rate', $renderer);
+        $this->assertStringNotContainsString('kpi-on-time-sub', $renderer);
+        $this->assertStringNotContainsString('not schedule-status backed', $renderer);
         $this->assertStringNotContainsString('trips_scheduled > 0', $renderer);
         $this->assertStringNotContainsString('delayed trips today', $renderer);
         $this->assertStringNotContainsString('of ${kpisData.trips_scheduled || 0} scheduled', $renderer);
@@ -823,7 +827,37 @@ class AdminAnalyticsFleetUtilizationTest extends TestCase
         $this->assertStringNotContainsString('-2% vs yesterday', $renderer);
     }
 
-    public function test_forecast_cards_use_deferred_empty_states_without_demo_values(): void
+    public function test_admin_analytics_has_shared_reporting_period_presets(): void
+    {
+        $view = file_get_contents(resource_path('views/admin/reports/index.blade.php'));
+        $partial = file_get_contents(resource_path('views/admin/reports/partials/reporting-period-filter.blade.php'));
+        $data = file_get_contents(public_path('js/admin-dashboard/analytics-data.js'));
+        $interactions = file_get_contents(public_path('js/admin-dashboard/analytics-interactions.js'));
+
+        foreach ([
+            'Today',
+            'Yesterday',
+            'Last 7 Days',
+            'Last 30 Days',
+            'This Month',
+            'Last Month',
+            'This Year',
+            'Custom Range',
+        ] as $label) {
+            $this->assertStringContainsString($label, $partial);
+        }
+
+        $this->assertSame(3, substr_count($view, "admin.reports.partials.reporting-period-filter"));
+        $this->assertStringContainsString('analytics-period-label', $view);
+        $this->assertStringContainsString('getAnalyticsPresetRange', $data);
+        $this->assertStringContainsString("url.searchParams.set('start'", $data);
+        $this->assertStringContainsString("url.searchParams.set('end'", $data);
+        $this->assertStringContainsString("url.searchParams.set('period'", $data);
+        $this->assertStringContainsString('applyAnalyticsReportingPeriod', $interactions);
+        $this->assertStringContainsString('data-analytics-custom-apply', $interactions);
+    }
+
+    public function test_forecast_cards_use_direction_aware_advisory_copy_without_demo_values(): void
     {
         $view = file_get_contents(resource_path('views/admin/reports/index.blade.php'));
         $renderer = file_get_contents(public_path('js/admin-dashboard/analytics-renderers.js'));
@@ -832,13 +866,16 @@ class AdminAnalyticsFleetUtilizationTest extends TestCase
 
         foreach ([
             'Dispatch Forecast',
-            'Awaiting reliable demand and TripLog foundation data before showing dispatch recommendations.',
-            'No recommendation data',
-            'No reliable forecast data',
-            'Forecast recommendations deferred until reliable demand and TripLog foundation data are available.',
+            'Direction-aware | Advisory only',
+            'Uses finalized same-weekday demand for each route direction.',
+            'Expected Demand Volume',
+            'Peak Minimum Buses',
+            'No official service direction is configured for tomorrow.',
         ] as $expectedText) {
             $this->assertStringContainsString($expectedText, $view . $renderer . $data);
         }
+
+        $this->assertStringContainsString("switchPredictionRoute('all')", $charts);
 
         foreach ([
             'Tomorrow\'s Dispatch Action Plan',
@@ -863,6 +900,60 @@ class AdminAnalyticsFleetUtilizationTest extends TestCase
             $this->assertStringNotContainsString($demoText, $data);
             $this->assertStringNotContainsString($demoText, $charts);
         }
+    }
+
+    public function test_admin_analytics_publishes_tomorrow_direction_forecast_without_creating_trips(): void
+    {
+        $route = $this->createPublicRoute();
+        $variant = RouteVariant::create([
+            'route_id' => $route->id,
+            'direction' => 'outbound',
+            'origin_name' => 'SPED',
+            'destination_name' => 'Ligaya',
+            'geometry_status' => 'valid',
+            'is_default' => true,
+        ]);
+        RouteServiceSchedule::create([
+            'route_id' => $route->id,
+            'route_variant_id' => $variant->id,
+            'first_trip_time' => '05:30:00',
+            'last_trip_time' => '09:00:00',
+            'service_configuration' => 'with_designated_stops',
+            'service_days' => ['sat'],
+            'is_active' => true,
+            'source' => RouteServiceSchedule::SOURCE_BENEFICIARY_OFFICIAL,
+        ]);
+
+        foreach ([
+            ['2026-07-18', 9],
+            ['2026-07-25', 18],
+            ['2026-08-01', 27],
+        ] as [$date, $commuters]) {
+            DemandHistory::create([
+                'route_id' => $route->id,
+                'route_variant_id' => $variant->id,
+                'date' => $date,
+                'time_slot' => '05:00-09:00',
+                'day_of_week' => 'Saturday',
+                'total_commuters' => $commuters,
+                'buses_dispatched' => 1,
+                'source' => DemandHistory::SOURCE_ACTUAL_REBUILD,
+                'is_training_eligible' => true,
+                'finalized_at' => $date.' 10:00:00',
+            ]);
+        }
+
+        $response = $this->getJson(route('admin.api.analytics'));
+
+        $response->assertOk();
+        $response->assertJsonPath('demandForecast.target_date', '2026-08-08');
+        $response->assertJsonPath('demandForecast.advisory_only', true);
+        $response->assertJsonPath('forecastTable.0.route_variant_id', $variant->id);
+        $response->assertJsonPath('forecastTable.0.direction', 'outbound');
+        $response->assertJsonPath('forecastTable.0.expected_commuters', 18);
+        $response->assertJsonPath('forecastTable.0.minimum_buses', 1);
+        $response->assertJsonPath('forecastTable.0.status', 'ready');
+        $this->assertDatabaseCount('trips', 0);
     }
 
     public function test_route_performance_uses_only_canonical_routes_even_when_all_routes_cache_is_stale(): void
@@ -1400,11 +1491,13 @@ class AdminAnalyticsFleetUtilizationTest extends TestCase
             'Dispatched',
             'Cancelled',
             'Peak load',
-            'Operational score',
+            'Operational safety score',
             'Incidents',
         ] as $expectedLabel) {
             $this->assertStringContainsString($expectedLabel, $driverPerformanceSection);
         }
+
+        $this->assertStringContainsString('Safety score shows 100 when the driver has actual trips and no Accident/Breakdown incidents in the selected period. No trips means No data.', $driverPerformanceSection);
 
         foreach ([
             'Ridership by driver',
@@ -1909,11 +2002,309 @@ class AdminAnalyticsFleetUtilizationTest extends TestCase
         $this->assertSame([31, 22], $timeline->pluck('peakLoad')->values()->all());
     }
 
-    private function createPublicRoute(): Route
+    public function test_trip_times_and_hourly_buckets_use_asia_manila(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-07 02:00:00', 'UTC'));
+
+        $route = $this->createPublicRoute();
+        $bus = Bus::factory()->create();
+        $driver = Driver::factory()->create();
+
+        TimeSlotConfiguration::create([
+            'name' => 'Afternoon',
+            'start_time' => '15:00:00',
+            'end_time' => '16:00:00',
+            'time_slot_display' => '15:00-16:00',
+            'is_active' => true,
+            'order' => 2,
+        ]);
+
+        $trip = Trip::factory()->create([
+            'route_id' => $route->id,
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'status' => 'completed',
+            'started_at' => '2026-08-07 07:22:32',
+            'ended_at' => '2026-08-07 07:30:00',
+            'peak_passengers' => 12,
+        ]);
+
+        $response = $this->getJson(route('admin.api.analytics', [
+            'start' => '2026-08-07',
+            'end' => '2026-08-07',
+        ]));
+
+        $response->assertOk();
+        $tripNumber = 'TRIP-' . str_pad((string) $trip->id, 3, '0', STR_PAD_LEFT);
+        $tripRow = collect($response->json('tripPaxTable'))->firstWhere('tripNo', $tripNumber);
+        $timelineRow = collect($response->json('peakLoadTimeline'))->firstWhere('tripNo', $tripNumber);
+        $morning = collect($response->json('hourlyRidership'))->firstWhere('hour', '05:00-09:00');
+        $afternoon = collect($response->json('hourlyRidership'))->firstWhere('hour', '15:00-16:00');
+
+        $this->assertSame('3:22 PM', $tripRow['startedAt']);
+        $this->assertSame('3:30 PM', $tripRow['endedAt']);
+        $this->assertSame('3:22 PM', $timelineRow['startedAt']);
+        $this->assertSame(0, $morning[$route->name]);
+        $this->assertSame(1, $afternoon[$route->name]);
+    }
+
+    public function test_selected_report_date_uses_manila_midnight_boundaries(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-07 02:00:00', 'UTC'));
+
+        $route = $this->createPublicRoute();
+        $bus = Bus::factory()->create();
+        $driver = Driver::factory()->create();
+
+        $inside = Trip::factory()->create([
+            'route_id' => $route->id,
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'status' => 'completed',
+            'started_at' => '2026-08-06 16:10:00',
+            'ended_at' => '2026-08-06 16:30:00',
+            'peak_passengers' => 4,
+        ]);
+        $outside = Trip::factory()->create([
+            'route_id' => $route->id,
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'status' => 'completed',
+            'started_at' => '2026-08-07 16:10:00',
+            'ended_at' => '2026-08-07 16:30:00',
+            'peak_passengers' => 8,
+        ]);
+
+        $response = $this->getJson(route('admin.api.analytics', [
+            'start' => '2026-08-07',
+            'end' => '2026-08-07',
+        ]));
+
+        $response->assertOk();
+        $tripIds = collect($response->json('tripPaxTable'))
+            ->map(fn (array $row) => (int) str_replace('TRIP-', '', $row['tripNo']));
+        $routeRow = collect($response->json('routeComparison'))->firstWhere('route', $route->name);
+        $driverRow = collect($response->json('driverPerformance'))->firstWhere('name', $driver->name);
+
+        $this->assertTrue($tripIds->contains($inside->id));
+        $this->assertFalse($tripIds->contains($outside->id));
+        $this->assertSame(1, $response->json('kpis.trips_completed'));
+        $this->assertSame(1, $routeRow['completedTrips']);
+        $this->assertSame(1, $driverRow['completedTrips']);
+    }
+
+    public function test_historical_demand_uses_finalized_actual_direction_series_for_fixed_manila_range(): void
+    {
+        $route2 = $this->createPublicRoute('Route 2');
+        $route3 = $this->createPublicRoute('Route 3');
+        $route4 = $this->createPublicRoute('Route 4');
+        $outbound2 = $this->createDirectionVariant($route2, 'outbound');
+        $inbound2 = $this->createDirectionVariant($route2, 'inbound');
+        $outbound3 = $this->createDirectionVariant($route3, 'outbound');
+        $this->createDirectionVariant($route3, 'inbound');
+        $this->createDirectionVariant($route4, 'outbound');
+        $this->createDirectionVariant($route4, 'inbound');
+
+        TimeSlotConfiguration::create([
+            'name' => 'Late Morning',
+            'start_time' => '09:00:00',
+            'end_time' => '10:00:00',
+            'time_slot_display' => '09:00-10:00',
+            'is_active' => true,
+            'order' => 2,
+        ]);
+
+        $this->createFinalizedHistory($route2, $outbound2, '2026-08-06', '05:00-09:00', 3);
+        $this->createFinalizedHistory($route2, $inbound2, '2026-08-06', '05:00-09:00', 0);
+        $this->createFinalizedHistory($route2, $inbound2, '2026-08-06', '09:00-10:00', 0);
+        $this->createFinalizedHistory($route3, $outbound3, '2026-08-06', '05:00-09:00', 4);
+
+        DemandHistory::create([
+            'route_id' => $route2->id,
+            'route_variant_id' => $outbound2->id,
+            'date' => '2026-08-05',
+            'time_slot' => '05:00-09:00',
+            'day_of_week' => 'Wednesday',
+            'total_commuters' => 99,
+            'buses_dispatched' => 0,
+            'source' => DemandHistory::SOURCE_ACTUAL_RUNTIME,
+            'is_training_eligible' => false,
+        ]);
+        DemandHistory::create([
+            'route_id' => $route2->id,
+            'date' => '2026-08-04',
+            'time_slot' => '05:00-09:00',
+            'day_of_week' => 'Tuesday',
+            'total_commuters' => 88,
+            'buses_dispatched' => 0,
+        ]);
+
+        $legacyRoute = Route::factory()->create(['name' => 'Route A', 'status' => 'Active']);
+        $legacyVariant = $this->createDirectionVariant($legacyRoute, 'outbound');
+        $this->createFinalizedHistory($legacyRoute, $legacyVariant, '2026-08-06', '05:00-09:00', 77);
+
+        $response = $this->getJson(route('admin.api.analytics', [
+            'start' => '2026-01-01',
+            'end' => '2026-01-02',
+        ]));
+
+        $response->assertOk();
+        $response->assertJsonPath('historicalDemand.range.start', '2026-07-09');
+        $response->assertJsonPath('historicalDemand.range.end', '2026-08-07');
+        $response->assertJsonPath('historicalDemand.range.days', 30);
+        $response->assertJsonPath('historicalDemand.range.timezone', 'Asia/Manila');
+
+        $payload = $response->json('historicalDemand');
+        $series = collect($payload['series']);
+
+        $this->assertCount(30, $payload['dates']);
+        $this->assertCount(6, $series);
+        $this->assertSame(
+            ['Route 2 OUT', 'Route 2 IN', 'Route 3 OUT', 'Route 3 IN', 'Route 4 OUT', 'Route 4 IN'],
+            $series->pluck('label')->values()->all()
+        );
+        $this->assertSame(['outbound', 'inbound'], $series->where('route_id', $route2->id)->pluck('direction')->values()->all());
+        $this->assertFalse($series->contains('route_id', $legacyRoute->id));
+
+        $route2Outbound = $series->firstWhere('route_variant_id', $outbound2->id);
+        $route2Inbound = $series->firstWhere('route_variant_id', $inbound2->id);
+        $outboundFinalizedDate = collect($route2Outbound['points'])->firstWhere('date', '2026-08-06');
+        $inboundFinalizedDate = collect($route2Inbound['points'])->firstWhere('date', '2026-08-06');
+        $unfinalizedDate = collect($route2Outbound['points'])->firstWhere('date', '2026-08-05');
+
+        $this->assertSame(3, $outboundFinalizedDate['value']);
+        $this->assertSame('partial', $outboundFinalizedDate['coverage']);
+        $this->assertSame(1, $outboundFinalizedDate['finalized_slots']);
+        $this->assertSame(2, $outboundFinalizedDate['expected_slots']);
+        $this->assertSame(0, $inboundFinalizedDate['value']);
+        $this->assertSame('finalized', $inboundFinalizedDate['coverage']);
+        $this->assertNull($unfinalizedDate['value']);
+        $this->assertSame('unavailable', $unfinalizedDate['coverage']);
+        $this->assertSame(0, Trip::count());
+
+        $compatibilityRow = collect($response->json('historicalTrend'))->firstWhere('date', '2026-08-06');
+        $this->assertSame(3, $compatibilityRow['Route 2']);
+        $this->assertSame(4, $compatibilityRow['Route 3']);
+        $this->assertSame(7, $compatibilityRow['total']);
+    }
+
+    public function test_historical_demand_ui_uses_direction_series_without_passenger_kpi_annotation(): void
+    {
+        $view = file_get_contents(resource_path('views/admin/reports/index.blade.php'));
+        $data = file_get_contents(public_path('js/admin-dashboard/analytics-data.js'));
+        $charts = file_get_contents(public_path('js/admin-dashboard/analytics-charts.js'));
+
+        $this->assertStringContainsString('historical-demand-legend', $view);
+        $this->assertStringContainsString('historical-demand-coverage', $view);
+        $this->assertStringNotContainsString('Wkday Avg', $view);
+        $this->assertStringNotContainsString('Wkend Avg', $view);
+        $this->assertStringNotContainsString('Growth:', $view);
+        $this->assertStringContainsString('historicalDemandData = data.historicalDemand || null', $data);
+        $this->assertStringContainsString("series.direction === 'inbound'", $charts);
+        $this->assertStringContainsString('point.value !== null', $charts);
+        $this->assertStringContainsString('spanGaps: false', $charts);
+        $this->assertStringNotContainsString('kpisData.total_pax_today', $charts);
+        $this->assertStringNotContainsString('Today: ${todayPax', $charts);
+    }
+
+    public function test_maintenance_log_report_payload_uses_selected_period_records(): void
+    {
+        $bus = Bus::factory()->create(['plate_number' => 'PAS-M01']);
+
+        MaintenanceRecord::factory()->create([
+            'bus_id' => $bus->id,
+            'ticket_number' => 'MT-2026-000101',
+            'type' => 'Preventive Maintenance',
+            'status' => 'completed',
+            'scheduled_at' => Carbon::parse('2026-08-06 08:00:00', 'Asia/Manila')->utc(),
+            'completed_at' => Carbon::parse('2026-08-07 09:30:00', 'Asia/Manila')->utc(),
+            'technician_name' => 'Ramon Tech',
+            'inspector_name' => 'Ana Inspector',
+            'maintenance_result' => 'Passed Inspection',
+            'roadworthy' => true,
+            'cost_php' => 1250.50,
+        ]);
+
+        MaintenanceRecord::factory()->create([
+            'bus_id' => $bus->id,
+            'ticket_number' => 'MT-2026-000102',
+            'status' => 'in_progress',
+            'scheduled_at' => Carbon::parse('2026-08-07 10:00:00', 'Asia/Manila')->utc(),
+            'completed_at' => null,
+        ]);
+
+        MaintenanceRecord::factory()->create([
+            'bus_id' => $bus->id,
+            'ticket_number' => 'MT-2026-000103',
+            'status' => 'scheduled',
+            'scheduled_at' => Carbon::parse('2026-08-09 10:00:00', 'Asia/Manila')->utc(),
+            'completed_at' => null,
+        ]);
+
+        $response = $this->getJson(route('admin.api.analytics', [
+            'start' => '2026-08-07',
+            'end' => '2026-08-07',
+        ]));
+
+        $response->assertOk();
+
+        $records = collect($response->json('maintenanceLogRecords'));
+
+        $this->assertSame(2, $response->json('maintenanceSummary.total'));
+        $this->assertSame(1, $response->json('maintenanceSummary.completed'));
+        $this->assertSame(1, $response->json('maintenanceSummary.active'));
+        $this->assertSame(['MT-2026-000102', 'MT-2026-000101'], $records->pluck('ticket')->all());
+
+        $completed = $records->firstWhere('ticket', 'MT-2026-000101');
+        $this->assertSame('PAS-M01', $completed['bus']);
+        $this->assertSame('Preventive Maintenance', $completed['type']);
+        $this->assertSame('completed', $completed['status']);
+        $this->assertSame('Aug 07, 2026 9:30 AM', $completed['completedAt']);
+        $this->assertSame('Ramon Tech', $completed['technician']);
+        $this->assertSame('Ana Inspector', $completed['inspector']);
+        $this->assertSame('Passed Inspection', $completed['result']);
+        $this->assertSame('Yes', $completed['roadworthy']);
+        $this->assertSame(1250.5, $completed['totalCost']);
+    }
+
+    private function createPublicRoute(string $name = 'Route 2'): Route
     {
         return Route::factory()->create([
-            'name' => 'Route 2',
+            'name' => $name,
             'status' => 'Active',
+        ]);
+    }
+
+    private function createDirectionVariant(Route $route, string $direction): RouteVariant
+    {
+        return RouteVariant::create([
+            'route_id' => $route->id,
+            'direction' => $direction,
+            'origin_name' => $direction === 'outbound' ? 'Origin' : 'Destination',
+            'destination_name' => $direction === 'outbound' ? 'Destination' : 'Origin',
+            'geometry_status' => 'valid',
+            'is_default' => $direction === 'outbound',
+        ]);
+    }
+
+    private function createFinalizedHistory(
+        Route $route,
+        RouteVariant $variant,
+        string $date,
+        string $timeSlot,
+        int $commuters
+    ): DemandHistory {
+        return DemandHistory::create([
+            'route_id' => $route->id,
+            'route_variant_id' => $variant->id,
+            'date' => $date,
+            'time_slot' => $timeSlot,
+            'day_of_week' => Carbon::parse($date)->englishDayOfWeek,
+            'total_commuters' => $commuters,
+            'buses_dispatched' => 0,
+            'source' => DemandHistory::SOURCE_ACTUAL_REBUILD,
+            'is_training_eligible' => false,
+            'finalized_at' => $date.' 10:00:00',
         ]);
     }
 }

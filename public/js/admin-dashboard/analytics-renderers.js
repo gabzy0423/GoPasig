@@ -219,35 +219,40 @@
         });
     }
 
-    // Helper: Forecast table gap & indicators
-    function getPredictionRowHtml(row) {
-        let gapHtml = '';
-        let actionHtml = '';
-        let rowClass = 'hover:bg-slate-50/50 transition border-b border-slate-100';
+    function escapeForecastHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
 
-        if (row.gap === 0) {
-            gapHtml = `<div class="flex items-center justify-center gap-1 text-slate-400 font-bold"><i class="ti ti-check text-emerald-600 text-base shrink-0"></i> —</div>`;
-            actionHtml = `<span class="text-slate-400 font-bold flex items-center gap-1"><i class="ti ti-check text-emerald-600"></i> ${row.action}</span>`;
-        } else if (row.gap === 1) {
-            gapHtml = `<div class="flex items-center justify-center gap-1 text-[#BA7517] font-black"><i class="ti ti-alert-circle text-base animate-pulse shrink-0"></i> +1</div>`;
-            actionHtml = `<span class="text-[#0C447C] font-black">${row.action}</span>`;
-        } else if (row.gap >= 2) {
-            gapHtml = `<div class="flex items-center justify-center gap-1 text-[#E24B4A] font-black"><i class="ti ti-alert-triangle text-base animate-bounce shrink-0"></i> +${row.gap}</div>`;
-            actionHtml = `<span class="text-[#A32D2D] font-black">${row.action}</span>`;
-            rowClass = 'bg-red-50/60 border-l-4 border-[#E24B4A] hover:bg-red-50/80 transition';
-        } else if (row.gap === -1) {
-            gapHtml = `<div class="flex items-center justify-center gap-1 text-teal-600 font-black"><i class="ti ti-info-circle text-base shrink-0"></i> -1</div>`;
-            actionHtml = `<span class="text-teal-600 font-bold">${row.action}</span>`;
-        }
+    // Helper: direction-aware advisory forecast row
+    function getPredictionRowHtml(row) {
+        const ready = row.status === 'ready';
+        const confidenceClass = row.confidence === 'high'
+            ? 'text-[#3B6D11] bg-[#EAF3DE]'
+            : row.confidence === 'medium'
+                ? 'text-[#0C447C] bg-[#E6F1FB]'
+                : row.confidence === 'low'
+                    ? 'text-[#8F530B] bg-[#FEF7ED]'
+                    : 'text-slate-500 bg-slate-100';
+        const expected = ready ? `${row.expected_commuters} pax` : 'Insufficient history';
+        const minimumBuses = ready ? row.minimum_buses : 'Not issued';
+        const servicePeriods = escapeForecastHtml((row.service_periods || []).join(', '));
 
         return `
-            <tr class="${rowClass}">
-                <td class="px-3 py-2.5 font-bold">${row.slot}</td>
-                <td class="px-3 py-2.5 font-extrabold text-[#003F87]">${row.predPax} pax</td>
-                <td class="px-3 py-2.5 font-bold">${row.recBuses}</td>
-                <td class="px-3 py-2.5 font-bold">${row.schedBuses}</td>
-                <td class="px-3 py-2.5 text-center">${gapHtml}</td>
-                <td class="px-3 py-2.5">${actionHtml}</td>
+            <tr class="hover:bg-slate-50/50 transition border-b border-slate-100">
+                <td class="px-3 py-2.5">
+                    <span class="block font-extrabold text-slate-800">${escapeForecastHtml(row.route_name)}</span>
+                    <span class="block text-[10px] font-bold text-slate-500">${escapeForecastHtml(row.direction_label)}</span>
+                </td>
+                <td class="px-3 py-2.5 font-bold">${escapeForecastHtml(row.time_slot)}<span class="block text-[9px] text-slate-400">Service ${servicePeriods}</span></td>
+                <td class="px-3 py-2.5 font-extrabold ${ready ? 'text-[#003F87]' : 'text-slate-400'}">${expected}</td>
+                <td class="px-3 py-2.5"><span class="inline-flex rounded px-2 py-0.5 text-[9px] font-extrabold uppercase ${confidenceClass}">${escapeForecastHtml(row.confidence_label)}</span><span class="block mt-1 text-[9px] text-slate-400">${row.sample_count}/${row.minimum_samples} samples</span></td>
+                <td class="px-3 py-2.5 font-bold">${minimumBuses}<span class="block text-[9px] text-slate-400">${ready ? `Capacity basis: ${row.reference_bus_capacity}` : 'Advisory withheld'}</span></td>
+                <td class="px-3 py-2.5 text-[10px] font-semibold text-slate-500">${escapeForecastHtml(row.basis)}</td>
             </tr>
         `;
     }
@@ -262,7 +267,7 @@
             tbody.innerHTML = `
                 <tr>
                     <td colspan="6" class="px-3 py-5 text-center text-slate-400 font-bold">
-                        Forecast recommendations deferred until reliable demand and TripLog foundation data are available.
+                        No official service direction is configured for tomorrow.
                     </td>
                 </tr>
             `;
@@ -319,7 +324,7 @@
                     : operationalScore >= 70
                         ? 'text-[#B45309]'
                         : 'text-[#E24B4A]';
-                operationalScoreHtml = `<span class="${scoreClass} font-extrabold" title="Accident/Breakdown incident score; cancellations excluded">${operationalScore}</span>`;
+                operationalScoreHtml = `<span class="${scoreClass} font-extrabold" title="Actual trips in selected period start at 100; Accident/Breakdown incidents reduce this score. Cancellations excluded.">${operationalScore}</span>`;
             }
             let peakLoadHtml = `<span class="text-slate-500">${peakLoad}</span>`;
             if (peakLoad >= capacity) {
@@ -484,9 +489,6 @@
             const dashValue = Math.round((kpisData.fleet_util / 100) * 88);
             circleSvg.setAttribute('stroke-dasharray', `${dashValue} 88`);
         }
-
-        setElementText('kpi-on-time-rate', kpisData.on_time_rate || 'Deferred');
-        setElementText('kpi-on-time-sub', 'not schedule-status backed');
 
         const totalTripsRun = routeComparisonData
             ? routeComparisonData.reduce((sum, r) => sum + parseInt(r.tripsRun ?? r.trips ?? 0), 0)

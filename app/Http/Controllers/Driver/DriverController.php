@@ -11,7 +11,6 @@ use App\Models\Driver;
 use App\Models\Bus;
 use App\Models\Route;
 use App\Models\Trip;
-use App\Models\TripPassengerEvent;
 use App\Models\User;
 use App\Models\Schedule;
 use App\Models\ServiceAlert;
@@ -19,8 +18,13 @@ use App\Models\Stop;
 use App\Services\GPSKalmanFilter;
 use App\Services\DashboardService;
 use App\Services\TripLogService;
+use App\Services\PassengerLoadService;
+use App\Services\IncidentWorkflowService;
+use App\Services\Routing\TripProgressService;
+use App\Services\ValueObjects\Coordinate;
 use App\Models\SystemSetting;
 use App\Models\GPSLog;
+use App\Models\TripProgress;
 use App\Services\TelemetryProcessingService;
 use Illuminate\Support\Facades\Log;
 
@@ -603,125 +607,79 @@ class DriverController extends Controller
     /**
      * Log an incident/breakdown.
      */
-    public function reportIncident(Request $request)
+    public function reportIncident(Request $request, IncidentWorkflowService $incidents)
     {
+        $validated = $request->validate([
+            'type' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Models\Incident::getTypes())],
+            'description' => ['required', 'string', 'min:5', 'max:2000'],
+        ]);
+
         $user = Auth::user();
         $driver = Driver::where('user_id', $user->id)->first();
-        if ($driver && $driver->assigned_bus) {
-            $bus = Bus::where('plate_number', $driver->assigned_bus)->first();
-            if ($bus) {
-                $type = $request->input('type', 'General Issue');
-                $description = $request->input('description', '');
-
-                // Ensure ongoing trip exists to satisfy foreign key constraints
-                $trip = DB::table('trips')
-                    ->where('driver_id', $driver->id)
-                    ->where('status', 'ongoing')
-                    ->first();
-
-                if (!$trip) {
-                    return response()->json(['success' => false, 'message' => 'Cannot log incident: No active trip in progress.'], 422);
-                }
-                $tripId = $trip->id;
-
-                // Insert into incidents table
-                DB::table('incidents')->insert([
-                    'trip_id' => $tripId,
-                    'driver_id' => $driver->id,
-                    'type' => $type,
-                    'description' => $description,
-                    'status' => 'reported',
-                    'reported_at' => now(),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-
-                // Update bus status if it's a breakdown or accident, cancel the ongoing trip, and deactivate the driver
-                if (\App\Models\Incident::isBreakdown($type) || \App\Models\Incident::isAccident($type)) {
-                    try {
-                        \App\Services\BusStateService::transition($bus, \App\Models\Bus::STATUS_BREAKDOWN, 'Incident report: ' . strtolower($type));
-                    } catch (\App\Exceptions\InvalidStatusTransitionException $e) {
-                        \Illuminate\Support\Facades\Log::warning('Incident status transition failed', [
-                            'bus_id' => $bus->id,
-                            'error'  => $e->getMessage()
-                        ]);
-                    }
-                } else {
-                    // Non-breakdown informational audit log
-                    \App\Models\BusStatusAuditLog::create([
-                        'bus_id'     => $bus->id,
-                        'old_status' => $bus->status,
-                        'new_status' => $bus->status,
-                        'reason'     => 'Incident Report: ' . $type,
-                        'changed_by' => $user->id,
-                    ]);
-                }
-
-                return response()->json(['success' => true, 'message' => 'Incident logged. Dispatch has been notified!']);
-            }
+        if (! $driver || ! $driver->assigned_bus) {
+            return response()->json(['success' => false, 'message' => 'Unable to report incident: No assigned bus.'], 422);
         }
-        return response()->json(['success' => false, 'message' => 'Unable to report incident: No assigned bus.'], 400);
+
+        $bus = Bus::where('plate_number', $driver->assigned_bus)->first();
+        $trip = $bus
+            ? $incidents->eligibleOngoingTripsQuery()
+                ->where('driver_id', $driver->id)
+                ->where('bus_id', $bus->id)
+                ->latest('id')
+                ->first()
+            : null;
+
+        if (! $bus || ! $trip) {
+            return response()->json(['success' => false, 'message' => 'Cannot log incident: No official ongoing trip in progress.'], 422);
+        }
+
+        try {
+            $incidents->reportForTrip(
+                $trip->id,
+                $validated['type'],
+                $validated['description'],
+                'driver',
+                $user->id,
+                $driver->id,
+                $bus->id
+            );
+        } catch (\DomainException|\App\Exceptions\InvalidStatusTransitionException $exception) {
+            return response()->json(['success' => false, 'message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Incident logged. Dispatch has been notified!']);
     }
 
     /**
      * Increment/decrement passenger count.
      */
-    public function updatePassengers(Request $request)
+    public function updatePassengers(Request $request, PassengerLoadService $passengerLoads)
     {
+        $validated = $request->validate([
+            'change' => ['required', 'integer', 'not_in:0'],
+            'request_id' => ['nullable', 'uuid'],
+        ]);
+
         $user = Auth::user();
         $driver = Driver::where('user_id', $user->id)->first();
-        if ($driver && $driver->assigned_bus) {
-            $bus = Bus::where('plate_number', $driver->assigned_bus)->first();
-            if ($bus) {
-                $ongoingTrip = Trip::query()
-                    ->where('driver_id', $driver->id)
-                    ->where('bus_id', $bus->id)
-                    ->where('status', 'ongoing')
-                    ->where('gps_session', 'ACTIVE')
-                    ->whereNotNull('started_at')
-                    ->first();
-
-                if (!$ongoingTrip || $bus->status !== 'operating') {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Passenger management is unavailable because the assigned trip is not currently operating.',
-                    ], 409);
-                }
-
-                $change = (int)$request->input('change', 0);
-                $currentPax = (int) $bus->passengers;
-                $newPax = max(0, min($bus->capacity, $currentPax + $change));
-                $acceptedDelta = abs($newPax - $currentPax);
-                $bus->update(['passengers' => $newPax]);
-
-                if ($acceptedDelta > 0 && $change > 0) {
-                    $driver->increment('pax_today', $acceptedDelta);
-                }
-
-                $currentPeak = (int) ($ongoingTrip->peak_passengers ?? 0);
-                if ($newPax > $currentPeak) {
-                    \App\Services\TripService::updatePeakPassengers($ongoingTrip, $newPax);
-                }
-
-                if ($acceptedDelta > 0) {
-                    TripPassengerEvent::create([
-                        'trip_id' => $ongoingTrip->id,
-                        'driver_id' => $driver->id,
-                        'bus_id' => $bus->id,
-                        'route_id' => $ongoingTrip->route_id,
-                        'event_type' => $change > 0
-                            ? TripPassengerEvent::TYPE_BOARDED
-                            : TripPassengerEvent::TYPE_ALIGHTED,
-                        'passenger_delta' => $acceptedDelta,
-                        'onboard_after' => $newPax,
-                        'recorded_at' => now(),
-                    ]);
-                }
-
-                return response()->json(['success' => true, 'passengers' => $newPax, 'pax_today' => $driver->pax_today]);
-            }
+        if (! $driver || ! $driver->assigned_bus) {
+            return response()->json(['success' => false, 'message' => 'No active bus assigned.'], 400);
         }
-        return response()->json(['success' => false, 'message' => 'No active bus assigned.'], 400);
+
+        try {
+            $result = $passengerLoads->applyDriverChange(
+                $driver,
+                (int) $validated['change'],
+                $validated['request_id'] ?? null
+            );
+        } catch (\DomainException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 409);
+        }
+
+        return response()->json(['success' => true, ...$result]);
     }
 
     /**
@@ -748,8 +706,9 @@ class DriverController extends Controller
 
     /**
      * Apply one local-only developer coordinate to the driver's operating bus.
-     * This intentionally bypasses GPSLog/telemetry history so UAT movement does
-     * not become production-looking GPS analytics data.
+     * This bypasses GPSLog/telemetry history so UAT movement does not become
+     * production-looking GPS analytics data, while still exercising canonical
+     * direction-aware trip progression.
      */
     public function updateDeveloperGPS(Request $request)
     {
@@ -828,7 +787,15 @@ class DriverController extends Controller
                     'last_gps_fix_at' => now(),
                 ]
             );
+
+            app(TripProgressService::class)->updateProgress(
+                $trip->id,
+                new Coordinate($lat, $lng),
+                'DEVELOPER'
+            );
         });
+
+        $progress = TripProgress::where('trip_id', $trip->id)->first();
 
         Cache::forget('commuter_active_buses_list');
         Cache::forget('commuter_dashboard_aggregate');
@@ -842,6 +809,8 @@ class DriverController extends Controller
             'bus_id' => $bus->id,
             'lat' => $lat,
             'lng' => $lng,
+            'current_route_variant_stop_id' => $progress?->current_route_variant_stop_id,
+            'next_route_variant_stop_id' => $progress?->next_route_variant_stop_id,
             'next_stop' => $nextStop ?: $bus->next_stop,
             'eta' => $eta ?? $bus->eta,
         ]);

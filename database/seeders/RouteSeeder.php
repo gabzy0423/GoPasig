@@ -7,7 +7,6 @@ use App\Models\Route;
 use App\Models\Stop;
 use App\Models\Bus;
 use App\Models\Geofence;
-use App\Models\RouteCorridor;
 use App\Models\RouteVariant;
 use App\Models\RouteVariantStop;
 use App\Enums\GeofenceType;
@@ -247,26 +246,6 @@ class RouteSeeder extends Seeder
             'status' => 'active'
         ]);
 
-        // 5. Create Route Corridors
-        $routes = Route::all();
-        foreach ($routes as $route) {
-            if ($route->polyline_coordinates) {
-                $coords = array_map(function($pt) {
-                    return [(float)$pt[1], (float)$pt[0]];
-                }, $route->polyline_coordinates);
-
-                RouteCorridor::create([
-                    'route_id' => $route->id,
-                    'buffer_width' => 25.0,
-                    'source_type' => 'AUTO_BUFFER',
-                    'measurement_method' => 'NEAREST_SEGMENT',
-                    'geometry' => [
-                        'type' => 'LineString',
-                        'coordinates' => $coords
-                    ]
-                ]);
-            }
-        }
     }
 
     private function backfillDefaultVariants(): void

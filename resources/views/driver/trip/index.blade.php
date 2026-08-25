@@ -625,6 +625,7 @@
     let gpsRetryTimeout = null;
     let tripToggleInFlight = false;
     let passengerRequestInFlight = false;
+    let passengerRequestQueue = [];
     let passengerControlsAvailable = @json($canManagePassengerLoad ?? false);
 
     function setDriverButtonLoading(button, isLoading, label = null) {
@@ -653,7 +654,7 @@
     function setPassengerButtonsLoading(isLoading) {
         passengerRequestInFlight = isLoading;
         document.querySelectorAll('[data-pax-button]').forEach(button => {
-            button.disabled = isLoading || !passengerControlsAvailable;
+            button.disabled = !passengerControlsAvailable;
             if (isLoading) {
                 button.setAttribute('aria-busy', 'true');
             } else {
@@ -665,7 +666,7 @@
     function setPassengerControlsAvailability(isAvailable) {
         passengerControlsAvailable = isAvailable;
         document.querySelectorAll('[data-pax-button]').forEach(button => {
-            button.disabled = !isAvailable || passengerRequestInFlight;
+            button.disabled = !isAvailable;
             button.classList.toggle('active:scale-90', isAvailable);
         });
         document.querySelectorAll('[data-pax-helper]').forEach(helper => {
@@ -754,22 +755,46 @@
     });
 
     // Interactive Passenger Occupancy Counter
-    async function changePassengers(change) {
-        if (passengerRequestInFlight || !passengerControlsAvailable) return;
+    function createPassengerRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
 
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, character => {
+            const random = Math.floor(Math.random() * 16);
+            const value = character === 'x' ? random : ((random & 0x3) | 0x8);
+            return value.toString(16);
+        });
+    }
+
+    function changePassengers(change) {
+        if (!passengerControlsAvailable) return;
+
+        const paxCountEl = document.getElementById('pax-count');
+        const paxCapEl = document.getElementById('pax-cap');
+        if (!paxCountEl || !paxCapEl) return;
+
+        passengerRequestQueue.push({
+            change: change,
+            requestId: createPassengerRequestId(),
+        });
+        processPassengerRequestQueue();
+    }
+
+    async function processPassengerRequestQueue() {
+        if (passengerRequestInFlight || passengerRequestQueue.length === 0) return;
+        if (!passengerControlsAvailable) {
+            passengerRequestQueue = [];
+            return;
+        }
+
+        const passengerRequest = passengerRequestQueue.shift();
         const paxCountEl = document.getElementById('pax-count');
         const paxCapEl = document.getElementById('pax-cap');
         const paxBarEl = document.getElementById('pax-bar');
         if (!paxCountEl || !paxCapEl) return;
 
-        const currentPax = parseInt(paxCountEl.innerText) || 0;
         const capacity = parseInt(paxCapEl.innerText) || 0;
-
-        const targetPax = currentPax + change;
-        if (targetPax < 0 || targetPax > capacity) {
-            return;
-        }
-
         setPassengerButtonsLoading(true);
 
         try {
@@ -779,7 +804,10 @@
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                 },
-                body: JSON.stringify({ change: change })
+                body: JSON.stringify({
+                    change: passengerRequest.change,
+                    request_id: passengerRequest.requestId,
+                })
             });
             const data = await response.json();
 
@@ -802,6 +830,7 @@
             console.error("Error updating passenger count:", err);
         } finally {
             setPassengerButtonsLoading(false);
+            processPassengerRequestQueue();
         }
     }
 
@@ -1296,7 +1325,7 @@
     }
 
     async function toggleTracking() {
-        if (tripToggleInFlight) return;
+        if (tripToggleInFlight || passengerRequestInFlight || passengerRequestQueue.length > 0) return;
 
         const nextStatus = isTrackingActive ? 'inactive' : 'active';
         const btn = document.getElementById('btn-toggle-tracking');
@@ -1643,8 +1672,6 @@
     });
 </script>
 @endsection
-
-
 
 
 

@@ -13,8 +13,10 @@
         </div>
     </div>
 
+    @include('admin.reports.partials.reporting-period-filter')
+
     <!-- ==================== SECTION 1 — TOP KPI OVERVIEW STRIP ==================== -->
-    <div class="grid grid-cols-2 gap-4 md:grid-cols-6 border-b border-slate-100 pb-6 shrink-0">
+    <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 border-b border-slate-100 pb-6 shrink-0">
         <!-- Card 1 -->
         <div class="rounded-lg bg-slate-50 p-4 flex flex-col gap-3 border-l-4 border-[#003F87]">
             <div class="flex items-center justify-between shrink-0">
@@ -85,18 +87,6 @@
             </div>
         </div>
 
-        <!-- Card 6 -->
-        <div class="rounded-lg bg-slate-50 p-4 flex flex-col gap-3">
-            <div class="flex items-center justify-between shrink-0">
-                <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 leading-none">On-Time Performance</span>
-                <span class="text-[#BA7517]"><i class="ti ti-bell-ringing text-base"></i></span>
-            </div>
-            <p class="text-xl font-black text-slate-900 leading-none" id="kpi-on-time-rate">Deferred</p>
-            <div class="leading-none mt-1">
-                <span class="text-[11px] font-bold text-slate-400 flex items-center gap-0.5"><i class="ti ti-minus"></i> Actual timing source required</span>
-                <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wider" id="kpi-on-time-sub">not schedule-status backed</p>
-            </div>
-        </div>
     </div>
 
     <!-- ==================== SECTION 3B — BUS RIDERSHIP SUMMARY ==================== -->
@@ -137,7 +127,7 @@
                     <i class="ti ti-sparkles text-base animate-pulse"></i>
                     Dispatch Demand Forecast
                 </span>
-                <span class="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Forecast recommendations deferred</span>
+                <span class="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Direction-aware | Advisory only</span>
             </div>
 
             <!-- Scrollable Tomorrow's Schedule prediction table -->
@@ -145,12 +135,12 @@
                 <table class="w-full text-left border-collapse table-fixed">
                     <thead>
                         <tr class="border-b border-slate-100 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 bg-slate-50/50">
-                            <th class="px-3 py-2 font-bold w-[16%]">Time Slot</th>
-                            <th class="px-3 py-2 font-bold w-[16%]">Demand estimate</th>
-                            <th class="px-3 py-2 font-bold w-[12%]">Recommendation</th>
-                            <th class="px-3 py-2 font-bold w-[12%]">Basis</th>
-                            <th class="px-3 py-2 font-bold w-[14%] text-center">Gap</th>
-                            <th class="px-3 py-2 font-bold w-[30%]">Action Needed</th>
+                            <th class="px-3 py-2 font-bold w-[24%]">Route direction</th>
+                            <th class="px-3 py-2 font-bold w-[15%]">Time slot</th>
+                            <th class="px-3 py-2 font-bold w-[14%]">Expected demand</th>
+                            <th class="px-3 py-2 font-bold w-[12%]">Confidence</th>
+                            <th class="px-3 py-2 font-bold w-[13%]">Minimum buses</th>
+                            <th class="px-3 py-2 font-bold w-[22%]">Basis</th>
                         </tr>
                     </thead>
                     <tbody class="text-xs font-semibold text-slate-700 divide-y divide-slate-100" id="forecast-schedule-tbody">
@@ -164,7 +154,7 @@
                 <span class="text-[#003F87] bg-white/80 p-2 rounded-lg"><i class="ti ti-info-circle text-base"></i></span>
                 <div class="leading-normal">
                     <p class="text-[10px] font-black uppercase text-[#003F87] tracking-wider">Dispatch Forecast</p>
-                    <p class="text-[11px] text-slate-600 font-semibold mt-0.5">Awaiting reliable demand and TripLog foundation data before showing dispatch recommendations.</p>
+                    <p class="text-[11px] text-slate-600 font-semibold mt-0.5">Uses finalized same-weekday demand for each route direction. It does not create a dispatch or Trip.</p>
                 </div>
             </div>
         </div>
@@ -181,24 +171,24 @@
                 </div>
                 <div class="flex-1 flex flex-col justify-center space-y-2 mt-2 leading-none">
                     <div class="flex justify-between text-xs font-bold text-slate-500">
-                        <span>Expected Route Volume:</span>
-                        <span class="text-slate-900 font-extrabold" id="pred-route-vol">No data</span>
+                        <span>Expected Demand Volume:</span>
+                        <span class="text-slate-900 font-extrabold" id="pred-route-vol">Loading forecast</span>
                     </div>
                     <div class="flex justify-between text-xs font-bold text-slate-500">
-                        <span>Recommended Dispatches:</span>
-                        <span class="text-slate-900 font-extrabold" id="pred-route-rec">No recommendation data</span>
+                        <span>Peak Minimum Buses:</span>
+                        <span class="text-slate-900 font-extrabold" id="pred-route-rec">Loading forecast</span>
                     </div>
                     <div class="bg-[#FEF7ED] border border-[#BA7517]/10 p-2.5 rounded-lg text-[#8F530B] font-extrabold text-[11px] shrink-0 text-center uppercase tracking-wider" id="pred-route-busiest">
-                        No reliable forecast data
+                        Awaiting forecast payload
                     </div>
                 </div>
             </div>
 
-            <!-- 4C. 30-day Ridership Trend Chart Card -->
+            <!-- 4C. 30-day finalized actual demand chart -->
             <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)] flex-1 flex flex-col min-h-0">
-                <div class="flex items-center justify-between border-b border-slate-100 pb-2 shrink-0">
-                    <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-800">Historical demand — last 30 days</span>
-                    <span class="text-[9px] font-bold text-slate-400">DemandHistory basis</span>
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 shrink-0">
+                    <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-800">Historical demand - last 30 days</span>
+                    <span id="historical-demand-range" class="text-[9px] font-bold text-slate-400">Asia/Manila</span>
                 </div>
                 
                 <!-- Canvas Chart -->
@@ -206,10 +196,9 @@
                     <canvas id="historical-trend-chart" class="w-full h-full"></canvas>
                 </div>
 
-                <div class="mt-2.5 border-t border-slate-50 pt-2 grid grid-cols-3 gap-2 text-[9px] font-bold text-slate-500 shrink-0 text-center">
-                    <div>Wkday Avg: <strong class="text-slate-800 block text-[10px] mt-0.5">No data</strong></div>
-                    <div>Wkend Avg: <strong class="text-slate-800 block text-[10px] mt-0.5">No data</strong></div>
-                    <div>Growth: <strong class="text-slate-800 block text-[10px] mt-0.5">No data</strong></div>
+                <div class="mt-2.5 border-t border-slate-50 pt-2 shrink-0 space-y-1.5">
+                    <div id="historical-demand-legend" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold text-slate-600"></div>
+                    <p id="historical-demand-coverage" class="text-[9px] font-semibold text-slate-400">Finalized actual commuter check-ins only.</p>
                 </div>
             </div>
         </div>
@@ -230,6 +219,8 @@
         </div>
     </div>
 
+    @include('admin.reports.partials.reporting-period-filter')
+
     <!-- ==================== SECTION 2 — ROUTE PERFORMANCE ANALYTICS ==================== -->
     <div id="analytics-route-performance" class="space-y-6">
         <!-- 2A. TRIPS STARTED CHART -->
@@ -244,7 +235,7 @@
                     <div id="hourly-chart-legend" class="flex flex-wrap items-center gap-3">
                         <!-- Populated dynamically -->
                     </div>
-                    <span class="text-[10px] font-extrabold bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded uppercase tracking-wider">Today</span>
+                    <span class="analytics-period-label text-[10px] font-extrabold bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded uppercase tracking-wider">Today</span>
                 </div>
             </div>
 
@@ -440,6 +431,8 @@
         </div>
     </div>
 
+    @include('admin.reports.partials.reporting-period-filter')
+
     <!-- ==================== SECTION 3A — TRIP LOAD RECORDS TABLE ==================== -->
     <div class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 shrink-0">
@@ -487,7 +480,7 @@
     <div id="analytics-driver-performance" class="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)] space-y-4">
         <div class="border-b border-slate-100 pb-3">
             <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800 block">Driver operations by selected period</span>
-            <p class="text-[10px] font-bold text-slate-400 mt-1">Operational score starts at 100 and uses existing Accident/Breakdown penalties. Trip cancellations do not reduce the score.</p>
+            <p class="text-[10px] font-bold text-slate-400 mt-1">Safety score shows 100 when the driver has actual trips and no Accident/Breakdown incidents in the selected period. No trips means No data.</p>
         </div>
         
         <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
@@ -504,7 +497,7 @@
                         <th class="px-5 py-3 font-bold">Dispatched</th>
                         <th class="px-5 py-3 font-bold">Cancelled</th>
                         <th class="px-5 py-3 font-bold">Peak load</th>
-                        <th class="px-5 py-3 font-bold">Operational score</th>
+                        <th class="px-5 py-3 font-bold">Operational safety score</th>
                         <th class="px-5 py-3 font-bold text-right">Incidents</th>
                     </tr>
                 </thead>

@@ -135,7 +135,7 @@ class AdminBusManagementAuditFixTest extends TestCase
     }
 
     #[Test]
-    public function bus_with_active_schedule_assignment_cannot_be_deleted(): void
+    public function bus_with_legacy_schedule_assignment_can_be_deleted_without_trip_history(): void
     {
         $this->actingAsAdmin();
 
@@ -152,8 +152,8 @@ class AdminBusManagementAuditFixTest extends TestCase
 
         $response = $this->deleteJson(route('admin.api.buses.destroy', $bus));
 
-        $response->assertStatus(422);
-        $this->assertDatabaseHas('buses', ['id' => $bus->id]);
+        $response->assertOk();
+        $this->assertDatabaseMissing('buses', ['id' => $bus->id]);
     }
 
     #[Test]
@@ -506,5 +506,20 @@ class AdminBusManagementAuditFixTest extends TestCase
             strpos($lookupBody, 'const fleetRecord = fleetData.find'),
             strpos($lookupBody, 'const listRecord = globalBusesRecords.find')
         );
+    }
+
+    #[Test]
+    public function bus_management_export_uses_current_lifecycle_status_logic(): void
+    {
+        $busScript = file_get_contents(public_path('js/admin-dashboard/buses.js'));
+
+        $this->assertStringContainsString('function getBusLifecycleStatusLabel(normalizedStatus)', $busScript);
+        $this->assertStringContainsString("if (normalizedStatus === 'operating') return 'Operating';", $busScript);
+        $this->assertStringContainsString("if (normalizedStatus === 'ready') return 'Ready';", $busScript);
+        $this->assertStringContainsString("if (normalizedStatus === 'inactive' || normalizedStatus === 'standby') return 'Standby';", $busScript);
+        $this->assertStringContainsString('const normalizedStatus = String(b.busStatus || b.operationalStatus || b.status || \'\').toLowerCase();', $busScript);
+        $this->assertStringContainsString('const paxLabel = getBusExportPassengerLabel(b, normalizedStatus);', $busScript);
+        $this->assertStringContainsString('const statusLabel = getBusLifecycleStatusLabel(normalizedStatus);', $busScript);
+        $this->assertStringNotContainsString("b.status === 'Active'", $busScript);
     }
 }

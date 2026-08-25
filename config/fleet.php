@@ -32,14 +32,8 @@ return [
         'entry_radius_meters' => env('FLEET_STOP_ENTRY_RADIUS', 30.0),
         'exit_radius_meters' => env('FLEET_STOP_EXIT_RADIUS', 45.0), // Hysteresis threshold
     ],
-    'deviation' => [
-        'minor_meters' => env('FLEET_DEVIATION_MINOR', 50.0),
-        'major_meters' => env('FLEET_DEVIATION_MAJOR', 150.0),
-        'critical_meters' => env('FLEET_DEVIATION_CRITICAL', 300.0),
-    ],
     'spatial' => [
         'cache_ttl' => 86400,
-        'corridor_default' => 20.0,
         'polygon_precision' => 6,
         'stop_radius' => 30.0,
         'stop_exit_radius' => 45.0,

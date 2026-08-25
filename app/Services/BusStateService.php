@@ -59,9 +59,10 @@ class BusStateService
         string $newStatus,
         string $reason = '',
         \App\Models\Driver $driver = null,
-        \App\Models\Route $route = null
+        \App\Models\Route $route = null,
+        bool $finalizeActiveTrips = true
     ): Bus {
-        return DB::transaction(function () use ($bus, $newStatus, $reason, $driver, $route) {
+        return DB::transaction(function () use ($bus, $newStatus, $reason, $driver, $route, $finalizeActiveTrips) {
             // Row-level lock the bus record to prevent race conditions
             $bus = Bus::where('id', $bus->id)->lockForUpdate()->first();
             if (!$bus) {
@@ -192,23 +193,25 @@ class BusStateService
                 }
 
                 // Cancel and finalize any ongoing/dispatched trips for this bus.
-                $tripsToCancel = \App\Models\Trip::where('bus_id', $bus->id)
-                    ->whereIn('status', ['ongoing', 'dispatched'])
-                    ->lockForUpdate()
-                    ->get();
+                if ($finalizeActiveTrips) {
+                    $tripsToCancel = \App\Models\Trip::where('bus_id', $bus->id)
+                        ->whereIn('status', ['ongoing', 'dispatched'])
+                        ->lockForUpdate()
+                        ->get();
 
-                $endedAt = now();
-                foreach ($tripsToCancel as $tripToCancel) {
-                    $tripToCancel->update([
-                        'status'      => 'cancelled',
-                        'gps_session' => 'CLOSED',
-                        'ended_at'    => $endedAt,
-                    ]);
+                    $endedAt = now();
+                    foreach ($tripsToCancel as $tripToCancel) {
+                        $tripToCancel->update([
+                            'status'      => 'cancelled',
+                            'gps_session' => 'CLOSED',
+                            'ended_at'    => $endedAt,
+                        ]);
 
-                    TripLogService::logTrip($tripToCancel->fresh(), [
-                        'completed_at' => $endedAt,
-                        'status' => 'cancelled',
-                    ]);
+                        TripLogService::logTripOrFail($tripToCancel->fresh(), [
+                            'completed_at' => $endedAt,
+                            'status' => 'cancelled',
+                        ]);
+                    }
                 }
 
                 // Cancel active/pending schedules for this bus

@@ -20,6 +20,7 @@ const document = {
         style: {},
         setAttribute() {},
         querySelectorAll: () => [],
+        remove() {},
     }),
 };
 
@@ -98,5 +99,13 @@ assert.deepEqual([...state.visibleRoutes].sort(), ['5', '6', '7']);
 assert.equal(state.stopGeofences.length, 3);
 assert.ok(circleCount > 0);
 assert.ok(removedCount > 0);
+
+const headerControlledMap = createMap();
+state = window.GoPasigRouteMapUX.mount({ map: headerControlledMap, routes: routes([5, 6, 7]), showControl: false });
+assert.equal(state.control, null);
+window.GoPasigRouteMapUX.setDirectionVisibility(headerControlledMap, 'outbound', false);
+assert.equal(state.directions.outbound, false);
+window.GoPasigRouteMapUX.setDirectionVisibility(headerControlledMap, 'outbound', true);
+assert.equal(state.directions.outbound, true);
 
 console.log('route-map-ux visibility tests passed');

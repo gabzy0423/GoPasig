@@ -128,38 +128,6 @@ class MaintenanceController extends Controller
             ], 422);
         }
 
-        // Check for future schedules within maintenance window
-        $expectedEnd = $scheduledAt->copy()->addMinutes($duration);
-        $scheduledDate = $scheduledAt->toDateString();
-        $expectedEndDate = $expectedEnd->toDateString();
-
-        $futureSchedules = \App\Models\Schedule::where('bus_id', $validated['bus_id'])
-            ->whereNotIn('status', ['cancelled', 'completed'])
-            ->where(function ($q) use ($scheduledDate, $scheduledAt, $expectedEndDate, $expectedEnd) {
-                if ($scheduledDate === $expectedEndDate) {
-                    $q->whereDate('service_date', $scheduledDate)
-                        ->whereTime('departure_time', '>=', $scheduledAt->toTimeString())
-                        ->whereTime('departure_time', '<=', $expectedEnd->toTimeString());
-                } else {
-                    $q->where(function ($sq) use ($scheduledDate, $scheduledAt) {
-                        $sq->whereDate('service_date', $scheduledDate)
-                            ->whereTime('departure_time', '>=', $scheduledAt->toTimeString());
-                    })->orWhere(function ($sq) use ($expectedEndDate, $expectedEnd) {
-                        $sq->whereDate('service_date', $expectedEndDate)
-                            ->whereTime('departure_time', '<=', $expectedEnd->toTimeString());
-                    });
-                }
-            })
-            ->count();
-
-        if ($futureSchedules > 0) {
-            return response()->json([
-                'success' => false,
-                'message' => "Warning: This bus has {$futureSchedules} scheduled trip(s) within the maintenance window. Cancel them first or adjust the maintenance schedule.",
-                'conflict_count' => $futureSchedules
-            ], 422);
-        }
-
         $record = DB::transaction(function () use ($validated, $duration) {
             $rec = MaintenanceRecord::create([
                 'bus_id' => $validated['bus_id'],

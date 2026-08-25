@@ -5,7 +5,7 @@
     </div>
     <div class="space-y-1">
         <h2 id="placeholder-title" class="text-lg font-black text-slate-900">Module Screen</h2>
-        <p class="text-slate-500 text-xs font-semibold">This dispatch operational database module is fully wired to local mock records.</p>
+        <p class="text-slate-500 text-xs font-semibold">Select an operational module from the sidebar to continue.</p>
     </div>
     <button onclick="switchScreen('overview')" class="rounded-lg bg-[#003F87] px-4 py-2 text-xs font-extrabold text-white hover:bg-[#002D62] transition cursor-pointer">
         Back to Overview

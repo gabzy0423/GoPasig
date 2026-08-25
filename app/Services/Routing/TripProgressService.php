@@ -4,6 +4,7 @@ namespace App\Services\Routing;
 
 use App\Models\Trip;
 use App\Models\TripProgress;
+use App\Models\RouteVariantStop;
 use App\Models\StopArrival;
 use App\Services\ValueObjects\Coordinate;
 use App\Data\TripProgressResult;
@@ -14,14 +15,18 @@ use App\Services\TripLifecycleService;
 
 class TripProgressService
 {
-    public function __construct(protected AuthoritativeRouteResolver $routeResolver) {}
+    public function __construct(
+        protected AuthoritativeRouteResolver $routeResolver,
+        protected TripLifecycleService $tripLifecycle
+    ) {}
 
     /**
      * Update progression metrics for a trip using the latest vehicle position.
      * Implements entry/exit hysteresis stop detection.
      */
-    public function updateProgress(int $tripId, Coordinate $position): TripProgressResult
+    public function updateProgress(int $tripId, Coordinate $position, string $source = 'GPS'): TripProgressResult
     {
+        $source = strtoupper(trim($source)) ?: 'GPS';
         $trip = Trip::findOrFail($tripId);
         $plan = $this->routeResolver->resolveForTrip($trip);
         $stops = $plan->orderedStops->values();
@@ -33,7 +38,6 @@ class TripProgressService
                 'completed_stops_count' => 0,
                 'remaining_stops_count' => $totalStops,
                 'trip_percentage' => 0.0,
-                'route_adherence' => 'On Route',
                 'current_delay_minutes' => 0,
                 'upcoming_etas' => [],
             ]
@@ -65,12 +69,12 @@ class TripProgressService
                     ? round(($progress->completed_stops_count / $totalStops) * 100, 1)
                     : 0.0;
 
-                $this->recordArrival($tripId, $nextStop, $plan->usesVariant());
+                $this->recordArrival($tripId, $nextStop, $plan->usesVariant(), $source);
 
-                event(new StopReached($tripId, $legacyStopId ?? $variantStopId, 'GPS'));
+                event(new StopReached($tripId, $legacyStopId ?? $variantStopId, $source));
 
                 if ($progress->completed_stops_count === $totalStops) {
-                    app(TripLifecycleService::class)->completeTrip($trip);
+                    $this->completeAtFinalStop($trip, $nextStop, $plan->usesVariant());
                     event(new TripCompleted($tripId));
                 }
 
@@ -106,7 +110,6 @@ class TripProgressService
             completedStopsCount: $progress->completed_stops_count,
             remainingStopsCount: $progress->remaining_stops_count,
             tripPercentage: $progress->trip_percentage,
-            routeAdherence: $progress->route_adherence,
             currentDelayMinutes: $progress->current_delay_minutes,
             upcomingEtas: $progress->upcoming_etas ?? []
         );
@@ -128,7 +131,7 @@ class TripProgressService
         return $usesVariant ? (int) $stop->id : null;
     }
 
-    private function recordArrival(int $tripId, object $stop, bool $usesVariant): void
+    private function recordArrival(int $tripId, object $stop, bool $usesVariant, string $source): void
     {
         if ($usesVariant) {
             StopArrival::updateOrCreate(
@@ -136,7 +139,7 @@ class TripProgressService
                 [
                     'stop_id' => $this->legacyStopId($stop),
                     'arrival_time' => now(),
-                    'arrival_source' => 'GPS',
+                    'arrival_source' => $source,
                 ]
             );
 
@@ -145,7 +148,7 @@ class TripProgressService
 
         StopArrival::updateOrCreate(
             ['trip_id' => $tripId, 'stop_id' => $stop->id],
-            ['arrival_time' => now(), 'arrival_source' => 'GPS']
+            ['arrival_time' => now(), 'arrival_source' => $source]
         );
     }
 
@@ -167,5 +170,14 @@ class TripProgressService
         }
 
         return $stops->firstWhere('id', $progress->last_completed_stop_id);
+    }
+
+    private function completeAtFinalStop(Trip $trip, object $stop, bool $usesVariant): void
+    {
+        $variantStop = $usesVariant && $stop instanceof RouteVariantStop
+            ? $stop
+            : null;
+
+        $this->tripLifecycle->completeTripAtFinalStop($trip, $variantStop);
     }
 }

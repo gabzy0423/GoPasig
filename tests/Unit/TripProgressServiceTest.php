@@ -7,11 +7,15 @@ use App\Models\Bus;
 use App\Models\Driver;
 use App\Models\Trip;
 use App\Models\Route;
+use App\Models\RouteVariant;
+use App\Models\RouteVariantStop;
 use App\Models\Stop;
 use App\Models\StopArrival;
 use App\Models\TripProgress;
 use App\Models\TripLog;
+use App\Models\TripPassengerEvent;
 use App\Services\Routing\TripProgressService;
+use App\Services\TripPassengerEventService;
 use App\Services\ValueObjects\Coordinate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -101,6 +105,79 @@ class TripProgressServiceTest extends TestCase
         $this->assertSame(1, TripLog::where('trip_id', $trip->id)->count());
         $this->assertSame('completed', $tripLog->status);
         $this->assertEquals($trip->ended_at, $tripLog->completed_at);
+    }
+
+    public function test_final_variant_stop_alights_remaining_passengers_before_completion_once(): void
+    {
+        $route = Route::factory()->create(['name' => 'Route 2', 'status' => 'Active']);
+        $variant = RouteVariant::create([
+            'route_id' => $route->id,
+            'direction' => 'outbound',
+            'origin_name' => 'SPED',
+            'destination_name' => 'Ligaya',
+            'is_default' => true,
+        ]);
+        $origin = RouteVariantStop::create([
+            'route_variant_id' => $variant->id,
+            'name' => 'SPED',
+            'lat' => 14.5600,
+            'lng' => 121.0800,
+            'sequence' => 1,
+        ]);
+        $terminal = RouteVariantStop::create([
+            'route_variant_id' => $variant->id,
+            'name' => 'Ligaya',
+            'lat' => 14.5700,
+            'lng' => 121.0900,
+            'sequence' => 2,
+        ]);
+        $bus = Bus::factory()->create([
+            'status' => 'operating',
+            'route_id' => $route->id,
+            'passengers' => 5,
+        ]);
+        $driver = Driver::factory()->create(['operational_status' => 'driving']);
+        $trip = Trip::factory()->create([
+            'bus_id' => $bus->id,
+            'driver_id' => $driver->id,
+            'route_id' => $route->id,
+            'route_variant_id' => $variant->id,
+            'status' => 'ongoing',
+            'gps_session' => 'ACTIVE',
+            'started_at' => now()->subMinutes(10),
+        ]);
+
+        app(TripPassengerEventService::class)->record(
+            $trip,
+            TripPassengerEvent::TYPE_BOARDED,
+            5,
+            5,
+            $origin
+        );
+
+        $service = app(TripProgressService::class);
+        $service->updateProgress($trip->id, new Coordinate($origin->lat, $origin->lng));
+        $service->updateProgress($trip->id, new Coordinate($terminal->lat, $terminal->lng));
+
+        $trip->refresh();
+        $terminalAlighting = TripPassengerEvent::where('trip_id', $trip->id)
+            ->where('event_type', TripPassengerEvent::TYPE_ALIGHTED)
+            ->firstOrFail();
+        $tripLog = TripLog::where('trip_id', $trip->id)->firstOrFail();
+
+        $this->assertSame('completed', $trip->status);
+        $this->assertSame(0, $bus->fresh()->passengers);
+        $this->assertSame($terminal->id, $terminalAlighting->route_variant_stop_id);
+        $this->assertSame(5, $terminalAlighting->passenger_delta);
+        $this->assertSame(0, $terminalAlighting->onboard_after);
+        $this->assertSame(5, $tripLog->passengers);
+        $this->assertSame(5, $tripLog->alighted_passengers);
+
+        $service->updateProgress($trip->id, new Coordinate($terminal->lat, $terminal->lng));
+
+        $this->assertSame(1, TripPassengerEvent::where('trip_id', $trip->id)
+            ->where('event_type', TripPassengerEvent::TYPE_ALIGHTED)
+            ->count());
     }
 }
 

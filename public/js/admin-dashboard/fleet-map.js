@@ -2,26 +2,12 @@
 
     const LIVE_FLEET_DEFAULT_CENTER = [14.5764, 121.0851];
     const LIVE_FLEET_DEFAULT_ZOOM = 13.2;
-    const LIVE_FLEET_ROUTE_CONTROL_GAP = 12;
-    let liveFleetRouteControlResizeBound = false;
 
-    function alignOfficialRoutesControl() {
-        const mapCanvas = document.getElementById('live-map-canvas');
-        const toolbar = document.getElementById('live-map-toolbar');
-        const control = mapCanvas?.querySelector('.gopasig-route-map-ux');
-        if (!control) return;
+    function refreshLiveFleetMapSize() {
+        if (liveMap === null) return;
 
-        const usesFloatingToolbar = window.matchMedia('(min-width: 1024px)').matches;
-        control.style.left = usesFloatingToolbar ? '16px' : '12px';
-        control.style.top = usesFloatingToolbar && toolbar?.offsetHeight
-            ? `${toolbar.offsetTop + toolbar.offsetHeight + LIVE_FLEET_ROUTE_CONTROL_GAP}px`
-            : '12px';
-    }
-
-    function bindOfficialRoutesControlAlignment() {
-        if (liveFleetRouteControlResizeBound) return;
-        window.addEventListener('resize', alignOfficialRoutesControl);
-        liveFleetRouteControlResizeBound = true;
+        window.requestAnimationFrame(() => liveMap?.invalidateSize({ pan: false }));
+        window.setTimeout(() => liveMap?.invalidateSize({ pan: false }), 250);
     }
 
     function escapeRouteFilterText(value) {
@@ -30,23 +16,20 @@
 
     function routeFilterButtonClass(active = false) {
         return active
-            ? "rounded-full bg-[#003F87] px-3 py-1 text-xs font-bold text-white transition cursor-pointer shrink-0"
-            : "rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer shrink-0";
+            ? "route-chip shrink-0 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#001F44] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]/20 2xl:px-3 2xl:text-[12px]"
+            : "route-chip shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-slate-500 transition-colors hover:bg-white/80 hover:text-[#001F44] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]/20 2xl:px-3 2xl:text-[12px]";
     }
 
     function renderRouteFilterChips() {
-        const strips = document.querySelectorAll('.map-chip-strip');
-        if (!strips.length || !Array.isArray(routesDataDb)) return;
+        const strip = document.getElementById('live-map-route-filters');
+        if (!strip || !Array.isArray(routesDataDb)) return;
 
         const routes = routesDataDb.filter(route => route && route.id && route.name);
-        strips.forEach(strip => {
-            strip.innerHTML = '<span class="mr-1 shrink-0 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Routes:</span>' +
-                '<button onclick="toggleRouteFilter(\'all\')" data-route-filter="all" class="' + routeFilterButtonClass(activeRouteFilter === 'all') + '">All <span id="route-pill-all-count"></span></button>' +
-                routes.map(route => {
-                    const id = String(route.id);
-                    return '<button onclick="toggleRouteFilter(\'' + escapeRouteFilterText(id) + '\')" data-route-filter="' + escapeRouteFilterText(id) + '" class="' + routeFilterButtonClass(activeRouteFilter === id) + '">' + escapeRouteFilterText(route.name) + ' <span id="route-pill-' + escapeRouteFilterText(id) + '-count"></span></button>';
-                }).join('');
-        });
+        strip.innerHTML = '<button onclick="toggleRouteFilter(\'all\')" data-route-filter="all" class="' + routeFilterButtonClass(activeRouteFilter === 'all') + '">All</button>' +
+            routes.map(route => {
+                const id = String(route.id);
+                return '<button onclick="toggleRouteFilter(\'' + escapeRouteFilterText(id) + '\')" data-route-filter="' + escapeRouteFilterText(id) + '" class="' + routeFilterButtonClass(activeRouteFilter === id) + '">' + escapeRouteFilterText(route.name) + '</button>';
+            }).join('');
     }
     function applyInitialLiveFleetViewport() {
         if (liveMap === null || window.GoPasigRouteMapUX) return;
@@ -79,8 +62,13 @@
     // Initialize Leaflet Map with a one-time route-aware default viewport.
     function initLiveFleetMap() {
         if (liveMap !== null) {
-            liveMap.invalidateSize();
-            alignOfficialRoutesControl();
+            renderRouteFilterChips();
+            renderMapPolylines();
+            renderMapStops();
+            renderMapMarkers();
+            updateFleetSidebarList();
+            updateFleetSummaryStats();
+            refreshLiveFleetMapSize();
             return;
         }
 
@@ -112,20 +100,17 @@
         renderMapMarkers();
         updateFleetSidebarList();
         updateFleetSummaryStats();
-        updateRoutePillsCounts();
         updateRecentActivityUI();
         applyInitialLiveFleetViewport();
 
         // Leaflet Invalidate Size trigger
-        liveMap.invalidateSize();
+        refreshLiveFleetMapSize();
     }
 
     // Render Routes Polylines
     function renderMapPolylines() {
         if (window.GoPasigRouteMapUX) {
-            window.GoPasigRouteMapUX.mount({ map: liveMap, routes: routesDataDb, compact: false, fitOnFirstRender: true });
-            alignOfficialRoutesControl();
-            bindOfficialRoutesControlAlignment();
+            window.GoPasigRouteMapUX.mount({ map: liveMap, routes: routesDataDb, compact: false, fitOnFirstRender: true, showControl: false });
             return;
         }
         // Clear existing polylines if any
@@ -207,6 +192,20 @@
         return `<div class="absolute -top-2 left-1/2 h-0 w-0 border-l-[5px] border-r-[5px] border-b-[11px] border-l-transparent border-r-transparent border-b-slate-900 opacity-90 drop-shadow-sm" style="transform: translateX(-50%) rotate(${displayHeading}deg); transform-origin: 50% 24px;"></div>`;
     }
 
+    function isLiveMapTrackableBus(bus) {
+        return Boolean(bus)
+            && (bus.has_active_trip || bus.status === 'Breakdown')
+            && bus.status !== 'Inactive'
+            && bus.status !== 'Maintenance';
+    }
+
+    function matchesLiveMapBusFilters(bus) {
+        const matchesRoute = activeRouteFilter === 'all' || bus.route === activeRouteFilter;
+        const matchesStatus = activeStatusFilter === 'all' || bus.status === activeStatusFilter;
+
+        return matchesRoute && matchesStatus;
+    }
+
     // Render animated pulsing circle bus markers colored by status
     function renderMapMarkers() {
         if (liveMap === null) return;
@@ -217,14 +216,9 @@
         mapMarkersMap = {};
 
         fleetData.forEach(bus => {
-            const isVisible = (bus.has_active_trip || bus.status === 'Breakdown') && bus.status !== 'Inactive' && bus.status !== 'Maintenance';
-            if (!isVisible) return;
+            if (!isLiveMapTrackableBus(bus)) return;
 
-            // Apply filtering conditions
-            const matchesRoute = activeRouteFilter === 'all' || bus.route === activeRouteFilter;
-            const matchesStatus = activeStatusFilter === 'all' || bus.status === activeStatusFilter;
-
-            if (matchesRoute && matchesStatus) {
+            if (matchesLiveMapBusFilters(bus)) {
                 const color = statusColors[bus.status] || '#888780';
                 
                 // DivIcon to render pulsing animated border and Tabler Bus Icon inside
@@ -331,41 +325,14 @@
             default: return 'bg-slate-50 text-slate-500 border border-slate-200';
         }
     }
-    // Calculate active counts per route and update route pills content/styles
-    function updateRoutePillsCounts() {
-        const getActiveBusesCount = (routeId) => {
-            return fleetData.filter(bus => {
-                const isVisible = (bus.has_active_trip || bus.status === 'Breakdown') && bus.status !== 'Inactive' && bus.status !== 'Maintenance';
-                return isVisible && (routeId === 'all' || bus.route === routeId);
-            }).length;
-        };
-
-        const routes = ['all', ...routesDataDb.map(route => String(route.id))];
-        routes.forEach(routeId => {
-            const count = getActiveBusesCount(routeId);
-            const badgeEl = document.getElementById(`route-pill-${routeId}-count`);
-            if (badgeEl) {
-                badgeEl.textContent = `(${count})`;
-            }
-            // Add faded styling for zero-count pills (except 'all')
-            const pillEl = document.querySelector(`[data-route-filter="${routeId}"]`);
-            if (pillEl && routeId !== 'all') {
-                if (count === 0) {
-                    pillEl.classList.add('pill-count-zero');
-                } else {
-                    pillEl.classList.remove('pill-count-zero');
-                }
-            }
-        });
-    }
-
     // Update Fleet Summary stat counters (sidebar overview grid)
     function updateFleetSummaryStats() {
         const totalCount = fleetData.length;
-        const activeCount = fleetData.filter(b => b.status === 'Active' || b.status === 'Delayed').length;
-        const standbyCount = fleetData.filter(b => b.status === 'Inactive' || b.status === 'Idle').length;
-        const maintenanceCount = fleetData.filter(b => b.status === 'Maintenance').length;
-        const breakdownCount = fleetData.filter(b => b.status === 'Breakdown').length;
+        const trackedCount = fleetData.filter(bus => isLiveMapTrackableBus(bus) && matchesLiveMapBusFilters(bus)).length;
+        const activeCount = fleetData.filter(bus => bus.has_active_trip && isLiveMapTrackableBus(bus)).length;
+        const standbyCount = fleetData.filter(bus => bus.busStatus === 'inactive').length;
+        const maintenanceCount = fleetData.filter(bus => bus.busStatus === 'maintenance').length;
+        const breakdownCount = fleetData.filter(bus => bus.busStatus === 'breakdown').length;
 
         const totalEl = document.getElementById('stats-total-fleet');
         const activeEl = document.getElementById('stats-active');
@@ -373,13 +340,15 @@
         const maintenanceEl = document.getElementById('stats-maintenance');
         const breakdownEl = document.getElementById('stats-breakdown');
         const totalTrackedEl = document.getElementById('sidebar-tracked-count');
+        const headerTrackedEl = document.getElementById('live-map-tracked-count');
 
         if (totalEl) totalEl.textContent = totalCount;
         if (activeEl) activeEl.textContent = activeCount;
         if (standbyEl) standbyEl.textContent = standbyCount;
         if (maintenanceEl) maintenanceEl.textContent = maintenanceCount;
         if (breakdownEl) breakdownEl.textContent = breakdownCount;
-        if (totalTrackedEl) totalTrackedEl.textContent = `${totalCount} Buses Tracked`;
+        if (totalTrackedEl) totalTrackedEl.textContent = `${trackedCount} Buses Tracked`;
+        if (headerTrackedEl) headerTrackedEl.textContent = `${trackedCount} buses tracked`;
     }
 
     // Update Fleet scrollable Sidebar panel lists
@@ -391,12 +360,7 @@
         let renderedCount = 0;
 
         fleetData.forEach(bus => {
-            const isVisible = (bus.has_active_trip || bus.status === 'Breakdown') && bus.status !== 'Inactive' && bus.status !== 'Maintenance';
-            if (!isVisible) return;
-
-            // Apply filtering conditions
-            const matchesRoute = activeRouteFilter === 'all' || bus.route === activeRouteFilter;
-            const matchesStatus = activeStatusFilter === 'all' || bus.status === activeStatusFilter;
+            if (!isLiveMapTrackableBus(bus)) return;
             
             let matchesSearch = true;
             if (window.currentSearchQuery) {
@@ -408,7 +372,7 @@
                 matchesSearch = plateMatch || driverMatch || routeMatch;
             }
 
-            if (matchesRoute && matchesStatus && matchesSearch) {
+            if (matchesLiveMapBusFilters(bus) && matchesSearch) {
                 renderedCount++;
                 const card = document.createElement('div');
                 card.id = `active-vehicle-card-${bus.id}`;
@@ -663,19 +627,17 @@
         activeRouteFilter = routeLetter;
 
         // Reset and highlight route filter buttons styling
-        const filterBtns = document.querySelectorAll('[data-route-filter]');
+        const routeFilterStrip = document.getElementById('live-map-route-filters');
+        const filterBtns = routeFilterStrip
+            ? routeFilterStrip.querySelectorAll('[data-route-filter]')
+            : [];
         filterBtns.forEach(btn => {
-            btn.className = "rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer shrink-0";
-            const rId = btn.getAttribute('data-route-filter');
-            const countEl = document.getElementById(`route-pill-${rId}-count`);
-            if (countEl && countEl.textContent === '(0)' && rId !== 'all') {
-                btn.classList.add('pill-count-zero');
-            }
+            btn.className = routeFilterButtonClass(false);
         });
 
-        const activeBtn = document.querySelector(`[data-route-filter="${routeLetter}"]`);
+        const activeBtn = routeFilterStrip?.querySelector(`[data-route-filter="${routeLetter}"]`);
         if (activeBtn) {
-            activeBtn.className = "rounded-full bg-[#003F87] px-3 py-1 text-xs font-bold text-white transition cursor-pointer shrink-0";
+            activeBtn.className = routeFilterButtonClass(true);
         }
 
         if (window.GoPasigRouteMapUX) {
@@ -704,28 +666,39 @@
         // Re-render markers and list
         renderMapMarkers();
         updateFleetSidebarList();
+        updateFleetSummaryStats();
     }
 
     // Apply Universal Search and dropdown filters
     function applyToolbarFilters() {
-        const query = document.getElementById('universal-search').value.toLowerCase().trim();
         const statusFilterVal = document.getElementById('map-status-filter').value;
 
         activeStatusFilter = statusFilterVal;
-        window.currentSearchQuery = query;
+        window.currentSearchQuery = '';
 
         renderMapMarkers();
         updateFleetSidebarList();
+        updateFleetSummaryStats();
+    }
+
+    function filterLiveMapRouteDirection(direction, visible) {
+        if (!window.GoPasigRouteMapUX || liveMap === null) return;
+        window.GoPasigRouteMapUX.setDirectionVisibility(liveMap, direction, visible);
     }
 
     // Reset all filters in controls bar
     function resetToolbarFilters() {
-        document.getElementById('universal-search').value = '';
         document.getElementById('map-status-filter').value = 'all';
+        const outboundDirection = document.getElementById('live-map-direction-outbound');
+        const inboundDirection = document.getElementById('live-map-direction-inbound');
+        if (outboundDirection) outboundDirection.checked = true;
+        if (inboundDirection) inboundDirection.checked = true;
         activeRouteFilter = 'all';
         window.currentSearchQuery = '';
 
         toggleRouteFilter('all');
+        filterLiveMapRouteDirection('outbound', true);
+        filterLiveMapRouteDirection('inbound', true);
     }
 
     // Expose controller methods globally
@@ -783,7 +756,6 @@
             renderMapMarkers();
             updateFleetSidebarList();
             updateFleetSummaryStats();
-            updateRoutePillsCounts();
             updateRecentActivityUI();
 
             // Persistence update

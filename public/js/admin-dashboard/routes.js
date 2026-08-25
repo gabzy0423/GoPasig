@@ -38,20 +38,9 @@ function getCsrfToken() {
 
 // Dynamic loader from MySQL Database API
 async function loadDatabaseSchedulesData() {
-    try {
-        const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.schedulesBaseUrl) ? window.GoPasigConfig.schedulesBaseUrl : '/admin/api/schedules';
-        const response = await fetch(baseUrl);
-        const data = await response.json();
-        
-        if (response.ok && data.success) {
-            schedulesData = data.schedules;
-            console.log("MySQL Database schedules records loaded dynamically!", schedulesData.length);
-        } else {
-            console.error("Backend error during schedules fetch:", data);
-        }
-    } catch (error) {
-        console.error("Failed to load dynamic database schedules data:", error);
-    }
+    schedulesData = [];
+    window.schedulesData = schedulesData;
+    return schedulesData;
 }
 
 // Schedules database (aligned to operational hours!)
@@ -231,14 +220,10 @@ async function initRoutesDashboard() {
     if (!isDatabaseDataLoaded && typeof loadDatabaseFleetData === 'function') {
         promises.push(loadDatabaseFleetData());
     }
-    promises.push(loadDatabaseSchedulesData());
-
     Promise.all(promises).then(() => {
         // 3. Silent re-render of components once fresh data is loaded
         syncRoutesWithDatabase();
         reScanRoutesConflicts();
-        renderScheduleGrid();
-        renderUpcomingTrips();
         if (activeRoutesTab === 'stops') {
             renderRoutesTab();
         }
@@ -1691,7 +1676,11 @@ async function applyConflictResolution() {
 
     if (!schedule) return;
 
-    const baseUrl = (window.GoPasigConfig && window.GoPasigConfig.schedulesBaseUrl) ? window.GoPasigConfig.schedulesBaseUrl : '/admin/api/schedules';
+    const baseUrl = window.GoPasigConfig?.legacySchedulesRuntimeUrl || null;
+    if (!baseUrl) {
+        GoPasigUI.alert('Legacy schedule conflict resolution is retired. Use Central Dispatch and official route service schedules.');
+        return;
+    }
 
     try {
         if (isRemove) {

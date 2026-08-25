@@ -7,12 +7,13 @@ use Illuminate\Http\Request;
 use App\Models\Incident;
 use App\Models\Trip;
 use App\Models\Route;
-use App\Models\Bus;
+use App\Services\IncidentWorkflowService;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 
 class IncidentController extends Controller
 {
+    public function __construct(protected IncidentWorkflowService $incidentWorkflow) {}
+
     /**
      * Display the Incidents view.
      */
@@ -25,14 +26,15 @@ class IncidentController extends Controller
         $statusFilter = $request->input('status_filter', 'all');
         $activeSort = $request->input('active_sort', 'newest');
 
-        $routes = Route::orderBy('id')->get(['id', 'name']);
-        $ongoingTrips = Trip::where('status', 'ongoing')->with(['bus', 'driver', 'route'])->get();
-
-        $metrics = $this->getIncidentMetrics();
+        $routes = Route::publicCommuterActiveService()->get(['id', 'name']);
+        $ongoingTrips = $this->incidentWorkflow->eligibleOngoingTripsQuery()
+            ->with(['bus', 'driver', 'route'])
+            ->get();
 
         // Get active and resolved incidents using internal helper
         $activeIncidents = $this->getFilteredIncidents('active', $dateStart, $dateEnd, $routeFilter, $typeFilter, $statusFilter, $activeSort);
         $resolvedIncidents = $this->getFilteredIncidents('resolved', $dateStart, $dateEnd, $routeFilter, $typeFilter, $statusFilter, $activeSort);
+        $metrics = $this->getIncidentMetrics($dateStart, $dateEnd, $routeFilter, $typeFilter, $statusFilter);
 
         return view('fleet.incidents.index', [
             'dateStart' => $dateStart,
@@ -63,12 +65,24 @@ class IncidentController extends Controller
 
         $activeIncidents = $this->getFilteredIncidents('active', $dateStart, $dateEnd, $routeFilter, $typeFilter, $statusFilter, $activeSort);
         $resolvedIncidents = $this->getFilteredIncidents('resolved', $dateStart, $dateEnd, $routeFilter, $typeFilter, $statusFilter, $activeSort);
-        $metrics = $this->getIncidentMetrics();
+        $metrics = $this->getIncidentMetrics($dateStart, $dateEnd, $routeFilter, $typeFilter, $statusFilter);
+        $ongoingTrips = $this->incidentWorkflow->eligibleOngoingTripsQuery()
+            ->with(['bus', 'driver', 'route'])
+            ->get()
+            ->map(fn (Trip $trip) => [
+                'id' => $trip->id,
+                'bus_plate' => $trip->bus?->plate_number ?? 'Unknown Bus',
+                'driver_name' => trim(($trip->driver?->first_name ?? '').' '.($trip->driver?->last_name ?? '')) ?: 'Unknown Driver',
+                'route_name' => $trip->route?->name ?? 'Unknown Route',
+                'direction' => $trip->direction,
+            ])
+            ->values();
 
         return response()->json([
             'activeIncidents' => $activeIncidents,
             'resolvedIncidents' => $resolvedIncidents,
             'incidentMetrics' => $metrics,
+            'ongoingTrips' => $ongoingTrips,
         ]);
     }
 
@@ -77,7 +91,9 @@ class IncidentController extends Controller
      */
     public function getTripDetails($id)
     {
-        $trip = Trip::with(['bus', 'driver', 'route'])->find($id);
+        $trip = $this->incidentWorkflow->eligibleOngoingTripsQuery()
+            ->with(['bus', 'driver', 'route'])
+            ->find($id);
         if (!$trip) {
             return response()->json(['success' => false, 'message' => 'Trip not found'], 404);
         }
@@ -97,43 +113,21 @@ class IncidentController extends Controller
     {
         $validated = $request->validate([
             'trip_id' => 'required|exists:trips,id',
-            'type' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Models\Incident::getTypes())],
-            'description' => 'required|string|min:5',
-            'status' => 'required|in:reported,under_review,resolved',
+            'type' => ['required', 'string', \Illuminate\Validation\Rule::in(Incident::getTypes())],
+            'description' => 'required|string|min:5|max:2000',
         ]);
 
-        $trip = Trip::find($validated['trip_id']);
-        
-        $incident = Incident::create([
-            'trip_id' => $validated['trip_id'],
-            'driver_id' => $trip->driver_id,
-            'type' => $validated['type'],
-            'description' => $validated['description'],
-            'status' => $validated['status'],
-            'reported_at' => now(),
-        ]);
-
-        // If the incident type matches Breakdown or Accident, flag bus for breakdown status
-        if (Incident::isBreakdown($validated['type']) || Incident::isAccident($validated['type'])) {
-            if ($trip && $trip->bus) {
-                \App\Services\BusStateService::transition($trip->bus, \App\Models\Bus::STATUS_BREAKDOWN, 'Incident Report: ' . $validated['type']);
-            }
-        } else {
-            // For other incidents, create an informational audit log without status change
-            if ($trip && $trip->bus) {
-                $driver = \App\Models\Driver::find($trip->driver_id);
-                \App\Models\BusStatusAuditLog::create([
-                    'bus_id'     => $trip->bus->id,
-                    'old_status' => $trip->bus->status,
-                    'new_status' => $trip->bus->status,
-                    'reason'     => 'Incident Report: ' . $validated['type'],
-                    'changed_by' => $driver ? $driver->user_id : auth()->id(),
-                ]);
-            }
+        try {
+            $incident = $this->incidentWorkflow->reportForTrip(
+                (int) $validated['trip_id'],
+                $validated['type'],
+                $validated['description'],
+                'incident reports',
+                auth()->id()
+            );
+        } catch (\DomainException|\App\Exceptions\InvalidStatusTransitionException $exception) {
+            return response()->json(['success' => false, 'message' => $exception->getMessage()], 422);
         }
-
-        // Recalculate driver performance score
-        \App\Services\DriverPerformanceService::recalculate($trip->driver_id);
 
         return response()->json([
             'success' => true,
@@ -151,38 +145,22 @@ class IncidentController extends Controller
             'status' => 'required|in:reported,under_review,resolved',
         ]);
 
-        $incident = Incident::with(['trip.bus'])->find($id);
-        if (!$incident) {
-            return response()->json(['success' => false, 'message' => 'Incident not found.'], 404);
+        try {
+            $this->incidentWorkflow->updateStatus(
+                (int) $id,
+                $validated['status'],
+                'incident reports',
+                auth()->id()
+            );
+        } catch (\DomainException $exception) {
+            $status = $exception->getMessage() === 'Incident record not found.' ? 404 : 422;
+
+            return response()->json(['success' => false, 'message' => $exception->getMessage()], $status);
         }
-
-        $oldType = $incident->type;
-        $oldStatus = $incident->status;
-        $newStatus = $validated['status'];
-
-        $incident->update(['status' => $newStatus]);
 
         return response()->json([
             'success' => true,
             'message' => 'Incident status updated successfully.'
-        ]);
-    }
-
-    /**
-     * Delete an incident record.
-     */
-    public function destroy($id)
-    {
-        $incident = Incident::find($id);
-        if (!$incident) {
-            return response()->json(['success' => false, 'message' => 'Incident not found.'], 404);
-        }
-
-        $incident->delete();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Incident deleted successfully.'
         ]);
     }
 
@@ -197,7 +175,9 @@ class IncidentController extends Controller
         $typeFilter = $request->input('type_filter', 'all');
         $statusFilter = $request->input('status_filter', 'all');
 
-        $incidents = $this->getFilteredIncidentsQuery($dateStart, $dateEnd, $routeFilter, $typeFilter, $statusFilter)->get();
+        $incidents = $this->getFilteredIncidentsQuery($dateStart, $dateEnd, $routeFilter, $typeFilter, $statusFilter)
+            ->orderByDesc('reported_at')
+            ->get();
 
         $filename = 'incidents_report_' . now()->format('YmdHis') . '.csv';
 
@@ -238,23 +218,41 @@ class IncidentController extends Controller
      */
     protected function getFilteredIncidentsQuery($dateStart, $dateEnd, $routeFilter, $typeFilter, $statusFilter)
     {
-        $query = Incident::with(['trip.bus', 'trip.route', 'driver']);
+        $query = Incident::with(['trip.bus', 'trip.route', 'driver'])
+            ->whereHas('trip.route', fn ($routeQuery) => $routeQuery->publicCommuterActiveService());
 
         if ($dateStart) {
-            $query->where('reported_at', '>=', Carbon::parse($dateStart)->startOfDay());
+            $query->where('reported_at', '>=', Carbon::parse($dateStart, 'Asia/Manila')->startOfDay()->utc());
         }
         if ($dateEnd) {
-            $query->where('reported_at', '<=', Carbon::parse($dateEnd)->endOfDay());
+            $query->where('reported_at', '<=', Carbon::parse($dateEnd, 'Asia/Manila')->endOfDay()->utc());
         }
 
         if ($routeFilter !== 'all') {
             $query->whereHas('trip.route', function ($q) use ($routeFilter) {
+                if (is_numeric($routeFilter)) {
+                    $q->whereKey((int) $routeFilter);
+                    return;
+                }
+
                 $q->where('name', $routeFilter);
             });
         }
 
         if ($typeFilter !== 'all') {
             $query->where('type', $typeFilter);
+        }
+
+        if ($statusFilter !== 'all') {
+            $statusMap = [
+                'Open' => 'reported',
+                'Under Investigation' => 'under_review',
+                'Resolved' => 'resolved'
+            ];
+            $dbStatus = $statusMap[$statusFilter] ?? $statusFilter;
+            if (in_array($dbStatus, ['reported', 'under_review', 'resolved'], true)) {
+                $query->where('status', $dbStatus);
+            }
         }
 
         return $query;
@@ -283,18 +281,6 @@ class IncidentController extends Controller
             $query->where('status', 'resolved')->orderByDesc('reported_at');
         }
 
-        if ($statusFilter !== 'all') {
-            $statusMap = [
-                'Open' => 'reported',
-                'Under Investigation' => 'under_review',
-                'Resolved' => 'resolved'
-            ];
-            $dbStatus = $statusMap[$statusFilter] ?? null;
-            if ($dbStatus) {
-                $query->where('status', $dbStatus);
-            }
-        }
-
         // Transform collection to match properties of Volt components for easy transition
         return $query->get()->map(function($inc) {
             $busPlate = ($inc->trip && $inc->trip->bus) ? $inc->trip->bus->plate_number : 'N/A';
@@ -305,7 +291,7 @@ class IncidentController extends Controller
             return (object) [
                 'id' => $inc->id,
                 'incident_id' => $incidentIdStr,
-                'title' => trim($busPlate) . ' — ' . $inc->type . ': ' . $inc->description,
+                'title' => trim($busPlate) . ' - ' . $inc->type . ': ' . $inc->description,
                 'type' => $inc->type,
                 'description' => $inc->description,
                 'bus_plate' => $busPlate,
@@ -321,36 +307,33 @@ class IncidentController extends Controller
     /**
      * Compute metrics
      */
-    public function getIncidentMetrics()
+    public function getIncidentMetrics($dateStart = null, $dateEnd = null, $routeFilter = 'all', $typeFilter = 'all', $statusFilter = 'all')
     {
-        $today = Carbon::today();
-        
-        $totalToday = Incident::whereDate('reported_at', $today)->count();
-        $open = Incident::where('status', 'reported')->count();
-        $underReview = Incident::where('status', 'under_review')->count();
-        $resolvedToday = Incident::where('status', 'resolved')
-            ->whereDate('updated_at', $today)
-            ->count();
+        $filteredIncidents = $this->getFilteredIncidentsQuery($dateStart, $dateEnd, $routeFilter, $typeFilter, $statusFilter)->get();
+
+        $totalPeriod = $filteredIncidents->count();
+        $open = $filteredIncidents->where('status', 'reported')->count();
+        $underReview = $filteredIncidents->where('status', 'under_review')->count();
+        $resolvedPeriod = $filteredIncidents->where('status', 'resolved')->count();
 
         // Calculate average resolution time
-        $resolvedIncidents = Incident::where('status', 'resolved')
-            ->whereNotNull('reported_at')
-            ->whereNotNull('updated_at')
-            ->get();
+        $resolvedIncidents = $filteredIncidents
+            ->where('status', 'resolved')
+            ->filter(fn (Incident $incident) => $incident->reported_at !== null && $incident->updated_at !== null);
         
         $avgMinutes = 0;
         if ($resolvedIncidents->count() > 0) {
             $totalMinutes = $resolvedIncidents->sum(function ($inc) {
-                return Carbon::parse($inc->updated_at)->diffInMinutes(Carbon::parse($inc->reported_at));
+                return Carbon::parse($inc->reported_at)->diffInMinutes(Carbon::parse($inc->updated_at), true);
             });
             $avgMinutes = round($totalMinutes / $resolvedIncidents->count());
         }
 
         return (object) [
-            'total_today' => $totalToday,
+            'total_today' => $totalPeriod,
             'open' => $open,
             'under_investigation' => $underReview,
-            'resolved_today' => $resolvedToday,
+            'resolved_today' => $resolvedPeriod,
             'avg_resolution_minutes' => $avgMinutes,
         ];
     }

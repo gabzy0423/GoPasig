@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Models\Bus;
+use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\ServiceAlert;
 use App\Models\Trip;
+use App\Models\TripPassengerEvent;
 use App\Services\DriverPerformanceService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -38,28 +40,34 @@ class DashboardService
     {
         $today = Carbon::today('Asia/Manila');
         $yesterday = $today->copy()->subDay();
+        [$todayStartUtc, $todayEndUtc] = $this->manilaDayBoundsUtc($today);
+        [$yesterdayStartUtc, $yesterdayEndUtc] = $this->manilaDayBoundsUtc($yesterday);
+        $officialRouteIds = $this->officialRouteIds();
 
-        // Active buses: buses with trip activity during the Manila service day.
-        $activeBusIds = $this->activeTripBusIdsForDay($today);
+        // Active now means buses currently serving an ongoing official Trip.
+        $activeBusIds = $this->activeOngoingTripBusIds($officialRouteIds);
         $activeBuses = count($activeBusIds);
 
-        // Delayed buses: active buses whose ETA meets the configurable delay threshold.
+        // Delayed buses: active-now buses whose ETA meets the configurable delay threshold.
         $delayThreshold = Bus::getDelayThreshold();
         $delayedBuses = Bus::whereIn('id', $activeBusIds)->where('eta', '>=', $delayThreshold)->count();
 
-        // Offline buses: in maintenance status.
-        $offlineBuses = Bus::where('status', 'maintenance')->count();
+        // Unavailable buses: incident/maintenance states, not dispatch candidates.
+        $offlineBuses = Bus::whereIn('status', [Bus::STATUS_MAINTENANCE, Bus::STATUS_BREAKDOWN])->count();
 
-        // Idle buses: inactive status.
-        $idleBuses = Bus::where('status', 'inactive')->count();
+        // Standby buses: clean-state buses available or waiting for assignment/start.
+        $idleBuses = Bus::whereIn('status', [Bus::STATUS_INACTIVE, 'available', 'ready'])->count();
 
-        // Trips completed today - no fallback; a real 0-trip day should show 0.
-        $tripsCompleted = Trip::where('status', 'completed')->whereDate('ended_at', $today)->count();
+        // Trips completed today - official Trips only, no fallback.
+        $tripsCompleted = Trip::where('status', 'completed')
+            ->whereIn('route_id', $officialRouteIds)
+            ->whereBetween('ended_at', [$todayStartUtc, $todayEndUtc])
+            ->count();
 
-        // Total passengers: sum of passengers on active buses.
-        $totalPassengers = Bus::whereIn('id', $activeBusIds)->sum('passengers');
+        // Riders today: accepted boarded passenger events on official routes.
+        $totalPassengers = $this->boardedPassengerEventsForPeriod($officialRouteIds, $todayStartUtc, $todayEndUtc);
 
-        // Average utilization: (passengers / capacity) * 100.
+        // Average utilization: current onboard utilization for buses active right now.
         $avgUtilization = 0;
         if ($activeBuses > 0) {
             $activeBusData = Bus::whereIn('id', $activeBusIds)->get();
@@ -74,23 +82,22 @@ class DashboardService
             ->whereIn('status', ['reported', 'under_review'])
             ->count();
 
-        // Delta vs yesterday - use completed trips (ended_at) for consistency on both days.
+        // Delta vs yesterday - use the same actual-operation rules on both days.
         $tripsYesterday = Trip::where('status', 'completed')
-            ->whereDate('ended_at', $yesterday)
+            ->whereIn('route_id', $officialRouteIds)
+            ->whereBetween('ended_at', [$yesterdayStartUtc, $yesterdayEndUtc])
             ->count();
 
-        // Active buses yesterday: same trip activity rule used for today's count.
-        $activeBusIdsYesterday = $this->activeTripBusIdsForDay($yesterday);
+        $activeBusIdsYesterday = $this->operatedTripBusIdsForPeriod($officialRouteIds, $yesterdayStartUtc, $yesterdayEndUtc);
         $activeBusesYesterday = count($activeBusIdsYesterday);
 
-        // Delayed buses yesterday: active buses yesterday whose ETA met the delay threshold.
-        $delayedBusesYesterday = Bus::whereIn('id', $activeBusIdsYesterday)
-            ->where('eta', '>=', $delayThreshold)
-            ->count();
+        $delayedBusesYesterday = 0;
+        $passengersYesterday = $this->boardedPassengerEventsForPeriod($officialRouteIds, $yesterdayStartUtc, $yesterdayEndUtc);
 
         $activeDelta = $activeBuses - $activeBusesYesterday;
         $tripsDelta = $tripsCompleted - $tripsYesterday;
         $delayedDelta = $delayedBuses - $delayedBusesYesterday;
+        $passengerDelta = $totalPassengers - $passengersYesterday;
 
         return [
             'active_buses' => $activeBuses,
@@ -104,35 +111,82 @@ class DashboardService
             'deltas' => (object) [
                 'active_buses_yesterday' => ($activeDelta >= 0 ? '+' : '') . $activeDelta . ' vs yesterday',
                 'delayed_buses_yesterday' => ($delayedDelta >= 0 ? '+' : '') . $delayedDelta . ' vs yesterday',
-                'offline_buses_yesterday' => '- in maintenance',
-                'idle_buses_yesterday' => '- standby',
+                'offline_buses_yesterday' => 'unavailable',
+                'idle_buses_yesterday' => 'ready or standby',
                 'trips_completed_yesterday' => ($tripsDelta >= 0 ? '+' : '') . $tripsDelta . ' vs yesterday',
-                'total_passengers_yesterday' => $activeBuses > 0 ? 'on active buses' : 'no active buses',
-                'avg_utilization_yesterday' => $activeBuses > 0 ? 'of capacity used' : '-',
+                'total_passengers_yesterday' => ($passengerDelta >= 0 ? '+' : '') . $passengerDelta . ' vs yesterday',
+                'avg_utilization_yesterday' => $activeBuses > 0 ? 'current onboard load' : 'no active buses',
                 'open_incidents_yesterday' => $openIncidentCount > 0 ? 'needs attention' : 'all clear',
             ],
         ];
     }
 
-    /**
-     * Get bus IDs with trips that overlap the given Manila service day.
-     */
-    private function activeTripBusIdsForDay(Carbon $day): array
+    private function officialRouteIds(): array
     {
-        $start = $day->copy()->startOfDay();
-        $end = $day->copy()->endOfDay();
+        return Route::publicCommuterActiveService()
+            ->pluck('id')
+            ->all();
+    }
+
+    private function manilaDayBoundsUtc(Carbon $day): array
+    {
+        return [
+            $day->copy()->timezone('Asia/Manila')->startOfDay()->utc(),
+            $day->copy()->timezone('Asia/Manila')->endOfDay()->utc(),
+        ];
+    }
+
+    private function activeOngoingTripBusIds(array $officialRouteIds): array
+    {
+        if (empty($officialRouteIds)) {
+            return [];
+        }
+
+        return Trip::query()
+            ->where('status', 'ongoing')
+            ->whereIn('route_id', $officialRouteIds)
+            ->whereNotNull('bus_id')
+            ->whereHas('bus', function ($query) {
+                $query->whereIn('status', Bus::commuterServiceStatuses());
+            })
+            ->pluck('bus_id')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function operatedTripBusIdsForPeriod(array $officialRouteIds, Carbon $startUtc, Carbon $endUtc): array
+    {
+        if (empty($officialRouteIds)) {
+            return [];
+        }
 
         return Trip::whereIn('status', ['ongoing', 'completed'])
+            ->whereIn('route_id', $officialRouteIds)
             ->whereNotNull('started_at')
-            ->where('started_at', '<=', $end)
-            ->where(function ($query) use ($start) {
+            ->whereNotNull('bus_id')
+            ->where('started_at', '<=', $endUtc)
+            ->where(function ($query) use ($startUtc) {
                 $query->whereNull('ended_at')
-                    ->orWhere('ended_at', '>=', $start);
+                    ->orWhere('ended_at', '>=', $startUtc);
             })
             ->pluck('bus_id')
             ->unique()
             ->values()
             ->toArray();
+    }
+
+    private function boardedPassengerEventsForPeriod(array $officialRouteIds, Carbon $startUtc, Carbon $endUtc): int
+    {
+        if (empty($officialRouteIds)) {
+            return 0;
+        }
+
+        return (int) TripPassengerEvent::query()
+            ->where('event_type', TripPassengerEvent::TYPE_BOARDED)
+            ->whereIn('route_id', $officialRouteIds)
+            ->whereBetween('recorded_at', [$startUtc, $endUtc])
+            ->sum('passenger_delta');
     }
 
     /**
@@ -150,7 +204,7 @@ class DashboardService
 
         if ($driver) {
             $tripsToday = $driver->trips_today;
-            $paxToday = $driver->pax_today;
+            $paxToday = app(PassengerLoadService::class)->boardedTodayForDriver($driver);
 
             // Calculate 30-day incidents count from real incident records.
             $dbIncidents30 = DB::table('incidents')

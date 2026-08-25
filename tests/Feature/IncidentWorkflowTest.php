@@ -42,7 +42,7 @@ class IncidentWorkflowTest extends TestCase
 
         // 1. Create a route
         $this->route = Route::create([
-            'name' => 'Route A',
+            'name' => 'Route 2',
             'description' => 'Pasig - Ortigas',
             'polyline_coordinates' => [[14.5690, 121.0680]],
             'status' => 'Active',

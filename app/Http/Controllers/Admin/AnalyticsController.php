@@ -12,24 +12,33 @@ use App\Models\Stop;
 use App\Models\CommuterTrip;
 use App\Models\SystemSetting;
 use App\Models\DemandHistory;
+use App\Models\MaintenanceRecord;
 use App\Models\TimeSlotConfiguration;
 use App\Models\TripLog;
 use App\Models\TripPassengerEvent;
 use App\Services\DriverPerformanceService;
+use App\Services\DirectionAwareDemandForecastService;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
 
 class AnalyticsController extends Controller
 {
+    private const ANALYTICS_TIMEZONE = 'Asia/Manila';
+
     /**
      * Fetch all dashboard analytics data dynamically.
      */
     public function index(Request $request)
     {
-        // Parse date range parameters
-        $startDate = $request->query('start') ? Carbon::parse($request->query('start')) : Carbon::today();
-        $endDate = $request->query('end') ? Carbon::parse($request->query('end')) : Carbon::today();
+        $nowManila = Carbon::now(self::ANALYTICS_TIMEZONE);
+        $startDate = $request->query('start')
+            ? Carbon::parse((string) $request->query('start'), self::ANALYTICS_TIMEZONE)->startOfDay()
+            : $nowManila->copy()->startOfDay();
+        $endDate = $request->query('end')
+            ? Carbon::parse((string) $request->query('end'), self::ANALYTICS_TIMEZONE)->startOfDay()
+            : $nowManila->copy()->startOfDay();
 
         // If no explicit date range, default based on system setting
         if (!$request->has('start') && !$request->has('end')) {
@@ -37,21 +46,21 @@ class AnalyticsController extends Controller
 
             switch ($dateRange) {
                 case 'yesterday':
-                    $rangeStart = Carbon::yesterday();
-                    $rangeEnd = Carbon::yesterday();
+                    $rangeStart = $nowManila->copy()->subDay()->startOfDay();
+                    $rangeEnd = $nowManila->copy()->subDay()->startOfDay();
                     break;
                 case 'week':
-                    $rangeStart = Carbon::now()->startOfWeek();
-                    $rangeEnd = Carbon::now()->endOfWeek();
+                    $rangeStart = $nowManila->copy()->startOfWeek();
+                    $rangeEnd = $nowManila->copy()->endOfWeek();
                     break;
                 case 'month':
-                    $rangeStart = Carbon::now()->startOfMonth();
-                    $rangeEnd = Carbon::now()->endOfMonth();
+                    $rangeStart = $nowManila->copy()->startOfMonth();
+                    $rangeEnd = $nowManila->copy()->endOfMonth();
                     break;
                 case 'today':
                 default:
-                    $rangeStart = Carbon::today();
-                    $rangeEnd = Carbon::today();
+                    $rangeStart = $nowManila->copy()->startOfDay();
+                    $rangeEnd = $nowManila->copy()->startOfDay();
                     break;
             }
         } else {
@@ -66,8 +75,8 @@ class AnalyticsController extends Controller
 
         // 1. KPI Metrics
         $totalBuses = Bus::count();
-        $periodStart = $rangeStart->copy()->startOfDay();
-        $periodEnd = $rangeEnd->copy()->endOfDay();
+        $periodStart = $rangeStart->copy()->startOfDay()->utc();
+        $periodEnd = $rangeEnd->copy()->endOfDay()->utc();
         $operationalTripsForFleet = Trip::query()
             ->whereNotNull('bus_id')
             ->whereHas('route', $officialRouteFilter)
@@ -106,10 +115,7 @@ class AnalyticsController extends Controller
             ->sum('passenger_delta');
         $avgPassengerLoad = Trip::whereNotNull('peak_passengers')
             ->whereHas('route', $officialRouteFilter)
-            ->where(function ($query) use ($rangeStart, $rangeEnd) {
-                $periodStart = $rangeStart->copy()->startOfDay();
-                $periodEnd = $rangeEnd->copy()->endOfDay();
-
+            ->where(function ($query) use ($periodStart, $periodEnd) {
                 $query
                     ->where(function ($q) use ($periodStart, $periodEnd) {
                         $q->where('status', 'completed')
@@ -136,14 +142,12 @@ class AnalyticsController extends Controller
             'active_buses' => $busesInServiceCount,
             'buses_in_service' => $busesInServiceCount,
             'total_buses' => $totalBuses,
-            'on_time_rate' => 'Deferred',
-            'delayed_trips' => null,
-            'insufficient_data' => true,
         ];
 
         // 2. Trips started by configured time slots
         $hourlyRidership = [];
         $routes = Route::publicCommuterActiveService()->get();
+        $routeIds = $routes->pluck('id');
         $timeSlotConfigs = TimeSlotConfiguration::where('is_active', true)->orderBy('order')->get();
 
         if ($timeSlotConfigs->isEmpty()) {
@@ -153,7 +157,7 @@ class AnalyticsController extends Controller
 
         $startedTripsInPeriod = Trip::whereIn('route_id', $routes->pluck('id'))
             ->whereIn('status', ['ongoing', 'completed'])
-            ->whereBetween('started_at', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+            ->whereBetween('started_at', [$periodStart, $periodEnd])
             ->get();
 
         foreach ($timeSlotConfigs as $slotConfig) {
@@ -165,7 +169,10 @@ class AnalyticsController extends Controller
                 $tripCount = $startedTripsInPeriod
                     ->where('route_id', $route->id)
                     ->filter(function (Trip $trip) use ($slotConfig) {
-                        $startedTime = $trip->started_at?->format('H:i:s');
+                        $startedTime = $trip->started_at
+                            ?->copy()
+                            ->setTimezone(self::ANALYTICS_TIMEZONE)
+                            ->format('H:i:s');
 
                         return $startedTime !== null
                             && $startedTime >= $slotConfig->start_time
@@ -182,22 +189,22 @@ class AnalyticsController extends Controller
         $routeComparison = [];
         $completedTripsInPeriod = Trip::whereIn('route_id', $routes->pluck('id'))
             ->where('status', 'completed')
-            ->whereBetween('ended_at', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+            ->whereBetween('ended_at', [$periodStart, $periodEnd])
             ->get()
             ->groupBy('route_id');
         $ongoingTripsInPeriod = Trip::whereIn('route_id', $routes->pluck('id'))
             ->where('status', 'ongoing')
-            ->whereBetween('started_at', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+            ->whereBetween('started_at', [$periodStart, $periodEnd])
             ->get()
             ->groupBy('route_id');
         $dispatchedTripsInPeriod = Trip::whereIn('route_id', $routes->pluck('id'))
             ->where('status', 'dispatched')
-            ->whereBetween('dispatched_at', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+            ->whereBetween('dispatched_at', [$periodStart, $periodEnd])
             ->get()
             ->groupBy('route_id');
         $cancelledTripsInPeriod = Trip::whereIn('route_id', $routes->pluck('id'))
             ->where('status', 'cancelled')
-            ->whereBetween('ended_at', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+            ->whereBetween('ended_at', [$periodStart, $periodEnd])
             ->get()
             ->groupBy('route_id');
         $totalTripsRun = $completedTripsInPeriod->flatten(1)->count() + $ongoingTripsInPeriod->flatten(1)->count();
@@ -238,7 +245,9 @@ class AnalyticsController extends Controller
             \Illuminate\Support\Facades\Log::error('TimeSlotConfiguration table is empty. Admin heatmap patterns will not be rendered. Run time slot configuration seeder.');
             $timeSlotConfigs = collect();
         }
-        $heatmapAverages = DemandHistory::groupBy('day_of_week', 'time_slot')
+        $heatmapAverages = DemandHistory::forecastEligible()
+            ->whereIn('route_id', $routeIds)
+            ->groupBy('day_of_week', 'time_slot')
             ->select('day_of_week', 'time_slot', DB::raw('AVG(total_commuters) as avg_commuters'))
             ->get()
             ->groupBy(['day_of_week', 'time_slot']);
@@ -301,10 +310,7 @@ class AnalyticsController extends Controller
         $tripPaxTable = [];
         $tripLoadRecords = Trip::with(['bus', 'driver', 'route'])
             ->whereHas('route', $officialRouteFilter)
-            ->where(function ($query) use ($rangeStart, $rangeEnd) {
-                $periodStart = $rangeStart->copy()->startOfDay();
-                $periodEnd = $rangeEnd->copy()->endOfDay();
-
+            ->where(function ($query) use ($periodStart, $periodEnd) {
                 $query
                     ->where(function ($q) use ($periodStart, $periodEnd) {
                         $q->where('status', 'completed')
@@ -357,8 +363,12 @@ class AnalyticsController extends Controller
                 'driver' => $trip->driver ? ($trip->driver->first_name . ' ' . $trip->driver->last_name) : 'Unassigned',
                 'route' => $trip->route ? $trip->route->name : 'N/A',
                 'status' => ucfirst((string) $trip->status),
-                'startedAt' => $trip->started_at ? $trip->started_at->format('g:i A') : 'Not started',
-                'endedAt' => $trip->ended_at ? $trip->ended_at->format('g:i A') : 'Not ended',
+                'startedAt' => $trip->started_at
+                    ? $trip->started_at->copy()->setTimezone(self::ANALYTICS_TIMEZONE)->format('g:i A')
+                    : 'Not started',
+                'endedAt' => $trip->ended_at
+                    ? $trip->ended_at->copy()->setTimezone(self::ANALYTICS_TIMEZONE)->format('g:i A')
+                    : 'Not ended',
                 'recordedBoarded' => $isFinalizedTrip && $tripLog ? (int) $tripLog->passengers : $eventBoarded,
                 'recordedAlighted' => $isFinalizedTrip && $tripLog ? (int) $tripLog->alighted_passengers : $eventAlighted,
                 'peakLoad' => (int) ($trip->peak_passengers ?? 0),
@@ -372,7 +382,7 @@ class AnalyticsController extends Controller
             static fn (array $trip) => in_array(strtolower((string) ($trip['status'] ?? '')), ['completed', 'ongoing'], true)
         ));
 
-        $commuterTripsInPeriod = CommuterTrip::whereBetween('created_at', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+        $commuterTripsInPeriod = CommuterTrip::whereBetween('created_at', [$periodStart, $periodEnd])
             ->where('is_simulated', false)
             ->get();
 
@@ -383,7 +393,7 @@ class AnalyticsController extends Controller
         $busPassengerHandled = TripPassengerEvent::whereIn('bus_id', $buses->pluck('id'))
             ->where('event_type', TripPassengerEvent::TYPE_BOARDED)
             ->whereHas('route', $officialRouteFilter)
-            ->whereBetween('recorded_at', [$rangeStart->copy()->startOfDay(), $rangeEnd->copy()->endOfDay()])
+            ->whereBetween('recorded_at', [$periodStart, $periodEnd])
             ->select('bus_id', DB::raw('SUM(passenger_delta) as total'))
             ->groupBy('bus_id')
             ->pluck('total', 'bus_id');
@@ -415,17 +425,16 @@ class AnalyticsController extends Controller
             ];
         }
 
-        // 8. Dispatch forecast recommendations are deferred until demand and TripLog sources are reliable.
-        $forecastTable = [];
+        // 8. Tomorrow's direction-aware demand forecast remains advisory-only.
+        $demandForecast = app(DirectionAwareDemandForecastService::class)
+            ->forecastForDate(Carbon::now('Asia/Manila')->addDay()->startOfDay());
+        $forecastTable = $demandForecast['rows'];
 
         // 9. Driver Performance Table
         $driverPerformance = [];
         $driversLimit = (int) SystemSetting::get('analytics_top_drivers_limit', 5);
         $drivers = Driver::orderBy('last_name')->orderBy('first_name')->get();
         $driverIds = $drivers->pluck('id');
-        $periodStart = $rangeStart->copy()->startOfDay();
-        $periodEnd = $rangeEnd->copy()->endOfDay();
-
         $driverTripsInPeriod = Trip::whereIn('driver_id', $driverIds)
             ->whereHas('route', $officialRouteFilter)
             ->where(function ($query) use ($periodStart, $periodEnd) {
@@ -523,50 +532,56 @@ class AnalyticsController extends Controller
             })
             ->toArray();
 
-        // 10. Historical Ridership (Last 30 Days or dynamic range)
-        $historicalTrend = [];
-        $trendStart = $rangeStart;
-        $trendEnd = $rangeEnd;
-        if ($trendStart->toDateString() === $trendEnd->toDateString()) {
-            $trendLimit = (int) SystemSetting::get('analytics_historical_trend_limit', 30);
-            $trendStart = $trendEnd->copy()->subDays($trendLimit - 1);
-        }
+        // 10. Historical demand uses finalized actual observations, not the
+        // stricter forecast-training trust gate or the selected report period.
+        $historicalDemand = $this->buildHistoricalDemandPayload($timeSlotConfigs);
+        $historicalTrend = $this->buildHistoricalTrendCompatibility($historicalDemand);
 
-        $trendData = DemandHistory::select('date')
-            ->whereBetween('date', [$trendStart->toDateString(), $trendEnd->toDateString()])
-            ->groupBy('date')
-            ->orderBy('date', 'asc')
+        // 11. Maintenance Log report records use the maintenance module source of truth.
+        $maintenanceRecords = MaintenanceRecord::with('bus')
+            ->where(function ($query) use ($periodStart, $periodEnd) {
+                $query
+                    ->whereBetween('scheduled_at', [$periodStart, $periodEnd])
+                    ->orWhere(function ($completed) use ($periodStart, $periodEnd) {
+                        $completed->whereNotNull('completed_at')
+                            ->whereBetween('completed_at', [$periodStart, $periodEnd]);
+                    });
+            })
+            ->orderByDesc('scheduled_at')
             ->get();
 
-        if ($trendData->isEmpty()) {
-            $historicalTrend = [];
-        } else {
-            $historiesInPeriod = DemandHistory::whereBetween('date', [$trendStart->toDateString(), $trendEnd->toDateString()])->get();
-            $historiesByDate = $historiesInPeriod->groupBy(function ($item) {
-                return Carbon::parse($item->date)->toDateString();
-            });
+        $maintenanceBusById = Bus::whereIn('id', $maintenanceRecords->map(
+            fn (MaintenanceRecord $record) => $record->getRawOriginal('bus_id')
+        )->filter()->unique()->values())->get()->keyBy('id');
 
-            foreach ($trendData as $trend) {
-                $dateStr = $trend->date->toDateString();
-                $dateObj = Carbon::parse($trend->date);
+        $maintenanceLogRecords = $maintenanceRecords->map(function (MaintenanceRecord $record) use ($maintenanceBusById) {
+            $formatMaintenanceDate = fn (?string $value) => $value
+                ? Carbon::parse($value, 'UTC')->setTimezone(self::ANALYTICS_TIMEZONE)->format('M d, Y g:i A')
+                : null;
+            $scheduledAt = $formatMaintenanceDate($record->getRawOriginal('scheduled_at'));
+            $completedAt = $formatMaintenanceDate($record->getRawOriginal('completed_at'));
+            $bus = $maintenanceBusById->get((int) $record->getRawOriginal('bus_id'));
 
-                $total = 0;
-                $dataRow = [
-                    'label' => $dateObj->format('M d'),
-                ];
+            return [
+                'ticket' => $record->ticket_number ?: 'MT-' . str_pad((string) $record->id, 6, '0', STR_PAD_LEFT),
+                'bus' => $bus ? $bus->plate_number : 'Unassigned',
+                'type' => $record->type,
+                'status' => $record->status,
+                'scheduledAt' => $scheduledAt ?: 'Not scheduled',
+                'completedAt' => $completedAt ?: 'Not completed',
+                'technician' => $record->technician_name ?: 'Unassigned',
+                'inspector' => $record->inspector_name ?: ($record->inspected_by ?: 'Unassigned'),
+                'result' => $record->maintenance_result ?: 'No result',
+                'roadworthy' => $record->roadworthy === null ? 'No data' : ($record->roadworthy ? 'Yes' : 'No'),
+                'totalCost' => round((float) ($record->cost_php ?? 0), 2),
+            ];
+        })->values()->all();
 
-                $dateHistories = $historiesByDate->get($dateStr, collect());
-
-                foreach ($routes as $route) {
-                    $pax = (int) $dateHistories->where('route_id', $route->id)->sum('total_commuters');
-                    $dataRow[$route->name] = $pax;
-                    $total += $pax;
-                }
-
-                $dataRow['total'] = $total;
-                $historicalTrend[] = $dataRow;
-            }
-        }
+        $maintenanceSummary = [
+            'total' => $maintenanceRecords->count(),
+            'completed' => $maintenanceRecords->where('status', 'completed')->count(),
+            'active' => $maintenanceRecords->whereIn('status', ['scheduled', 'in_progress'])->count(),
+        ];
 
         // Return combined JSON response
         return response()->json([
@@ -580,9 +595,176 @@ class AnalyticsController extends Controller
             'peakLoadTimeline' => $peakLoadTimeline,
             'busSummaryCards' => $busSummaryCards,
             'forecastTable' => $forecastTable,
+            'demandForecast' => $demandForecast,
             'driverPerformance' => $driverPerformance,
+            'historicalDemand' => $historicalDemand,
             'historicalTrend' => $historicalTrend,
+            'maintenanceLogRecords' => $maintenanceLogRecords,
+            'maintenanceSummary' => $maintenanceSummary,
             'busCapacityLimit' => $busCapacityLimit,
         ]);
+    }
+
+    private function buildHistoricalDemandPayload(Collection $timeSlotConfigs): array
+    {
+        $timezone = 'Asia/Manila';
+        $now = Carbon::now($timezone);
+        $rangeEnd = $now->copy()->startOfDay();
+        $rangeStart = $rangeEnd->copy()->subDays(29);
+        $dates = collect(range(0, 29))->map(function (int $offset) use ($rangeStart, $rangeEnd) {
+            $date = $rangeStart->copy()->addDays($offset);
+
+            return [
+                'date' => $date->toDateString(),
+                'label' => $date->format('M d'),
+                'is_today' => $date->isSameDay($rangeEnd),
+            ];
+        });
+
+        $routes = Route::publicCommuterActiveService()
+            ->with(['variants' => function ($query) {
+                $query->whereIn('direction', ['outbound', 'inbound'])
+                    ->orderByRaw("CASE direction WHEN 'outbound' THEN 0 WHEN 'inbound' THEN 1 ELSE 2 END")
+                    ->orderBy('id');
+            }])
+            ->get();
+        $variants = $routes->flatMap->variants;
+        $variantIds = $variants->pluck('id');
+
+        $histories = $variantIds->isEmpty()
+            ? collect()
+            : DemandHistory::finalizedActual()
+                ->whereIn('route_id', $routes->pluck('id'))
+                ->whereIn('route_variant_id', $variantIds)
+                ->whereBetween('date', [$rangeStart->toDateString(), $rangeEnd->toDateString()])
+                ->get();
+        $historiesByDirectionDate = $histories->groupBy(function (DemandHistory $history) {
+            return $history->route_variant_id.'|'.$history->date->toDateString();
+        });
+
+        $expectedSlotsByDate = $dates->mapWithKeys(function (array $date) use ($timeSlotConfigs, $now, $timezone) {
+            $closedSlots = $timeSlotConfigs->filter(function (TimeSlotConfiguration $slot) use ($date, $now, $timezone) {
+                $slotStart = Carbon::parse($date['date'].' '.substr((string) $slot->start_time, 0, 8), $timezone);
+                $slotEnd = Carbon::parse($date['date'].' '.substr((string) $slot->end_time, 0, 8), $timezone);
+
+                if ($slotEnd->lessThanOrEqualTo($slotStart)) {
+                    $slotEnd->addDay();
+                }
+
+                return $slotEnd->lessThanOrEqualTo($now);
+            })->count();
+
+            return [$date['date'] => $closedSlots];
+        });
+
+        $coverageCounts = [
+            'finalized' => 0,
+            'partial' => 0,
+            'unavailable' => 0,
+        ];
+        $series = [];
+
+        foreach ($routes as $route) {
+            foreach ($route->variants as $variant) {
+                $points = $dates->map(function (array $date) use (
+                    $variant,
+                    $historiesByDirectionDate,
+                    $expectedSlotsByDate,
+                    &$coverageCounts
+                ) {
+                    $records = $historiesByDirectionDate->get($variant->id.'|'.$date['date'], collect());
+                    $finalizedSlots = $records->unique('time_slot')->count();
+                    $expectedSlots = (int) $expectedSlotsByDate->get($date['date'], 0);
+
+                    if ($finalizedSlots === 0) {
+                        $coverage = 'unavailable';
+                        $value = null;
+                    } else {
+                        $coverage = $expectedSlots > 0 && $finalizedSlots >= $expectedSlots
+                            ? 'finalized'
+                            : 'partial';
+                        $value = (int) $records->sum('total_commuters');
+                    }
+
+                    $coverageCounts[$coverage]++;
+
+                    return [
+                        'date' => $date['date'],
+                        'value' => $value,
+                        'coverage' => $coverage,
+                        'finalized_slots' => $finalizedSlots,
+                        'expected_slots' => $expectedSlots,
+                    ];
+                })->values()->all();
+                $direction = strtolower((string) $variant->direction);
+                $directionCode = $direction === 'outbound' ? 'OUT' : 'IN';
+
+                $series[] = [
+                    'route_id' => (int) $route->id,
+                    'route_name' => $route->name,
+                    'route_variant_id' => (int) $variant->id,
+                    'direction' => $direction,
+                    'direction_label' => ucfirst($direction),
+                    'label' => $route->name.' '.$directionCode,
+                    'color' => $route->color,
+                    'points' => $points,
+                ];
+            }
+        }
+
+        $totalPoints = array_sum($coverageCounts);
+        $coverageLabel = $totalPoints === 0
+            ? 'No official route directions configured.'
+            : sprintf(
+                '%d finalized, %d partial, %d unavailable direction-days',
+                $coverageCounts['finalized'],
+                $coverageCounts['partial'],
+                $coverageCounts['unavailable']
+            );
+
+        return [
+            'range' => [
+                'start' => $rangeStart->toDateString(),
+                'end' => $rangeEnd->toDateString(),
+                'days' => 30,
+                'timezone' => $timezone,
+            ],
+            'basis' => 'Finalized actual commuter check-ins',
+            'dates' => $dates->values()->all(),
+            'series' => $series,
+            'coverage' => array_merge($coverageCounts, [
+                'total' => $totalPoints,
+                'label' => $coverageLabel,
+            ]),
+        ];
+    }
+
+    private function buildHistoricalTrendCompatibility(array $historicalDemand): array
+    {
+        $series = collect($historicalDemand['series']);
+
+        return collect($historicalDemand['dates'])
+            ->map(function (array $date, int $index) use ($series) {
+                $row = [
+                    'date' => $date['date'],
+                    'label' => $date['label'],
+                ];
+                $allValues = collect();
+
+                foreach ($series->groupBy('route_name') as $routeName => $routeSeries) {
+                    $values = $routeSeries
+                        ->map(fn (array $item) => $item['points'][$index]['value'])
+                        ->filter(fn ($value) => $value !== null);
+                    $row[$routeName] = $values->isEmpty() ? null : (int) $values->sum();
+                    $allValues = $allValues->concat($values);
+                }
+
+                $row['total'] = $allValues->isEmpty() ? null : (int) $allValues->sum();
+
+                return $row;
+            })
+            ->filter(fn (array $row) => $row['total'] !== null)
+            ->values()
+            ->all();
     }
 }

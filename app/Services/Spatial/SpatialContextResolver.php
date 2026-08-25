@@ -5,13 +5,10 @@ namespace App\Services\Spatial;
 use App\Models\VehiclePosition;
 use App\Models\Trip;
 use App\Models\Geofence;
-use App\Models\RouteCorridor;
-use App\Models\RouteVariantCorridor;
 use App\Models\Stop;
 use App\Models\Terminal;
 use App\Data\SpatialContext;
 use App\Services\ValueObjects\Coordinate;
-use Illuminate\Support\Facades\Log;
 
 class SpatialContextResolver
 {
@@ -30,17 +27,14 @@ class SpatialContextResolver
                 ->first();
         }
 
-        // 2. Resolve corridor ownership. Official variant trips require an exact variant-owned corridor.
-        [$corridor, $corridorSource] = $this->resolveCorridor($trip, $position);
-
-        // 3. Resolve nearby geofences via Bounding Box spatial index using config
+        // 2. Resolve nearby geofences via Bounding Box spatial index using config.
         $margin = (float) config('fleet.spatial.indexing_margin');
         $nearbyGeofences = Geofence::where('status', 'active')
             ->whereBetween('lat', [$position->lat - $margin, $position->lat + $margin])
             ->whereBetween('lng', [$position->lng - $margin, $position->lng + $margin])
             ->get();
 
-        // 4. Extract nearest items
+        // 3. Extract nearest items.
         $nearestStop = null;
         $minStopDist = null;
 
@@ -75,37 +69,6 @@ class SpatialContextResolver
             }
         }
 
-        return new SpatialContext($trip, $corridor, $nearbyGeofences, $nearestStop, $nearestTerminal, $nearestDepot, $corridorSource);
-    }
-
-    private function resolveCorridor(?Trip $trip, VehiclePosition $position): array
-    {
-        if (!$trip) {
-            return [null, 'none'];
-        }
-
-        if ($trip->route_variant_id) {
-            $corridor = RouteVariantCorridor::with('routeVariant:id,route_id,direction')
-                ->where('route_variant_id', $trip->route_variant_id)
-                ->first();
-
-            if ($corridor && $corridor->routeVariant?->route_id === $trip->route_id) {
-                return [$corridor, 'route_variant_corridor'];
-            }
-
-            Log::warning('[GPS_TRACE] Missing RouteVariant corridor for trip spatial context', [
-                'position_id' => $position->id,
-                'trip_id' => $trip->id,
-                'route_id' => $trip->route_id,
-                'route_variant_id' => $trip->route_variant_id,
-                'reason' => $corridor ? 'route_variant_mismatch' : 'missing_variant_corridor',
-            ]);
-
-            return [null, 'missing_variant_corridor'];
-        }
-
-        $corridor = RouteCorridor::where('route_id', $trip->route_id)->first();
-
-        return [$corridor, $corridor ? 'legacy_route_corridor' : 'none'];
+        return new SpatialContext($trip, $nearbyGeofences, $nearestStop, $nearestTerminal, $nearestDepot);
     }
 }

@@ -4,67 +4,62 @@
         <div id="live-map-canvas" class="h-[520px] w-full lg:h-full"></div>
 
         <!-- Floating top identity, filters, and controls -->
-        <div id="live-map-toolbar" class="map-ui-enter map-ui-enter-down relative z-[1000] m-3 flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-2.5 shadow-[0_14px_34px_rgba(15,23,42,0.16)] ring-1 ring-white/70 backdrop-blur-md transition duration-150 lg:absolute lg:left-4 lg:right-[392px] lg:top-4 lg:m-0 xl:right-[408px]">
+        <div id="live-map-toolbar" class="map-ui-enter map-ui-enter-down relative z-[1000] m-3 flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-2.5 shadow-[0_14px_34px_rgba(15,23,42,0.16)] ring-1 ring-white/70 backdrop-blur-md transition duration-150 lg:absolute lg:left-4 lg:right-4 lg:top-4 lg:m-0 2xl:right-[408px]">
             <div class="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <!-- Compact page identity -->
-                <div class="min-w-[180px] shrink-0 select-none">
+                <div class="w-[155px] shrink-0 select-none 2xl:w-auto 2xl:min-w-[170px]">
                     <h1 class="text-sm font-black text-slate-900">Live Fleet Tracker</h1>
                     <div class="mt-0.5 flex items-center gap-1 text-[10px] font-semibold text-slate-400">
                         <span>Dashboard</span>
                         <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
                         <span>Fleet</span>
                         <i class="ti ti-chevron-right text-[9px] text-slate-300"></i>
-                        <span class="font-bold text-slate-600">Live Fleet Map</span>
+                        <span class="font-bold text-slate-600">Live Map</span>
                     </div>
                 </div>
 
-                <!-- Search and route filters -->
+                <!-- Live state, route filters, and direction visibility -->
                 <div class="flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:items-center">
-                    <div class="relative w-full md:w-[230px] md:shrink-0">
-                        <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                            <i class="ti ti-search text-xs"></i>
-                        </span>
-                        <input type="text" id="universal-search" oninput="applyToolbarFilters()" placeholder="Search plate, driver, or route..." class="w-full rounded-xl border border-slate-200/90 bg-slate-50/80 py-2 pl-9 pr-3 text-xs font-semibold text-slate-900 shadow-inner outline-none transition placeholder-slate-400 focus:border-[#003F87] focus:bg-white focus-visible:ring-2 focus-visible:ring-[#003F87]/20">
+                    <div class="flex shrink-0 items-center gap-1 rounded-xl border border-emerald-100 bg-emerald-50/90 px-2 py-2 text-[10px] text-slate-600 shadow-sm 2xl:gap-1.5 2xl:px-2.5 2xl:text-[12px]">
+                        <span class="font-mono-custom" id="live-map-tracked-count">0 buses tracked</span>
+                        <span class="text-slate-300">/</span>
+                        <div class="flex items-center gap-1">
+                            <span class="relative flex h-2 w-2 shrink-0">
+                                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#639922] opacity-75"></span>
+                                <span class="relative inline-flex h-2 w-2 rounded-full bg-[#639922]"></span>
+                            </span>
+                            <span>Live</span>
+                        </div>
                     </div>
 
-                    <div class="map-chip-strip scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap py-1">
-                        <span class="mr-1 shrink-0 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Routes:</span>
-                        <button onclick="toggleRouteFilter('all')" data-route-filter="all" class="shrink-0 cursor-pointer rounded-full bg-[#003F87] px-3.5 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#002f66] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]/25">All <span id="route-pill-all-count"></span></button>
-                        <button onclick="toggleRouteFilter('1')" data-route-filter="1" class="shrink-0 cursor-pointer rounded-full border border-slate-200/80 bg-white/90 px-3.5 py-1.5 text-xs font-bold text-slate-600 transition hover:border-[#003F87]/30 hover:bg-[#E6F1FB]/60 hover:text-[#003F87] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]/20">Route 1 <span id="route-pill-1-count"></span></button>
-                        <button onclick="toggleRouteFilter('2')" data-route-filter="2" class="shrink-0 cursor-pointer rounded-full border border-slate-200/80 bg-white/90 px-3.5 py-1.5 text-xs font-bold text-slate-600 transition hover:border-[#003F87]/30 hover:bg-[#E6F1FB]/60 hover:text-[#003F87] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]/20">Route 2 <span id="route-pill-2-count"></span></button>
-                        <button onclick="toggleRouteFilter('3')" data-route-filter="3" class="shrink-0 cursor-pointer rounded-full border border-slate-200/80 bg-white/90 px-3.5 py-1.5 text-xs font-bold text-slate-600 transition hover:border-[#003F87]/30 hover:bg-[#E6F1FB]/60 hover:text-[#003F87] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]/20">Route 3 <span id="route-pill-3-count"></span></button>
-                        <button onclick="toggleRouteFilter('4')" data-route-filter="4" class="shrink-0 cursor-pointer rounded-full border border-slate-200/80 bg-white/90 px-3.5 py-1.5 text-xs font-bold text-slate-600 transition hover:border-[#003F87]/30 hover:bg-[#E6F1FB]/60 hover:text-[#003F87] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]/20">Route 4 <span id="route-pill-4-count"></span></button>
+                    <div id="live-map-route-filters" class="map-chip-strip scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto rounded-xl border border-slate-200/80 bg-slate-100/80 p-1 whitespace-nowrap">
+                        <button onclick="toggleRouteFilter('all')" data-route-filter="all" class="route-chip shrink-0 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#001F44] shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]/20 2xl:px-3 2xl:text-[12px]">All</button>
+                    </div>
+
+                    <div id="live-map-direction-filters" class="flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white/90 px-1.5 py-2 text-[9px] font-semibold text-slate-600 shadow-sm 2xl:gap-3 2xl:px-2.5 2xl:text-[11px]" aria-label="Route direction visibility">
+                        <label class="flex cursor-pointer items-center gap-1 whitespace-nowrap 2xl:gap-1.5" for="live-map-direction-outbound">
+                            <input id="live-map-direction-outbound" type="checkbox" checked onchange="filterLiveMapRouteDirection('outbound', this.checked)" class="h-3.5 w-3.5 accent-[#003F87]">
+                            <span class="w-3 border-t-2 border-[#003F87] 2xl:w-4"></span>
+                            <span>OUT solid</span>
+                        </label>
+                        <label class="flex cursor-pointer items-center gap-1 whitespace-nowrap 2xl:gap-1.5" for="live-map-direction-inbound">
+                            <input id="live-map-direction-inbound" type="checkbox" checked onchange="filterLiveMapRouteDirection('inbound', this.checked)" class="h-3.5 w-3.5 accent-[#003F87]">
+                            <span class="w-3 border-t-2 border-dashed border-[#003F87] 2xl:w-4"></span>
+                            <span>IN dashed</span>
+                        </label>
                     </div>
                 </div>
 
-                <!-- Status, live state, and refresh -->
-                <div class="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-                    <div class="flex items-center gap-2">
-                        <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Status:</span>
-                        <select id="map-status-filter" onchange="applyToolbarFilters()" class="rounded-xl border border-slate-200/90 bg-slate-50/80 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white focus-visible:ring-2 focus-visible:ring-[#003F87]/20">
-                            <option value="all">All Statuses</option>
-                            <option value="Active">Active</option>
-                            <option value="Delayed">Delayed</option>
-                            <option value="Breakdown">Offline / Alert</option>
-                            <option value="Maintenance">Maintenance</option>
-                        </select>
-                    </div>
-
-                    <div class="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50/90 px-2.5 py-2 shadow-sm">
-                        <span class="relative flex h-2 w-2 shrink-0">
-                            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#639922] opacity-75"></span>
-                            <span class="relative inline-flex h-2 w-2 rounded-full bg-[#639922]"></span>
-                        </span>
-                        <span class="text-[10px] font-bold text-slate-600">
-                            <span class="mr-1 font-extrabold uppercase tracking-wider text-[#639922]">LIVE</span> Auto-refresh: <span id="map-last-updated" class="font-bold">Just now</span> (5s)
-                        </span>
-                    </div>
-
-                    <div class="flex items-center border-l border-slate-200 pl-2">
-                        <button onclick="triggerManualRefresh()" class="relative cursor-pointer rounded-xl p-2 text-slate-500 transition hover:bg-[#E6F1FB]/70 hover:text-[#003F87] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]/20" aria-label="Refresh positions" title="Refresh positions">
-                            <i id="map-refresh-icon" class="ti ti-refresh text-lg"></i>
-                        </button>
-                    </div>
+                <!-- Status filter -->
+                <div class="flex shrink-0 items-center gap-1 sm:justify-end 2xl:gap-2">
+                    <span class="text-[9px] font-extrabold uppercase tracking-wide text-slate-400 2xl:text-[10px] 2xl:tracking-widest">Status:</span>
+                    <select id="map-status-filter" onchange="applyToolbarFilters()" class="rounded-xl border border-slate-200/90 bg-white px-2 py-2 text-[12px] font-semibold text-[#001F44] outline-none transition focus:border-[#003F87] focus-visible:ring-2 focus-visible:ring-[#003F87]/20 2xl:px-3 2xl:text-[13px]">
+                        <option value="all">All Statuses</option>
+                        <option value="Active">Active</option>
+                        <option value="Delayed">Delayed</option>
+                        <option value="Breakdown">Offline / Alert</option>
+                        <option value="Maintenance">Maintenance</option>
+                    </select>
                 </div>
             </div>
         </div>
@@ -100,7 +95,7 @@
         </div>
 
         <!-- Floating Fleet Operations Panel -->
-        <div class="map-ui-enter map-ui-enter-side relative z-[1000] m-3 flex max-h-[640px] flex-col rounded-[18px] border border-slate-200/90 bg-white/90 p-4 shadow-[0_18px_45px_rgba(15,23,42,0.16)] ring-1 ring-white/70 backdrop-blur-md transition duration-150 lg:absolute lg:bottom-4 lg:right-4 lg:top-[76px] lg:m-0 lg:max-h-none lg:w-[320px] xl:w-[360px]">
+        <div class="map-ui-enter map-ui-enter-side relative z-[1000] m-3 flex max-h-[640px] flex-col rounded-[18px] border border-slate-200/90 bg-white/90 p-4 shadow-[0_18px_45px_rgba(15,23,42,0.16)] ring-1 ring-white/70 backdrop-blur-md transition duration-150 lg:absolute lg:bottom-4 lg:right-4 lg:top-[140px] lg:m-0 lg:max-h-none lg:w-[320px] xl:top-[76px] xl:w-[360px]">
             <!-- Sidebar Header -->
             <div class="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-slate-100 bg-white/80 pb-3.5 select-none backdrop-blur">
                 <span class="text-xs font-extrabold uppercase tracking-widest text-slate-800">Fleet Operations</span>
@@ -244,10 +239,6 @@
             .scrollbar-none {
                 -ms-overflow-style: none;
                 scrollbar-width: none;
-            }
-            /* Faded style for route pills with zero vehicle count */
-            .pill-count-zero {
-                opacity: 0.55;
             }
             .bm-btn-primary {
                 display: inline-flex;

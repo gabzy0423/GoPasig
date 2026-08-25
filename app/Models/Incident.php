@@ -171,7 +171,7 @@ class Incident extends Model
     {
         $busPlate = $this->trip && $this->trip->bus ? $this->trip->bus->plate_number : 'Unknown Bus';
         $routeName = $this->trip && $this->trip->route ? $this->trip->route->name : 'Unknown Route';
-        return "Bus {$busPlate} " . strtolower($this->type) . " — {$routeName}";
+        return "Bus {$busPlate} " . strtolower($this->type) . " - {$routeName}";
     }
 
     /**

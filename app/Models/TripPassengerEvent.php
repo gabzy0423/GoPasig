@@ -18,6 +18,8 @@ class TripPassengerEvent extends Model
         'driver_id',
         'bus_id',
         'route_id',
+        'route_variant_stop_id',
+        'request_id',
         'event_type',
         'passenger_delta',
         'onboard_after',
@@ -27,6 +29,7 @@ class TripPassengerEvent extends Model
     protected $casts = [
         'passenger_delta' => 'integer',
         'onboard_after' => 'integer',
+        'route_variant_stop_id' => 'integer',
         'recorded_at' => 'datetime',
     ];
 
@@ -48,5 +51,10 @@ class TripPassengerEvent extends Model
     public function route(): BelongsTo
     {
         return $this->belongsTo(Route::class);
+    }
+
+    public function routeVariantStop(): BelongsTo
+    {
+        return $this->belongsTo(RouteVariantStop::class);
     }
 }

@@ -20,7 +20,12 @@
 
     <div class="ml-auto flex items-center gap-2 sm:gap-3 shrink-0">
         <button id="layout-export-btn"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors sm:px-3">
+            type="button"
+            disabled
+            aria-disabled="true"
+            data-export-enabled="false"
+            title="No exportable report data available yet."
+            class="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-400 shadow-sm transition-colors sm:px-3">
             <i class="ti ti-download text-base text-slate-500"></i>
             <span>Export report</span>
         </button>

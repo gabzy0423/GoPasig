@@ -5,25 +5,29 @@ namespace App\Services;
 use App\Models\CommuterTrip;
 use App\Models\DemandHistory;
 use App\Models\Route;
-use App\Models\TimeSlotConfiguration;
+use App\Models\RouteVariant;
 use App\Models\Trip;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class DemandHistoryBridgeService
 {
-    private const TIMEZONE = 'Asia/Manila';
+    public function __construct(
+        private readonly DemandHistoryTimeSlotService $timeSlots
+    ) {}
 
     public function recordCommuterCheckIn(CommuterTrip $trip): ?DemandHistory
     {
-        if ($trip->is_simulated || ! $trip->route_id) {
+        if ($trip->is_simulated || ! $trip->route_id || ! $trip->route_variant_id) {
             return null;
         }
 
         return $this->safelyRefreshBucket(
             (int) $trip->route_id,
+            (int) $trip->route_variant_id,
             $trip->created_at,
             'commuter_check_in'
         );
@@ -31,25 +35,69 @@ class DemandHistoryBridgeService
 
     public function recordDispatch(Trip $trip): ?DemandHistory
     {
-        if (! $trip->route_id || ! $trip->dispatched_at) {
+        $trip->loadMissing('bus');
+
+        if (! $trip->route_id
+            || ! $trip->route_variant_id
+            || ! $trip->dispatched_at
+            || ! $trip->bus
+            || $trip->bus->is_simulated) {
             return null;
         }
 
         return $this->safelyRefreshBucket(
             (int) $trip->route_id,
+            (int) $trip->route_variant_id,
             $trip->dispatched_at,
             'trip_dispatch'
         );
     }
 
-    public function refreshBucket(int $routeId, CarbonInterface|string $at): ?DemandHistory
-    {
-        if (! Route::publicCommuterActiveService()->whereKey($routeId)->exists()) {
+    public function refreshBucket(
+        int $routeId,
+        int $routeVariantId,
+        CarbonInterface|string $at
+    ): ?DemandHistory {
+        return $this->writeBucket(
+            $routeId,
+            $routeVariantId,
+            $at,
+            DemandHistory::SOURCE_ACTUAL_RUNTIME,
+            false,
+            null
+        );
+    }
+
+    public function finalizeBucket(
+        int $routeId,
+        int $routeVariantId,
+        CarbonInterface|string $at,
+        CarbonInterface|string $finalizedAt,
+        bool $trainingEligible = false
+    ): ?DemandHistory {
+        return $this->writeBucket(
+            $routeId,
+            $routeVariantId,
+            $at,
+            DemandHistory::SOURCE_ACTUAL_REBUILD,
+            $trainingEligible,
+            $this->timeSlots->asManila($finalizedAt)->setTimezone('UTC')
+        );
+    }
+
+    private function writeBucket(
+        int $routeId,
+        int $routeVariantId,
+        CarbonInterface|string $at,
+        string $source,
+        bool $trainingEligible,
+        ?CarbonInterface $finalizedAt
+    ): ?DemandHistory {
+        if (! $this->officialVariant($routeId, $routeVariantId)) {
             return null;
         }
 
-        $localAt = $this->asManila($at);
-        $window = $this->timeSlotWindow($localAt);
+        $window = $this->timeSlots->windowAt($at);
 
         if (! $window) {
             return null;
@@ -60,119 +108,109 @@ class DemandHistoryBridgeService
 
         $totalCommuters = CommuterTrip::query()
             ->where('route_id', $routeId)
+            ->where('route_variant_id', $routeVariantId)
             ->where('is_simulated', false)
             ->where('created_at', '>=', $startUtc)
             ->where('created_at', '<', $endUtc)
-            ->count();
+            ->distinct()
+            ->count('session_token');
 
         $busesDispatched = Trip::query()
             ->where('route_id', $routeId)
+            ->where('route_variant_id', $routeVariantId)
             ->whereNotNull('dispatched_at')
             ->where('dispatched_at', '>=', $startUtc)
             ->where('dispatched_at', '<', $endUtc)
+            ->whereHas('bus', fn ($query) => $query->where('is_simulated', false))
             ->distinct()
             ->count('bus_id');
 
         $identity = [
             'route_id' => $routeId,
+            'route_variant_id' => $routeVariantId,
             'date' => $window['date'],
             'time_slot' => $window['label'],
         ];
-
-        $history = DemandHistory::query()
-            ->where('route_id', $routeId)
-            ->whereDate('date', $window['date'])
-            ->where('time_slot', $window['label'])
-            ->orderBy('id')
-            ->first();
 
         $values = [
             'day_of_week' => $window['day_of_week'],
             'total_commuters' => $totalCommuters,
             'buses_dispatched' => $busesDispatched,
+            'source' => $source,
+            'is_training_eligible' => $trainingEligible,
+            'finalized_at' => $finalizedAt,
         ];
 
-        if ($history) {
-            $history->fill($values);
-            $history->save();
+        $history = $this->findBucket($identity);
 
-            return $history->fresh();
+        if (! $history) {
+            try {
+                return DemandHistory::create(array_merge($identity, $values));
+            } catch (UniqueConstraintViolationException $exception) {
+                $history = $this->findBucket($identity);
+
+                if (! $history) {
+                    throw $exception;
+                }
+            }
         }
 
-        return DemandHistory::create(array_merge($identity, $values));
+        if ($source === DemandHistory::SOURCE_ACTUAL_REBUILD
+            && ! $trainingEligible
+            && $history->is_training_eligible) {
+            $values['source'] = $history->source;
+            $values['is_training_eligible'] = true;
+        }
+
+        $history->fill($values);
+        $history->save();
+
+        return $history->fresh();
+    }
+
+    private function findBucket(array $identity): ?DemandHistory
+    {
+        return DemandHistory::query()
+            ->where('route_id', $identity['route_id'])
+            ->where('route_variant_id', $identity['route_variant_id'])
+            ->whereDate('date', $identity['date'])
+            ->where('time_slot', $identity['time_slot'])
+            ->first();
+    }
+
+    private function officialVariant(int $routeId, int $routeVariantId): ?RouteVariant
+    {
+        if (! Route::publicCommuterActiveService()->whereKey($routeId)->exists()) {
+            return null;
+        }
+
+        return RouteVariant::query()
+            ->whereKey($routeVariantId)
+            ->where('route_id', $routeId)
+            ->first();
     }
 
     private function safelyRefreshBucket(
         int $routeId,
+        int $routeVariantId,
         CarbonInterface|string|null $at,
         string $source
     ): ?DemandHistory {
         try {
             return $this->refreshBucket(
                 $routeId,
-                $at ?: CarbonImmutable::now(self::TIMEZONE)
+                $routeVariantId,
+                $at ?: CarbonImmutable::now(DemandHistoryTimeSlotService::TIMEZONE)
             );
         } catch (Throwable $exception) {
             Log::warning('Demand history bridge could not refresh a bucket.', [
                 'route_id' => $routeId,
+                'route_variant_id' => $routeVariantId,
                 'source' => $source,
                 'error' => $exception->getMessage(),
             ]);
 
             return null;
         }
-    }
-
-    private function asManila(CarbonInterface|string $value): CarbonImmutable
-    {
-        if ($value instanceof CarbonInterface) {
-            return CarbonImmutable::instance($value)->setTimezone(self::TIMEZONE);
-        }
-
-        return CarbonImmutable::parse($value, 'UTC')->setTimezone(self::TIMEZONE);
-    }
-
-    private function timeSlotWindow(CarbonImmutable $localAt): ?array
-    {
-        $slots = TimeSlotConfiguration::query()
-            ->where('is_active', true)
-            ->orderBy('order')
-            ->get();
-
-        foreach ($slots as $slot) {
-            $start = $this->atLocalTime($localAt, $slot->start_time);
-            $end = $this->atLocalTime($localAt, $slot->end_time);
-
-            if ($end->lessThanOrEqualTo($start)) {
-                $end = $end->addDay();
-            }
-
-            if ($localAt->greaterThanOrEqualTo($start) && $localAt->lessThan($end)) {
-                return [
-                    'date' => $start->toDateString(),
-                    'day_of_week' => $start->englishDayOfWeek,
-                    'label' => $slot->time_slot_display,
-                    'start' => $start,
-                    'end' => $end,
-                ];
-            }
-        }
-
-        return null;
-    }
-
-    private function atLocalTime(CarbonImmutable $date, mixed $time): CarbonImmutable
-    {
-        $timeString = $time instanceof CarbonInterface
-            ? $time->format('H:i:s')
-            : substr((string) $time, 0, 8);
-
-        [$hour, $minute, $second] = array_pad(
-            array_map('intval', explode(':', $timeString)),
-            3,
-            0
-        );
-
-        return $date->setTime($hour, $minute, $second);
     }
 }

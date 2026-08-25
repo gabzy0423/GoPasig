@@ -14,6 +14,8 @@ class SystemSettingSeeder extends Seeder
     {
         $settings = [
             ['key' => 'default_bus_capacity', 'value' => '45', 'description' => 'Default passenger seating capacity for buses when not specified (default: 45)'],
+            ['key' => 'demand_forecast_lookback_weeks', 'value' => '8', 'description' => 'Same-weekday finalized demand history lookback used by direction-aware forecasts'],
+            ['key' => 'demand_forecast_minimum_samples', 'value' => '3', 'description' => 'Minimum finalized direction/time-slot buckets required before publishing a demand forecast'],
             ['key' => 'bus_capacity_min', 'value' => '10', 'description' => 'Minimum allowed passenger seating capacity for buses (default: 10)'],
             ['key' => 'bus_capacity_max', 'value' => '150', 'description' => 'Maximum allowed passenger seating capacity for buses (default: 150)'],
             ['key' => 'bus_default_driver_name', 'value' => 'Unassigned', 'description' => 'Default driver_name value when a bus has no assigned driver'],

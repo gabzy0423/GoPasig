@@ -159,8 +159,32 @@ class BusinessLogicReviewTest extends TestCase
         $response->assertStatus(422);
         $response->assertJsonFragment([
             'success' => false,
-            'message' => 'Cannot delete bus with historical trip or schedule records. Deactivate the bus instead to preserve operational data.'
+            'message' => 'Cannot delete bus with historical trip records. Deactivate the bus instead to preserve operational data.'
         ]);
+    }
+
+    public function test_legacy_schedule_records_do_not_block_bus_deletion(): void
+    {
+        $this->seed();
+        $admin = User::factory()->create(['role' => 'admin']);
+        $bus = Bus::factory()->create([
+            'plate_number' => 'SCH-ONLY',
+            'status' => 'inactive'
+        ]);
+
+        Schedule::factory()->create([
+            'bus_id' => $bus->id,
+            'status' => Schedule::STATUS_ON_TIME,
+        ]);
+
+        $response = $this->actingAs($admin)->deleteJson("/admin/api/buses/{$bus->id}");
+
+        $response->assertOk();
+        $response->assertJsonFragment([
+            'success' => true,
+            'message' => 'Bus successfully deleted!'
+        ]);
+        $this->assertDatabaseMissing('buses', ['id' => $bus->id]);
     }
 
     public function test_delete_brand_new_bus_succeeds(): void

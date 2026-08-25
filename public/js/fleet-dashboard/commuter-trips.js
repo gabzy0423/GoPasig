@@ -192,7 +192,7 @@ function resetTripsFiltersAction() {
 
 // Setup polling and input events
 let fleetCommuterTripsModuleInitialized = false;
-let fleetCommuterTripsPollingId = null;
+let fleetCommuterTripsPollingRegistration = null;
 
 function initFleetCommuterTripsModule() {
     if (fleetCommuterTripsModuleInitialized || !document.getElementById('trips-search-input')) return;
@@ -212,14 +212,19 @@ function initFleetCommuterTripsModule() {
     route?.addEventListener('change', () => fetchCommuterTrips(1));
     status?.addEventListener('change', () => fetchCommuterTrips(1));
 
-    // Register active polling loop check
-    if (!fleetCommuterTripsPollingId) {
-        fleetCommuterTripsPollingId = setInterval(() => {
+    if (!fleetCommuterTripsPollingRegistration) {
+        const refreshTripsWhenVisible = () => {
             const tripsScreen = document.getElementById('screen-commuter-trips');
             if (tripsScreen && !tripsScreen.classList.contains('hidden')) {
-                fetchCommuterTrips(tripsCurrentPage);
+                return fetchCommuterTrips(tripsCurrentPage);
             }
-        }, 10000); // Poll every 10s when tab active
+
+            return undefined;
+        };
+
+        fleetCommuterTripsPollingRegistration = window.GoPasigFleetModules?.registerPoller
+            ? window.GoPasigFleetModules.registerPoller('commuter-trips', 'trip-data', refreshTripsWhenVisible, 10000)
+            : setInterval(refreshTripsWhenVisible, 10000);
     }
 }
 

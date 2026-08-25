@@ -6,7 +6,7 @@
 (function () {
     const screens = [
         'overview', 'monitor', 'utilization', 'drivers',
-        'routes', 'schedule', 'incidents', 'maintenance',
+        'routes', 'incidents', 'maintenance',
         'analytics', 'dispatch-intelligence', 'commuter-trips',
         'commuter-sessions', 'profile'
     ];
@@ -17,7 +17,6 @@
         utilization: 'Fleet Utilization',
         drivers: 'Driver Performance',
         routes: 'Route Performance',
-        schedule: 'Schedule Compliance',
         incidents: 'Incident Reports',
         maintenance: 'Maintenance',
         analytics: 'Analytics',
@@ -33,7 +32,6 @@
         utilization: 'ti-chart-donut',
         drivers: 'ti-id',
         routes: 'ti-route',
-        schedule: 'ti-calendar-time',
         incidents: 'ti-alert-triangle',
         maintenance: 'ti-tool',
         analytics: 'ti-chart-bar',
@@ -46,13 +44,16 @@
     const loadedScripts = new Map();
     const initializedModules = new Set();
     const loadingModules = new Map();
+    const modulePollers = new Map();
+    let activeScreenName = 'overview';
+    let activationSequence = 0;
 
     function config() {
         return window.GoPasigFleetModuleLoaderConfig || {};
     }
 
     function moduleNeedsEcharts(screenName) {
-        return ['analytics', 'drivers', 'routes', 'schedule', 'dispatch-intelligence'].includes(screenName);
+        return ['analytics', 'drivers', 'routes', 'dispatch-intelligence'].includes(screenName);
     }
 
     function loadScriptOnce(src) {
@@ -70,8 +71,16 @@
             const script = document.createElement('script');
             script.src = src;
             script.defer = true;
-            script.onload = () => resolve();
-            script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+            script.dataset.fleetModuleAsset = 'true';
+            script.onload = () => {
+                script.dataset.loaded = 'true';
+                resolve();
+            };
+            script.onerror = () => {
+                loadedScripts.delete(src);
+                script.remove();
+                reject(new Error(`Failed to load script: ${src}`));
+            };
             document.body.appendChild(script);
         });
         loadedScripts.set(src, promise);
@@ -89,17 +98,41 @@
         });
     }
 
-    function setModuleLoading(screenName, isLoading) {
-        const placeholder = document.querySelector(`[data-fleet-module-placeholder="${screenName}"]`);
-        if (!placeholder) return;
-        const icon = placeholder.querySelector('.ti-loader-2');
-        if (icon) icon.classList.toggle('animate-spin', isLoading);
-        placeholder.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+    function moduleContainer(screenName) {
+        return document.getElementById(`screen-${screenName}`);
+    }
+
+    function setModuleLoading(screenName) {
+        const placeholder = moduleContainer(screenName);
+        if (!placeholder || placeholder.dataset.loaded === 'true') return;
+
+        placeholder.dataset.loaded = 'false';
+        placeholder.dataset.loadState = 'loading';
+        placeholder.setAttribute('data-fleet-module-placeholder', screenName);
+        placeholder.setAttribute('aria-busy', 'true');
+        placeholder.setAttribute('aria-live', 'polite');
+        placeholder.innerHTML = `
+            <div class="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/70 text-center">
+                <div class="space-y-3">
+                    <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#003F87] shadow-sm">
+                        <i class="ti ti-loader-2 animate-spin text-lg"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm font-extrabold text-slate-800">Loading ${screenLabels[screenName] || 'module'}</p>
+                        <p class="text-xs font-semibold text-slate-500">Fetching the latest operational data...</p>
+                    </div>
+                </div>
+            </div>`;
     }
 
     function setModuleError(screenName, message) {
-        const placeholder = document.querySelector(`[data-fleet-module-placeholder="${screenName}"]`);
+        const placeholder = moduleContainer(screenName);
         if (!placeholder) return;
+
+        placeholder.dataset.loaded = 'false';
+        placeholder.dataset.loadState = 'error';
+        placeholder.setAttribute('data-fleet-module-placeholder', screenName);
+        placeholder.setAttribute('aria-busy', 'false');
         placeholder.innerHTML = `
             <div class="flex min-h-[320px] items-center justify-center rounded-xl border border-red-100 bg-red-50/70 text-center">
                 <div class="space-y-3">
@@ -108,10 +141,16 @@
                     </div>
                     <div>
                         <p class="text-sm font-extrabold text-slate-800">Unable to load ${screenLabels[screenName] || 'module'}</p>
-                        <p class="text-xs font-semibold text-slate-500">${message}</p>
+                        <p class="fleet-module-error-message text-xs font-semibold text-slate-500"></p>
                     </div>
+                    <button type="button" data-fleet-module-retry="${screenName}" class="inline-flex h-9 items-center gap-2 rounded-lg border border-red-200 bg-white px-3 text-xs font-extrabold text-red-700 shadow-sm transition hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-200">
+                        <i class="ti ti-refresh text-sm"></i>
+                        Retry
+                    </button>
                 </div>
             </div>`;
+        const messageElement = placeholder.querySelector('.fleet-module-error-message');
+        if (messageElement) messageElement.textContent = message;
     }
 
     async function fetchModuleFragment(screenName) {
@@ -122,7 +161,7 @@
         if (loadingModules.has(screenName)) return loadingModules.get(screenName);
 
         const loadPromise = (async () => {
-            setModuleLoading(screenName, true);
+            setModuleLoading(screenName);
             const url = new URL(config().fragmentUrl || window.location.pathname, window.location.origin);
             url.searchParams.set('tab', screenName);
             url.searchParams.set('fragment', '1');
@@ -142,22 +181,37 @@
             template.innerHTML = payload.html.trim();
 
             const incoming = template.content.firstElementChild;
-            const placeholder = document.getElementById(`screen-${screenName}`);
+            const placeholder = moduleContainer(screenName);
             if (!incoming || !placeholder) throw new Error('Module container missing');
 
-            incoming.dataset.loaded = 'true';
+            incoming.dataset.loaded = 'loading';
+            incoming.dataset.loadState = 'loading';
             incoming.setAttribute('data-fleet-module', screenName);
+            incoming.setAttribute('data-fleet-module-placeholder', screenName);
+            incoming.setAttribute('aria-busy', 'true');
             placeholder.replaceWith(incoming);
+
+            if (activeScreenName === screenName) {
+                incoming.classList.remove('hidden');
+                incoming.style.display = '';
+            }
+
             executeInlineScripts(incoming);
 
             await loadModuleAssets(screenName);
             initializeModuleOnce(screenName);
+
+            incoming.dataset.loaded = 'true';
+            incoming.dataset.loadState = 'ready';
+            incoming.removeAttribute('data-fleet-module-placeholder');
+            incoming.setAttribute('aria-busy', 'false');
+
+            return true;
         })().catch(error => {
             console.error(`Failed to load Fleet module ${screenName}:`, error);
             setModuleError(screenName, error.message || 'Please try again.');
             throw error;
         }).finally(() => {
-            setModuleLoading(screenName, false);
             loadingModules.delete(screenName);
         });
 
@@ -178,13 +232,11 @@
 
     function initializeModuleOnce(screenName) {
         if (initializedModules.has(screenName)) return;
-        initializedModules.add(screenName);
 
         const initializers = {
             analytics: () => window.initFleetAnalyticsModule?.(),
             drivers: () => window.initFleetPerformanceModule?.('drivers'),
             routes: () => window.initFleetPerformanceModule?.('routes'),
-            schedule: () => window.initFleetScheduleModule?.(),
             incidents: () => window.initFleetIncidentsModule?.(),
             maintenance: () => window.initFleetMaintenanceModule?.(),
             'dispatch-intelligence': () => window.initFleetDispatchModule?.(),
@@ -194,6 +246,71 @@
         };
 
         initializers[screenName]?.();
+        initializedModules.add(screenName);
+    }
+
+    function runModulePoller(poller) {
+        if (poller.inFlight || document.hidden || activeScreenName !== poller.screenName) return;
+
+        poller.inFlight = true;
+        Promise.resolve()
+            .then(() => poller.callback())
+            .catch(error => console.error(`Fleet poller ${poller.key} failed:`, error))
+            .finally(() => {
+                poller.inFlight = false;
+            });
+    }
+
+    function startModulePoller(poller, refreshNow = false) {
+        if (poller.intervalId || document.hidden || activeScreenName !== poller.screenName) return;
+
+        if (refreshNow && poller.hasStarted) runModulePoller(poller);
+        poller.intervalId = window.setInterval(() => runModulePoller(poller), poller.delay);
+        poller.hasStarted = true;
+    }
+
+    function stopModulePoller(poller) {
+        if (!poller.intervalId) return;
+        window.clearInterval(poller.intervalId);
+        poller.intervalId = null;
+    }
+
+    function syncModulePollers(refreshActive = false) {
+        modulePollers.forEach(poller => {
+            if (!document.hidden && poller.screenName === activeScreenName) {
+                startModulePoller(poller, refreshActive);
+            } else {
+                stopModulePoller(poller);
+            }
+        });
+    }
+
+    function registerModulePoller(screenName, pollerName, callback, delay) {
+        if (!screens.includes(screenName) || typeof callback !== 'function') return () => {};
+
+        const key = `${screenName}:${pollerName}`;
+        const existing = modulePollers.get(key);
+        if (existing) stopModulePoller(existing);
+
+        const poller = {
+            key,
+            screenName,
+            callback,
+            delay: Math.max(Number(delay) || 10000, 1000),
+            intervalId: null,
+            inFlight: false,
+            hasStarted: false,
+        };
+
+        modulePollers.set(key, poller);
+        startModulePoller(poller, false);
+
+        return () => {
+            const current = modulePollers.get(key);
+            if (current !== poller) return;
+            stopModulePoller(poller);
+            modulePollers.delete(key);
+        };
     }
 
     function updateNavigationState(screenName) {
@@ -227,6 +344,8 @@
     }
 
     function switchScreen(screenName) {
+        const previousScreen = activeScreenName;
+
         screens.forEach(screen => {
             const el = document.getElementById(`screen-${screen}`);
             if (el) {
@@ -235,6 +354,7 @@
             }
         });
 
+        activeScreenName = screenName;
         updateNavigationState(screenName);
 
         const targetScreen = document.getElementById(`screen-${screenName}`);
@@ -242,16 +362,31 @@
             targetScreen.classList.remove('hidden');
             targetScreen.style.display = screenName === 'overview' ? 'block' : '';
             setTimeout(() => window.dispatchEvent(new Event('resize')), 100);
+            if (previousScreen !== screenName) {
+                window.dispatchEvent(new CustomEvent('screen-hidden', { detail: { screen: previousScreen } }));
+            }
             window.dispatchEvent(new CustomEvent('screen-shown', { detail: { screen: screenName } }));
         }
+
+        syncModulePollers(previousScreen !== screenName);
     }
 
     async function activateFleetModule(screenName, pushState = true) {
         if (!screens.includes(screenName)) screenName = 'overview';
+        const activationId = ++activationSequence;
+
+        switchScreen(screenName);
 
         try {
             await fetchModuleFragment(screenName);
-            switchScreen(screenName);
+            if (activationId !== activationSequence) return;
+
+            const targetScreen = moduleContainer(screenName);
+            if (targetScreen) {
+                targetScreen.classList.remove('hidden');
+                targetScreen.style.display = screenName === 'overview' ? 'block' : '';
+            }
+
             if (pushState) {
                 const url = new URL(window.location.href);
                 if (screenName === 'overview') url.searchParams.delete('tab');
@@ -260,7 +395,12 @@
                 window.history.pushState({ fleetTab: screenName }, '', url.toString());
             }
         } catch (error) {
-            switchScreen(screenName);
+            if (activationId !== activationSequence) return;
+            const targetScreen = moduleContainer(screenName);
+            if (targetScreen) {
+                targetScreen.classList.remove('hidden');
+                targetScreen.style.display = '';
+            }
         }
     }
 
@@ -269,8 +409,11 @@
     window.GoPasigFleetModules = {
         activate: activateFleetModule,
         initialize: initializeModuleOnce,
+        registerPoller: registerModulePoller,
+        activeScreen: () => activeScreenName,
         loadedScripts,
         initializedModules,
+        modulePollers,
     };
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -280,6 +423,18 @@
                 event.preventDefault();
                 activateFleetModule(screenName);
             });
+        });
+
+        document.addEventListener('click', event => {
+            const retryButton = event.target.closest('[data-fleet-module-retry]');
+            if (!retryButton) return;
+
+            const screenName = retryButton.getAttribute('data-fleet-module-retry');
+            if (!screens.includes(screenName)) return;
+
+            event.preventDefault();
+            const currentTab = new URLSearchParams(window.location.search).get('tab') || 'overview';
+            activateFleetModule(screenName, currentTab !== screenName);
         });
 
         window.addEventListener('popstate', () => {
@@ -298,5 +453,13 @@
         } else {
             activateFleetModule(activeTab, false);
         }
+    });
+
+    document.addEventListener('visibilitychange', () => {
+        syncModulePollers(!document.hidden);
+    });
+
+    window.addEventListener('pagehide', () => {
+        modulePollers.forEach(stopModulePoller);
     });
 }());

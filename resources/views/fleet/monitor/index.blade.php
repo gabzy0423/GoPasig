@@ -200,6 +200,19 @@
                     <button onclick="filterByRoute('{{ $route['id'] }}')" id="chip-route-{{ $route['id'] }}" class="route-chip shrink-0 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-slate-500 transition-colors hover:bg-white/80 hover:text-[#001F44] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#003F87]/20">{{ $route['name'] }}</button>
                     @endforeach
                 </div>
+
+                <div id="monitor-direction-filters" class="flex shrink-0 items-center gap-3 rounded-xl border border-slate-200/80 bg-white/90 px-2.5 py-2 text-[11px] font-semibold text-slate-600 shadow-sm" aria-label="Route direction visibility">
+                    <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap" for="monitor-direction-outbound">
+                        <input id="monitor-direction-outbound" type="checkbox" checked onchange="filterRouteDirection('outbound', this.checked)" class="h-3.5 w-3.5 accent-[#003F87]">
+                        <span class="w-4 border-t-2 border-[#003F87]"></span>
+                        <span>OUT solid</span>
+                    </label>
+                    <label class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap" for="monitor-direction-inbound">
+                        <input id="monitor-direction-inbound" type="checkbox" checked onchange="filterRouteDirection('inbound', this.checked)" class="h-3.5 w-3.5 accent-[#003F87]">
+                        <span class="w-4 border-t-2 border-dashed border-[#003F87]"></span>
+                        <span>IN dashed</span>
+                    </label>
+                </div>
             </div>
 
             <!-- Status filter -->
@@ -356,8 +369,6 @@
             upcomingStop: 'None',
             currentFence: 'Outside Geofence',
             dwellTimeSeconds: 0,
-            routeAdherence: 'On Route',
-            corridorDistance: 0,
             completedStops: 0,
             remainingStops: 0,
             completionPercentage: 0,
@@ -379,18 +390,8 @@
         },
         @endforeach
     ];
-
-
-    const routeVariantRouteLookup = new Map();
-    @foreach($routes as $route)
-        @foreach(($route['map_variant_geometries'] ?? []) as $variantGeometry)
-            routeVariantRouteLookup.set('{{ $variantGeometry['route_variant_id'] }}', '{{ $route['id'] }}');
-        @endforeach
-    @endforeach
-
     const MONITOR_DEFAULT_CENTER = [14.5670, 121.0600];
     const MONITOR_DEFAULT_ZOOM = 13.5;
-    const MONITOR_ROUTE_CONTROL_GAP = 12;
 
     let map;
     let markersMap = {}; // mapping plate -> Leaflet marker
@@ -404,39 +405,6 @@
     let lightTile, satelliteTile;
     let activeLayer = 'light';
     let waitingForMonitorVisibility = false;
-    let monitorRouteControlResizeBound = false;
-
-    function alignFleetMonitorOfficialRoutesControl() {
-        const mapCanvas = document.getElementById('map');
-        const toolbar = document.getElementById('fleet-monitor-toolbar');
-        const mapControls = document.getElementById('fleet-monitor-map-controls');
-        const control = mapCanvas?.querySelector('.gopasig-route-map-ux');
-        if (!control) return;
-
-        const usesFloatingToolbar = window.matchMedia('(min-width: 1024px)').matches;
-        if (!usesFloatingToolbar) {
-            control.style.left = '12px';
-            control.style.top = '12px';
-            mapControls?.style.removeProperty('top');
-            return;
-        }
-
-        const controlTop = toolbar?.offsetHeight
-            ? toolbar.offsetTop + toolbar.offsetHeight + MONITOR_ROUTE_CONTROL_GAP
-            : MONITOR_ROUTE_CONTROL_GAP;
-
-        control.style.left = '16px';
-        control.style.top = `${controlTop}px`;
-        if (mapControls) {
-            mapControls.style.top = `${controlTop + control.offsetHeight + MONITOR_ROUTE_CONTROL_GAP}px`;
-        }
-    }
-
-    function bindFleetMonitorOfficialRoutesAlignment() {
-        if (monitorRouteControlResizeBound) return;
-        window.addEventListener('resize', alignFleetMonitorOfficialRoutesControl);
-        monitorRouteControlResizeBound = true;
-    }
 
     // Real-time GPS Position Polling
     // The Blade template populates `buses[]` once at page load from the database.
@@ -487,9 +455,7 @@
         }
 
         if (window.GoPasigRouteMapUX) {
-            window.GoPasigRouteMapUX.mount({ map: map, routes: @json($routes), compact: false, fitOnFirstRender: true });
-            alignFleetMonitorOfficialRoutesControl();
-            bindFleetMonitorOfficialRoutesAlignment();
+            window.GoPasigRouteMapUX.mount({ map: map, routes: @json($routes), compact: false, fitOnFirstRender: true, showControl: false });
         }
 
         // Draw Bus Markers
@@ -512,18 +478,22 @@
         // Trigger initial telemetry and overlay load immediately
         pollBusGpsPositions();
 
-        // Start polling interval
-        setInterval(pollBusGpsPositions, GPS_POLL_INTERVAL_MS);
-
-        // Start ticking display updates for GPS age every 5s
-        setInterval(() => {
+        const refreshGpsAgeLabels = () => {
             document.querySelectorAll('.last-gps-time').forEach(el => {
                 const gpsAt = el.getAttribute('data-gps-at');
                 if (gpsAt) {
                     el.innerText = formatTimeSince(gpsAt);
                 }
             });
-        }, 5000);
+        };
+
+        if (window.GoPasigFleetModules?.registerPoller) {
+            window.GoPasigFleetModules.registerPoller('monitor', 'gps-positions', pollBusGpsPositions, GPS_POLL_INTERVAL_MS);
+            window.GoPasigFleetModules.registerPoller('monitor', 'gps-age-labels', refreshGpsAgeLabels, 5000);
+        } else {
+            setInterval(pollBusGpsPositions, GPS_POLL_INTERVAL_MS);
+            setInterval(refreshGpsAgeLabels, 5000);
+        }
     }
     function monitorMapHasVisibleSize() {
         const mapElement = document.getElementById('map');
@@ -533,7 +503,6 @@
     function startMonitorMapWhenVisible() {
         if (map) {
             map.invalidateSize();
-            alignFleetMonitorOfficialRoutesControl();
             return;
         }
 
@@ -607,13 +576,6 @@
         let iconName = 'bus';
         if (bus.status === 'breakdown') iconName = 'alert-circle';
         
-        let adherenceBadge = '';
-        if (bus.routeAdherence === 'On Route') {
-            adherenceBadge = `<span class="bg-[#EAF3DE] text-[#3B6D11] px-1.5 py-0.5 rounded text-[10px] font-semibold">On Route</span>`;
-        } else {
-            adherenceBadge = `<span class="bg-[#FCEBEB] text-[#E24B4A] px-1.5 py-0.5 rounded text-[10px] font-semibold">${bus.routeAdherence}</span>`;
-        }
-
         let dwellTimerHtml = '';
         if (bus.dwellTimeSeconds && bus.dwellTimeSeconds > 0) {
             let minutes = Math.floor(bus.dwellTimeSeconds / 60);
@@ -659,10 +621,6 @@
                         <span>Fence: <strong>${bus.currentFence || 'Open Road'}</strong></span>
                     </div>
                     ${dwellTimerHtml}
-                    <div class="flex items-center gap-2">
-                        <i class="ti ti-compass text-[14px] text-blue-600"></i>
-                        <span>Adherence: ${adherenceBadge}</span>
-                    </div>
                     <div class="flex items-center gap-1.5 text-[11px]">
                         <i class="ti ti-satellite text-[13px] text-slate-400"></i>
                         <span class="rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${gpsQualityChipClass(bus.gpsQualityState)}">${gpsQualityLabel(bus.gpsQualityState)}</span>
@@ -828,21 +786,12 @@
                 `;
             }
 
-            if (bus.routeAdherence && bus.routeAdherence !== 'On Route') {
-                spatialStatusHtml += `
-                    <div class="flex items-center gap-1.5 text-[11px] font-bold text-red-500 mt-1 select-none">
-                        <i class="ti ti-alert-triangle text-[12px]"></i>
-                        <span>${bus.routeAdherence} (${bus.corridorDistance || 0}m off)</span>
-                    </div>
-                `;
-            } else {
-                spatialStatusHtml += `
-                    <div class="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5 select-none">
-                        <i class="ti ti-compass text-[12px]"></i>
-                        <span>Near: ${bus.nearestStop || 'None'}</span>
-                    </div>
-                `;
-            }
+            spatialStatusHtml += `
+                <div class="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5 select-none">
+                    <i class="ti ti-map-pin text-[12px]"></i>
+                    <span>Near: ${bus.nearestStop || 'None'}</span>
+                </div>
+            `;
 
             let detailsHtml = '';
             if (currentSelectedBus === bus.plate) {
@@ -850,8 +799,6 @@
                 const upcomingStop = bus.upcomingStop || 'None';
                 const nearestStop = bus.nearestStop || 'None';
                 const currentFence = bus.currentFence || 'Outside Geofence';
-                const routeStatus = bus.routeAdherence || 'On Route';
-                const deviationSeverity = (bus.routeAdherence && bus.routeAdherence !== 'On Route') ? bus.routeAdherence.replace(' Deviation', '') : 'None';
                 const completedStops = bus.completedStops ?? 0;
                 const remainingStops = bus.remainingStops ?? 0;
                 const completionPercentage = bus.completionPercentage ?? 0;
@@ -876,14 +823,6 @@
                             <div>
                                 <span class="text-slate-400 block font-medium">Current Geofence</span>
                                 <strong class="text-purple-600 text-[12px]">${currentFence}</strong>
-                            </div>
-                            <div>
-                                <span class="text-slate-400 block font-medium">Route Status</span>
-                                <strong class="text-[12px] ${routeStatus === 'On Route' ? 'text-green-600' : 'text-red-500'}">${routeStatus}</strong>
-                            </div>
-                            <div>
-                                <span class="text-slate-400 block font-medium">Deviation Severity</span>
-                                <strong class="text-[12px] ${deviationSeverity === 'None' ? 'text-slate-600' : 'text-red-500'}">${deviationSeverity}</strong>
                             </div>
                             <div>
                                 <span class="text-slate-400 block font-medium">Completed / Remaining</span>
@@ -1000,7 +939,6 @@
             window.GoPasigRouteMapUX.setRouteFilter(map, route);
         }
 
-        updateCorridorVisibility();
         renderBusMarkers();
         renderVehicleList();
     }
@@ -1009,6 +947,11 @@
         currentStatusFilter = status;
         renderBusMarkers();
         renderVehicleList();
+    }
+
+    function filterRouteDirection(direction, visible) {
+        if (!window.GoPasigRouteMapUX || !map) return;
+        window.GoPasigRouteMapUX.setDirectionVisibility(map, direction, visible);
     }
 
     function searchVehicles(val) {
@@ -1076,21 +1019,17 @@
     }
 
     let geofenceLayers = [];
-    let corridorLayers = [];
     let overlaysLoaded = false;
 
-    function loadSpatialOverlays(geofences, variantCorridors) {
+    function loadGeofenceOverlays(geofences) {
         if (!map) return;
         if (overlaysLoaded) return;
-        if (!geofences || !variantCorridors) return;
+        if (!geofences) return;
         overlaysLoaded = true;
 
         geofenceLayers.forEach(l => map.removeLayer(l));
         geofenceLayers = [];
-        corridorLayers.forEach(item => item.layers.forEach(l => map.removeLayer(l)));
-        corridorLayers = [];
 
-        // 1. Draw Geofences
         geofences.forEach(gf => {
             let layer;
             if (gf.geometry && gf.geometry.type === 'Polygon') {
@@ -1114,50 +1053,6 @@
             layer.bindTooltip(`${gf.name} (${gf.type})`, { sticky: true });
             geofenceLayers.push(layer);
         });
-
-        // 2. Draw RouteVariant Corridors
-        variantCorridors.forEach(corr => {
-            if (corr.geometry && corr.geometry.type === 'LineString') {
-                const coordinateOrder = corr.geometry.coordinate_order || 'lat_lng';
-                let latLngs = corr.geometry.coordinates.map(coord => coordinateOrder === 'lng_lat' ? [coord[1], coord[0]] : [coord[0], coord[1]]);
-                const bufferWidth = corr.buffer_width || 25;
-                const routeId = routeVariantRouteLookup.get(String(corr.route_variant_id));
-
-                let bufferLayer = L.polyline(latLngs, {
-                    color: '#00cc88',
-                    weight: bufferWidth * 2,
-                    opacity: 0.12,
-                    lineCap: 'round',
-                    lineJoin: 'round'
-                });
-
-                let centerLayer = L.polyline(latLngs, {
-                    color: '#00cc88',
-                    weight: 1.5,
-                    opacity: 0.6,
-                    dashArray: '5, 5'
-                });
-
-                corridorLayers.push({ routeId, layers: [bufferLayer, centerLayer] });
-            }
-        });
-
-        updateCorridorVisibility();
-    }
-
-    function updateCorridorVisibility() {
-        if (!map) return;
-
-        corridorLayers.forEach(item => {
-            const visible = currentRouteFilter === 'all' || item.routeId === String(currentRouteFilter);
-            item.layers.forEach(layer => {
-                if (visible && !map.hasLayer(layer)) {
-                    layer.addTo(map);
-                } else if (!visible && map.hasLayer(layer)) {
-                    map.removeLayer(layer);
-                }
-            });
-        });
     }
 
     async function pollBusGpsPositions() {
@@ -1167,9 +1062,8 @@
             if (!response.ok) return;
             const data = await response.json();
             
-            // Draw overlays once
-            if (data.geofences && data.variant_corridors) {
-                loadSpatialOverlays(data.geofences, data.variant_corridors);
+            if (data.geofences) {
+                loadGeofenceOverlays(data.geofences);
             }
 
             if (!data.buses || !Array.isArray(data.buses)) return;
@@ -1211,8 +1105,6 @@
                     buses[idx].upcomingStop     = fresh.upcoming_stop ?? 'None';
                     buses[idx].currentFence     = fresh.current_fence ?? 'Outside Geofence';
                     buses[idx].dwellTimeSeconds = fresh.dwell_time_seconds ?? 0;
-                    buses[idx].routeAdherence   = fresh.route_adherence ?? 'On Route';
-                    buses[idx].corridorDistance = fresh.corridor_distance ?? 0;
                     buses[idx].tripId           = fresh.trip_id ?? null;
                     buses[idx].coordinateSource = fresh.coordinate_source ?? 'bus_fallback';
                     buses[idx].hasLiveTelemetry = !!fresh.has_live_telemetry;

@@ -16,7 +16,7 @@
                 </div>
                 <div class="flex items-center gap-2 mt-1 select-none">
                     <span id="active-alerts-count" class="inline-flex rounded-full bg-[#FCEBEB] px-2.5 py-0.5 text-[9px] font-bold text-[#A32D2D] uppercase tracking-wider">0 active alerts</span>
-                    <span class="text-[10px] text-slate-400 font-semibold">Last broadcast: 14 min ago</span>
+                    <span class="am-last-broadcast text-[10px] text-slate-400 font-semibold">Last broadcast: None today</span>
                 </div>
             </div>
             <div class="flex items-center gap-2">
@@ -191,7 +191,7 @@
                         <div class="am-label-row">
                             <label class="am-label" for="composer-title">Alert title</label>
                         </div>
-                        <input type="text" id="composer-title" class="am-input" placeholder="e.g. Route A delay at Ortigas Ave" maxlength="80" oninput="handleComposerTitleInput(event)">
+                        <input type="text" id="composer-title" class="am-input" placeholder="e.g. Route 2 service advisory" maxlength="80" oninput="handleComposerTitleInput(event)">
                         <div class="am-char-counter-row">
                             <span id="composer-title-counter" class="am-char-counter">0 / 80</span>
                         </div>
@@ -303,11 +303,11 @@
                 </div>
                 <div class="am-confirm-row">
                     <span class="am-confirm-lbl">Affects</span>
-                    <span class="am-confirm-val" id="confirm-sum-routes">Route A</span>
+                    <span class="am-confirm-val" id="confirm-sum-routes">Select official route</span>
                 </div>
                 <div class="am-confirm-row">
                     <span class="am-confirm-lbl">Notifying</span>
-                    <span class="am-confirm-val" id="confirm-sum-notifying">847 commuters</span>
+                    <span class="am-confirm-val" id="confirm-sum-notifying">0 commuters + 0 drivers</span>
                 </div>
                 <div class="am-confirm-row" style="border-bottom:none;">
                     <span class="am-confirm-lbl">Route suspension</span>
@@ -340,9 +340,9 @@
             </div>
 
             <div class="am-receipt-stats-row mb-6 justify-center flex gap-3" id="receipt-stats-row">
-                <span class="am-route-pill-display selected-all" id="receipt-stat-commuters">847 commuters notified</span>
-                <span class="am-route-pill-display selected-b" id="receipt-stat-drivers">12 drivers notified</span>
-                <span class="am-route-pill-display selected-a" id="receipt-stat-suspended" style="display:none;">Route A suspended</span>
+                <span class="am-route-pill-display selected-all" id="receipt-stat-commuters">0 commuters notified</span>
+                <span class="am-route-pill-display selected-b" id="receipt-stat-drivers">0 drivers notified</span>
+                <span class="am-route-pill-display selected-a" id="receipt-stat-suspended" style="display:none;">Selected route suspended</span>
             </div>
 
             <div class="am-confirm-btns mt-6">

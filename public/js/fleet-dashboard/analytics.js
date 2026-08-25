@@ -19,7 +19,7 @@ function initAnalyticsCharts() {
             tooltip: {
                 trigger: 'axis',
                 axisPointer: { type: 'shadow' },
-                formatter: '{b}: {c} passengers'
+                formatter: '{b}: {c} recorded boarded'
             },
             grid: {
                 left: '3%',
@@ -41,7 +41,7 @@ function initAnalyticsCharts() {
                 axisLabel: { fontFamily: 'Plus Jakarta Sans', color: '#64748b', fontSize: 11 }
             },
             series: [{
-                name: 'Passengers',
+                name: 'Recorded boarded',
                 type: 'bar',
                 data: [],
                 barWidth: '60%',
@@ -104,7 +104,7 @@ function initAnalyticsCharts() {
 function updateAnalyticsChartsData(routeSummary, hourlyRidership) {
     if (routeSummaryChart && routeSummary) {
         const sortedData = [...routeSummary].reverse();
-        const names = sortedData.map(d => d.route_name.split(' â€” ')[0]);
+        const names = sortedData.map(d => d.route_name);
         const values = sortedData.map(d => ({
             value: d.total_passengers,
             itemStyle: { color: d.color || '#378ADD' }
@@ -130,7 +130,7 @@ function updateAnalyticsChartsData(routeSummary, hourlyRidership) {
         let totalPassengers = 0;
 
         hourlyRidership.forEach(item => {
-            const routeName = item.route.split(' â€” ')[0];
+            const routeName = item.route;
             if (!routesData[routeName]) {
                 routesData[routeName] = {
                     name: routeName,
@@ -250,6 +250,15 @@ function setupTableSortingObserver() {
     window.tableObserver.observe(target, { childList: true });
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // Fetch and render analytics data
 async function fetchAnalyticsData() {
     const startDate = document.getElementById('analytics-start-date')?.value;
@@ -271,7 +280,7 @@ async function fetchAnalyticsData() {
         document.getElementById('metric-avg-per-trip').innerText = data.metricSummary.avg_per_trip;
         document.getElementById('metric-utilization-rate').innerText = data.metricSummary.utilization_rate;
         document.getElementById('metric-busiest-route').innerText = data.metricSummary.busiest_route;
-        document.getElementById('metric-busiest-route-count').innerText = `(${data.metricSummary.busiest_route_count} pax)`;
+        document.getElementById('metric-busiest-route-count').innerText = `(${data.metricSummary.busiest_route_count} boarded)`;
         document.getElementById('metric-peak-hour').innerText = data.metricSummary.peak_hour;
 
         // 2. Re-plot Charts
@@ -306,11 +315,13 @@ async function fetchAnalyticsData() {
                     }
 
                     let statusBg = 'bg-[#FCEBEB] text-[#A32D2D]';
-                    if (row.status === 'Active') {
+                    if (row.status === 'Operating') {
+                        statusBg = 'bg-[#E6F1FB] text-[#0C447C]';
+                    } else if (row.status === 'Ready') {
                         statusBg = 'bg-[#E1F5EE] text-[#0F6E56]';
-                    } else if (row.status === 'Idle') {
+                    } else if (row.status === 'Standby' || row.status === 'Inactive') {
                         statusBg = 'bg-[#F1EFE8] text-[#5F5E5A]';
-                    } else if (row.status === 'Delayed') {
+                    } else if (row.status === 'Breakdown') {
                         statusBg = 'bg-[#FAEEDA] text-[#854F0B]';
                     }
 
@@ -320,28 +331,30 @@ async function fetchAnalyticsData() {
                     tr.setAttribute('data-assigned_route', row.assigned_route);
                     tr.setAttribute('data-trips_completed', row.trips_completed);
                     tr.setAttribute('data-total_passengers', row.total_passengers);
+                    tr.setAttribute('data-peak_load', row.peak_load);
                     tr.setAttribute('data-capacity', row.capacity);
                     tr.setAttribute('data-utilization_rate', row.utilization_rate);
                     tr.setAttribute('data-status', row.status);
 
                     tr.innerHTML = `
-                        <td class="py-3 px-4 font-mono-custom text-[#001F44] font-semibold">${row.bus_id}</td>
+                        <td class="py-3 px-4 font-mono-custom text-[#001F44] font-semibold">${escapeHtml(row.bus_id)}</td>
                         <td class="py-3 px-4">
                             <span class="flex items-center gap-2">
-                                <span class="w-2.5 h-2.5 rounded-full inline-block" style="background-color: ${row.route_color}"></span>
-                                <span class="font-medium text-[#001F44]">${row.assigned_route}</span>
+                                <span class="w-2.5 h-2.5 rounded-full inline-block" style="background-color: ${escapeHtml(row.route_color)}"></span>
+                                <span class="font-medium text-[#001F44]">${escapeHtml(row.assigned_route)}</span>
                             </span>
                         </td>
                         <td class="py-3 px-4 text-center font-mono-custom text-slate-700">${row.trips_completed}</td>
                         <td class="py-3 px-4 text-center font-mono-custom text-slate-700">${Number(row.total_passengers).toLocaleString()}</td>
+                        <td class="py-3 px-4 text-center font-mono-custom text-slate-700">${row.peak_load}</td>
                         <td class="py-3 px-4 text-center font-mono-custom text-slate-700">${row.capacity}</td>
                         <td class="py-3 px-4 text-center">
                             <div class="inline-flex flex-col items-center gap-1.5 w-full">
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide {{ $utilBg }}">${utilBg.includes('A32D2D') ? 'High load' : (utilBg.includes('854F0B') ? 'Moderate' : 'Normal')} (${row.utilization_rate}%)</span>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${utilBg}">${utilLabel} (${row.utilization_rate}%)</span>
                             </div>
                         </td>
                         <td class="py-3 px-4">
-                            <span class="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide ${statusBg}">${row.status}</span>
+                            <span class="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide ${statusBg}">${escapeHtml(row.status)}</span>
                         </td>
                     `;
                     tbody.appendChild(tr);
@@ -358,48 +371,8 @@ async function fetchAnalyticsData() {
             recContainer.innerHTML = '';
             recUpdatedTime.innerText = `Last updated: ${data.lastUpdatedTime}`;
 
-            if (data.dispatchRecommendations.length === 0) {
-                recContainer.classList.add('hidden');
-                recEmpty.classList.remove('hidden');
-            } else {
-                recContainer.classList.remove('hidden');
-                recEmpty.classList.add('hidden');
-
-                data.dispatchRecommendations.forEach(rec => {
-                    let badgeStyle = 'bg-[#FAEEDA] text-[#854F0B]';
-                    if (rec.status === 'Underserved') {
-                        badgeStyle = 'bg-[#FCEBEB] text-[#A32D2D]';
-                    } else if (rec.status === 'Adequate') {
-                        badgeStyle = 'bg-[#EAF3DE] text-[#3B6D11]';
-                    }
-
-                    const div = document.createElement('div');
-                    div.className = 'bg-white border-[0.5px] border-slate-200 rounded-md p-4 shadow-sm flex flex-col justify-between';
-                    div.innerHTML = `
-                        <div>
-                            <div class="flex items-center justify-between mb-3 border-b border-slate-50 pb-2">
-                                <span class="text-[14px] font-semibold text-[#001F44]">${rec.route}</span>
-                                <span class="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${badgeStyle}">${rec.status}</span>
-                            </div>
-
-                            <div class="space-y-2 mt-2">
-                                <div>
-                                    <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Recommended Dispatch</span>
-                                    <span class="text-[20px] font-semibold text-[#003F87]">${rec.recommended_dispatch}</span>
-                                </div>
-                                <div>
-                                    <span class="text-[11px] text-slate-500 font-medium block">Peak window: <strong>${rec.peak_window}</strong></span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="mt-4 pt-3 border-t border-slate-100">
-                            <p class="text-[12px] text-slate-500 italic leading-relaxed">"${rec.insight_blurb}"</p>
-                        </div>
-                    `;
-                    recContainer.appendChild(div);
-                });
-            }
+            recContainer.classList.add('hidden');
+            recEmpty.classList.remove('hidden');
         }
     } catch (error) {
         console.error('Failed to fetch analytics data on change:', error);
@@ -466,7 +439,7 @@ function initFleetAnalyticsModule() {
                 await fetchAnalyticsData();
 
                 if (btnIcon) btnIcon.classList.remove('animate-spin');
-                showAnalyticsAlert("Recommendations updated based on latest ridership data!");
+                showAnalyticsAlert("Analytics refreshed. Dispatch recommendations remain on standby.");
             });
         }
 

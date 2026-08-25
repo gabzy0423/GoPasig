@@ -43,7 +43,13 @@
     </div>
 
     <div class="flex items-center gap-4">
-        <button id="layout-export-btn" class="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
+        <button id="layout-export-btn"
+            type="button"
+            disabled
+            aria-disabled="true"
+            data-export-enabled="false"
+            title="Use the report section export controls when data is available."
+            class="flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-400 transition-colors">
             <i class="ti ti-download text-base text-slate-500"></i>
             <span>Export report</span>
         </button>

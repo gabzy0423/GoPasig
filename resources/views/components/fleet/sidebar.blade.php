@@ -39,10 +39,6 @@
             <i class="ti ti-route text-[20px]"></i>
             Routes
         </a>
-        <a href="{{ route('fleet.dashboard', ['tab' => 'schedule']) }}" data-nav="schedule" class="{{ $navBase }} {{ $activeFleetTab === 'schedule' ? $navActive : $navInactive }}">
-            <i class="ti ti-clock-check text-[20px]"></i>
-            Schedule
-        </a>
         <a href="{{ route('fleet.dashboard', ['tab' => 'incidents']) }}" data-nav="incidents" class="{{ $navBase }} {{ $activeFleetTab === 'incidents' ? $navActive : $navInactive }}">
             <i class="ti ti-alert-triangle text-[20px]"></i>
             Incidents

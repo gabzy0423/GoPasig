@@ -164,6 +164,44 @@ class AdminServiceAlertTargetingTest extends TestCase
         $response->assertDontSee('Drivers (driver app)');
     }
 
+    public function test_service_alert_ui_has_no_legacy_route_defaults_or_fake_counts(): void
+    {
+        $response = $this->get(route('admin.dashboard'));
+
+        $response->assertOk();
+        $response->assertDontSee('e.g. Route A delay at Ortigas Ave');
+        $response->assertDontSee('Route A</option>', false);
+        $response->assertDontSee('Route B</option>', false);
+        $response->assertDontSee('Route C</option>', false);
+        $response->assertDontSee('847 commuters');
+        $response->assertDontSee('12 drivers notified');
+        $response->assertDontSee('Last broadcast: 14 min ago');
+        $response->assertSee('e.g. Route 2 service advisory');
+        $response->assertSee('All official routes only');
+        $response->assertSee('Last broadcast: None today');
+    }
+
+    public function test_service_alert_stats_are_limited_to_official_routes_and_do_not_use_schedule_passengers(): void
+    {
+        \App\Models\Schedule::factory()->create([
+            'route_id' => $this->route1->id,
+            'passengers' => 99,
+        ]);
+
+        $response = $this->getJson(route('admin.api.alerts.index'));
+
+        $response->assertOk();
+
+        $routeStats = $response->json('stats.route_stats');
+        $this->assertArrayHasKey('Route 2', $routeStats);
+        $this->assertArrayHasKey('Route 3', $routeStats);
+        $this->assertArrayHasKey('Route 4', $routeStats);
+        $this->assertArrayNotHasKey('Route A', $routeStats);
+        $this->assertSame(0, $routeStats['Route 2']['commuters']);
+        $this->assertTrue($routeStats['Route 2']['no_data']);
+        $this->assertSame('unavailable', $routeStats['Route 2']['passenger_metric']);
+    }
+
     public function test_service_alert_composer_exposes_operational_suspension_policy_copy_and_state_rules(): void
     {
         $response = $this->get(route('admin.dashboard'));
@@ -190,6 +228,18 @@ class AdminServiceAlertTargetingTest extends TestCase
         $this->assertStringContainsString('deletingAlertIds.has(id)', $composerScript);
         $this->assertStringContainsString('renderResolvedAlerts();', $composerScript);
     }
+
+    public function test_service_alert_display_copy_does_not_render_mojibake_separators(): void
+    {
+        $composerScript = file_get_contents(public_path('js/admin-dashboard/alerts.js'));
+
+        $this->assertStringContainsString('Yes - ${affectedText} will be suspended', $composerScript);
+        $this->assertStringNotContainsString('Yes â€” ${affectedText} will be suspended', $composerScript);
+        $this->assertStringNotContainsString("replace(',', ' ï¿½')", $composerScript);
+        $this->assertStringNotContainsString("replace(',', ' Â·')", $composerScript);
+        $this->assertStringNotContainsString(' Â· ', $composerScript);
+    }
+
     public function test_service_alert_broadcast_success_receipt_precedes_background_feed_refresh(): void
     {
         $composerScript = file_get_contents(public_path('js/admin-dashboard/alerts.js'));

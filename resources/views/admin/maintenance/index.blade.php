@@ -127,7 +127,7 @@
                     </div>
                     <div class="mt-0.5 flex items-baseline gap-1.5">
                         <span class="text-[18px] font-black text-slate-700 leading-none" id="maint-stat-overdue">{{ $overdueCount }}</span>
-                        <span class="text-[9px] text-slate-400 font-semibold leading-none">Missed schedules</span>
+                        <span class="text-[9px] text-slate-400 font-semibold leading-none">Past due work</span>
                     </div>
                 </div>
             </div>

@@ -136,13 +136,13 @@
             'drivers-edit': 'Edit Driver Details',
             'drivers-show': 'Driver Profile',
             'routes-stops': 'Routes & Stops',
-            'routes-schedule': 'Schedules',
+            'routes-schedule': 'Route Service Schedules',
             'routes':      'Schedule & Routes',
             'alerts':      'Service Alerts',
             'alerts-history': 'Alert History Log',
-            'schedules-conflict': 'Scheduling Conflict Check',
-            'schedules-create': 'Create New Schedule',
-            'schedules-edit':   'Edit Schedule',
+            'schedules-conflict': 'Route Service Schedules',
+            'schedules-create': 'Route Service Schedules',
+            'schedules-edit':   'Route Service Schedules',
             'analytics-fleet-utilization': 'Fleet Utilization',
             'analytics-route-performance': 'Route Performance',
             'analytics-driver-performance': 'Driver Performance',
@@ -228,7 +228,12 @@
             if (parentScreenName.startsWith('analytics-')) {
                 setTimeout(() => {
                     initAnalyticsDashboard();
+                    if (typeof updateLayoutExportButton === 'function') {
+                        updateLayoutExportButton(navHighlightName);
+                    }
                 }, 100);
+            } else if (typeof updateLayoutExportButton === 'function') {
+                updateLayoutExportButton(navHighlightName);
             }
 
             // If target is drivers, render table
@@ -291,30 +296,6 @@
                 }, 50);
             }
 
-            // If target is schedules conflict check
-            if (parentScreenName === 'schedules-conflict') {
-                setTimeout(() => {
-                    loadDatabaseResources();
-                }, 50);
-            }
-
-            // If target is schedules create
-            if (parentScreenName === 'schedules-create') {
-                setTimeout(() => {
-                    loadSchedulesAndResourcePools().then(() => {
-                        onRouteSelectChange();
-                    });
-                }, 50);
-            }
-
-            // If target is schedules edit
-            if (parentScreenName === 'schedules-edit') {
-                setTimeout(() => {
-                    loadSchedulesAndResourcePoolsForEditPage().then(() => {
-                        onEditPageRouteSelectChange();
-                    });
-                }, 50);
-            }
         } else {
             // Display placeholder for unsupported dynamic links
             const placeholderScreen = document.getElementById('screen-placeholder');
@@ -377,9 +358,6 @@
         } else if (hash.startsWith('drivers-show-')) {
             param = hash.replace('drivers-show-', '');
             hash = 'drivers-show';
-        } else if (hash.startsWith('schedules-edit-')) {
-            param = hash.replace('schedules-edit-', '');
-            hash = 'schedules-edit';
         }
 
         if (typeof switchScreen === 'function') {
@@ -392,14 +370,12 @@
                 if (Number.isInteger(driverId) && driverId > 0 && !openDriverShowHashRoute(driverId)) {
                     pendingDriverShowId = driverId;
                 }
-            } else if (hash === 'schedules-edit' && param) {
-                if (typeof openEditScheduleForm === 'function') {
-                    openEditScheduleForm(parseInt(param));
-                }
             } else if (hash === 'drivers-create') {
                 if (typeof openDriversCreateScreen === 'function') {
                     openDriversCreateScreen();
                 }
+            } else if (hash === 'schedules-create' || hash === 'schedules-conflict' || hash === 'schedules-edit') {
+                hash = 'routes-schedule';
             } else if (hash === 'routes-stops') {
                 if (typeof switchRoutesTab === 'function') {
                     switchRoutesTab('stops');

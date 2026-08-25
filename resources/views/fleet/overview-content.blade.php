@@ -93,16 +93,16 @@
             <div class="mt-1">
                 <span id="kpi-delayed-buses" class="text-[24px] font-bold text-slate-900 leading-none">{{ $overviewKpi['delayed_buses'] }}</span>
                 <div class="text-[11px] text-slate-400 font-semibold mt-0.5 flex items-center gap-0.5">
-                    <span>—</span>
+                    <span>-</span>
                     <span id="kpi-delayed-buses-delta">{{ $overviewKpi['deltas']->delayed_buses_yesterday }}</span>
                 </div>
             </div>
         </div>
 
-        <!-- KPI 3: Offline buses -->
+        <!-- KPI 3: Unavailable buses -->
         <div id="kpi-container-offline-buses" class="relative bg-white border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between h-[104px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 {{ $overviewKpi['offline_buses'] > 0 ? 'border-l-[3px] border-l-[#E24B4A]' : '' }}">
             <div class="flex justify-between items-start">
-                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Offline</span>
+                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Unavailable</span>
                 <div class="h-7 w-7 rounded-lg bg-[#FCEBEB] flex items-center justify-center text-[#E24B4A]">
                     <i class="ti ti-bus-off text-base"></i>
                 </div>
@@ -116,10 +116,10 @@
             </div>
         </div>
 
-        <!-- KPI 4: Idle buses -->
+        <!-- KPI 4: Standby buses -->
         <div class="relative bg-white border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between h-[104px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5">
             <div class="flex justify-between items-start">
-                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Idle</span>
+                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Standby</span>
                 <div class="h-7 w-7 rounded-lg bg-slate-100 flex items-center justify-center text-[#888780]">
                     <i class="ti ti-parking text-base"></i>
                 </div>
@@ -127,7 +127,7 @@
             <div class="mt-1">
                 <span id="kpi-idle-buses" class="text-[24px] font-bold text-slate-900 leading-none">{{ $overviewKpi['idle_buses'] }}</span>
                 <div class="text-[11px] text-slate-400 font-semibold mt-0.5 flex items-center gap-0.5">
-                    <span>—</span>
+                    <span>-</span>
                     <span id="kpi-idle-buses-delta">{{ $overviewKpi['deltas']->idle_buses_yesterday }}</span>
                 </div>
             </div>
@@ -150,10 +150,10 @@
             </div>
         </div>
 
-        <!-- KPI 6: Total passengers -->
+        <!-- KPI 6: Recorded boarded passengers -->
         <div class="relative bg-white border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between h-[104px] shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5">
             <div class="flex justify-between items-start">
-                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Riders today</span>
+                <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">Boarded today</span>
                 <div class="h-7 w-7 rounded-lg bg-[#F3F9EA] flex items-center justify-center text-[#639922]">
                     <i class="ti ti-users text-base"></i>
                 </div>
@@ -292,7 +292,7 @@
 
     </div>
 
-    <!-- ==================== SECTION 4: TWO-COLUMN ROW: ROUTE HEALTH SUMMARY | SCHEDULE COMPLIANCE ==================== -->
+    <!-- ==================== SECTION 4: TWO-COLUMN ROW: ROUTE HEALTH SUMMARY | TRIP OUTCOMES ==================== -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         
         <!-- LEFT: Route health summary -->
@@ -334,12 +334,12 @@
                         <div class="grid grid-cols-3 gap-2 text-[11.5px] text-slate-500 font-semibold">
                             <div>Active: <strong class="text-slate-700 font-bold font-mono">{{ $route['buses_on_route'] }} buses</strong></div>
                             <div>Trips done: <strong class="text-slate-700 font-bold font-mono">{{ $route['completed_trips'] }}</strong></div>
-                            <div class="text-right">Avg headway: <strong class="text-slate-700 font-bold font-mono">{{ $route['avg_headway'] }}m</strong></div>
+                            <div class="text-right">Actual headway: <strong class="text-slate-700 font-bold font-mono">{{ $route['avg_headway_label'] }}</strong></div>
                         </div>
                         
-                        <!-- Thin progress bar completed/scheduled -->
+                        <!-- Thin progress bar completed/started actual trips -->
                         @php
-                            $progressPct = $route['scheduled_trips'] > 0 ? ($route['completed_trips'] / $route['scheduled_trips']) * 100 : 0;
+                            $progressPct = $route['started_trips'] > 0 ? ($route['completed_trips'] / $route['started_trips']) * 100 : 0;
                         @endphp
                         <div class="w-full bg-[#E6E5E0] h-1 rounded-full overflow-hidden">
                             <div class="h-full rounded-full" style="width: {{ $progressPct }}%; background-color: {{ $route['route_color'] }}"></div>
@@ -349,69 +349,46 @@
             </div>
         </div>
 
-        <!-- RIGHT: Schedule compliance strip -->
+        <!-- RIGHT: Actual trip outcomes today -->
         <div class="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col p-4 sm:p-5">
             <div class="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
-                <h3 class="text-[14px] font-bold text-slate-800 tracking-tight uppercase">Schedule compliance</h3>
-                <a href="{{ route('fleet.schedule') }}" class="text-[12px] font-extrabold text-[#003F87] hover:text-[#002D62] transition uppercase tracking-wider">View full report</a>
+                <h3 class="text-[14px] font-bold text-slate-800 tracking-tight uppercase">Trip outcomes today</h3>
+                <a href="{{ route('fleet.routes') }}" class="text-[12px] font-extrabold text-[#003F87] hover:text-[#002D62] transition uppercase tracking-wider">View route performance</a>
             </div>
-            
-            <div class="flex-grow grid grid-cols-1 sm:grid-cols-12 gap-4 items-center mt-4">
-                <!-- Left Column: Donut Chart (5/12 width) -->
-                <div class="sm:col-span-5 flex justify-center">
-                    <div class="relative w-[130px] h-[130px] flex items-center justify-center">
-                        <canvas id="complianceChart" class="w-full h-full" data-pct="{{ $scheduleCompliance['compliance_pct'] }}"></canvas>
-                        <div class="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
-                            <span id="compliance-chart-center-pct" class="text-[18px] font-extrabold text-[#003F87]">{{ $scheduleCompliance['compliance_pct'] }}%</span>
-                            <span class="text-[8.5px] text-slate-400 font-extrabold uppercase tracking-wide">Rate</span>
-                        </div>
+
+            <div class="flex-grow mt-4">
+                <div class="flex items-end gap-2 border-b border-slate-100 pb-4">
+                    <span id="trip-outcomes-run" class="text-[34px] font-extrabold leading-none text-[#003F87]">{{ $tripOutcomes['trips_run'] }}</span>
+                    <div class="pb-0.5">
+                        <p class="text-[13px] font-bold text-slate-700">Trips run</p>
+                        <p class="text-[11px] font-semibold text-slate-400">Completed plus currently ongoing actual Trips</p>
                     </div>
                 </div>
-                
-                <!-- Right Column: Description & Breakdown (7/12 width) -->
-                <div class="sm:col-span-7 space-y-3">
-                    <div class="text-left">
-                        <span id="compliance-pct-text" class="text-[20px] font-extrabold text-[#003F87] leading-none">{{ $scheduleCompliance['compliance_pct'] }}%</span>
-                        <span class="text-[13px] text-slate-500 font-semibold ml-1">of trips on schedule today</span>
+
+                <dl class="grid grid-cols-2 gap-x-6 gap-y-0 mt-2 text-[13px]">
+                    <div class="flex items-center justify-between border-b border-slate-100 py-3">
+                        <dt class="flex items-center gap-2 font-semibold text-slate-600"><i class="ti ti-player-play text-[#185FA5]"></i>Ongoing now</dt>
+                        <dd id="trip-outcomes-ongoing" class="font-bold font-mono text-slate-900">{{ $tripOutcomes['ongoing'] }}</dd>
                     </div>
-                    
-                    <!-- Compliance Breakdown rows -->
-                    <div class="space-y-2.5 text-[13px] font-semibold text-slate-600">
-                        <div class="flex items-center justify-between py-2.5 px-3.5 bg-slate-50/50 border border-slate-100 rounded-xl hover:bg-slate-50 hover:border-slate-200 transition-colors">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-7 h-7 rounded-lg flex items-center justify-center bg-[#639922]/10 text-[#639922]">
-                                    <i class="ti ti-circle-check text-base"></i>
-                                </div>
-                                <span class="text-slate-700 font-semibold">On time trips</span>
-                            </div>
-                            <span id="compliance-on-time-count" class="font-bold font-mono text-[14px] text-slate-900">{{ $scheduleCompliance['on_time'] }}</span>
-                        </div>
-                        
-                        <div class="flex items-center justify-between py-2.5 px-3.5 bg-slate-50/50 border border-slate-100 rounded-xl hover:bg-slate-50 hover:border-slate-200 transition-colors">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-7 h-7 rounded-lg flex items-center justify-center bg-[#BA7517]/10 text-[#BA7517]">
-                                    <i class="ti ti-clock text-base"></i>
-                                </div>
-                                <span class="text-slate-700 font-semibold">Delayed trips</span>
-                            </div>
-                            <span id="compliance-delayed-count" class="font-bold font-mono text-[14px] text-slate-900">{{ $scheduleCompliance['delayed'] }}</span>
-                        </div>
-                        
-                        <div class="flex items-center justify-between py-2.5 px-3.5 bg-slate-50/50 border border-slate-100 rounded-xl hover:bg-slate-50 hover:border-slate-200 transition-colors">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-7 h-7 rounded-lg flex items-center justify-center bg-[#E24B4A]/10 text-[#E24B4A]">
-                                    <i class="ti ti-x text-base"></i>
-                                </div>
-                                <span class="text-slate-700 font-semibold">Cancelled trips</span>
-                            </div>
-                            <span id="compliance-cancelled-count" class="font-bold font-mono text-[14px] text-slate-900">{{ $scheduleCompliance['cancelled'] }}</span>
-                        </div>
+                    <div class="flex items-center justify-between border-b border-slate-100 py-3">
+                        <dt class="flex items-center gap-2 font-semibold text-slate-600"><i class="ti ti-circle-check text-[#639922]"></i>Completed</dt>
+                        <dd id="trip-outcomes-completed" class="font-bold font-mono text-slate-900">{{ $tripOutcomes['completed'] }}</dd>
                     </div>
-                </div>
+                    <div class="flex items-center justify-between border-b border-slate-100 py-3">
+                        <dt class="flex items-center gap-2 font-semibold text-slate-600"><i class="ti ti-send text-[#003F87]"></i>Awaiting start</dt>
+                        <dd id="trip-outcomes-dispatched" class="font-bold font-mono text-slate-900">{{ $tripOutcomes['dispatched'] }}</dd>
+                    </div>
+                    <div class="flex items-center justify-between border-b border-slate-100 py-3">
+                        <dt class="flex items-center gap-2 font-semibold text-slate-600"><i class="ti ti-x text-[#E24B4A]"></i>Cancelled</dt>
+                        <dd id="trip-outcomes-cancelled" class="font-bold font-mono text-slate-900">{{ $tripOutcomes['cancelled'] }}</dd>
+                    </div>
+                </dl>
             </div>
-            
-            <div class="pt-3 border-t border-slate-100 text-[11.5px] text-slate-400 font-semibold italic mt-4">
-                <span id="compliance-as-of-info">Based on {{ $scheduleCompliance['trips_evaluated'] }} trips evaluated as of {{ $scheduleCompliance['as_of'] }}</span>
+
+            <div class="pt-3 text-[11.5px] text-slate-400 font-semibold italic mt-4">
+                <span>Latest Trip activity: <strong id="trip-outcomes-latest" class="font-bold text-slate-500">{{ $tripOutcomes['latest_activity'] }}</strong></span>
+                <span class="mx-1">|</span>
+                <span>Updated <span id="trip-outcomes-as-of">{{ $tripOutcomes['as_of'] }}</span></span>
             </div>
         </div>
 
@@ -503,37 +480,30 @@
             
             <!-- Body -->
             <form onsubmit="submitIncidentForm(event)" id="incident-form" class="p-5 space-y-4">
-                <!-- Title -->
                 <div class="space-y-1">
-                    <label for="incident-title-input" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Incident Description</label>
-                    <input id="incident-title-input" type="text" placeholder="e.g. Bus breakdown, flat tire..." class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
-                </div>
-                
-                <!-- Severity & Route -->
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="space-y-1">
-                        <label for="incident-severity-input" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Severity</label>
-                        <select id="incident-severity-input" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
-                            <option value="Low">Low</option>
-                            <option value="Medium" selected>Medium</option>
-                            <option value="High">High</option>
-                        </select>
-                    </div>
-                    
-                    <div class="space-y-1">
-                        <label for="incident-route-input" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Affected Route</label>
-                        <select id="incident-route-input" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
-                            @foreach($routes as $route)
-                                <option value="{{ $route['id'] }}">{{ $route['name'] }} ({{ $route['description'] }})</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <label for="incident-trip-id" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Affected Ongoing Trip</label>
+                    <select id="incident-trip-id" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
+                        <option value="">Select an ongoing trip...</option>
+                        @foreach ($ongoingTrips as $trip)
+                            <option value="{{ $trip['id'] }}">
+                                {{ $trip['plate_number'] }} | {{ $trip['driver_name'] }} | {{ $trip['route_name'] }} {{ !empty($trip['direction']) ? '- '.ucfirst($trip['direction']) : '' }}
+                            </option>
+                        @endforeach
+                    </select>
                 </div>
 
-                <!-- Location -->
                 <div class="space-y-1">
-                    <label for="incident-location-input" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Location</label>
-                    <input id="incident-location-input" type="text" placeholder="e.g. Near Tiendesitas Stop..." class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
+                    <label for="incident-type-input" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Incident Type</label>
+                    <select id="incident-type-input" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white">
+                        @foreach (\App\Models\Incident::getTypes() as $incidentType)
+                            <option value="{{ $incidentType }}">{{ $incidentType }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="space-y-1">
+                    <label for="incident-description-input" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Description and Location</label>
+                    <textarea id="incident-description-input" rows="4" placeholder="Describe what happened and where it occurred..." class="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#003F87] focus:bg-white"></textarea>
                 </div>
 
                 <!-- Footer / Submit -->

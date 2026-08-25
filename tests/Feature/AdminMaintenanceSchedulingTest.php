@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Bus;
 use App\Models\User;
 use App\Models\MaintenanceRecord;
+use App\Models\Schedule;
 use App\Models\SystemSetting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -110,6 +111,43 @@ class AdminMaintenanceSchedulingTest extends TestCase
         ]);
 
         // Verify bus status locks to maintenance
+        $bus->refresh();
+        $this->assertEquals('maintenance', $bus->status);
+    }
+
+    public function test_legacy_future_schedule_does_not_block_maintenance_creation(): void
+    {
+        $this->actingAsAdmin();
+
+        $bus = Bus::create([
+            'plate_number' => 'PAS-1004-SCH',
+            'status' => 'inactive',
+            'capacity' => 45,
+            'lat' => 14.5593,
+            'lng' => 121.0805,
+            'speed' => 0,
+            'passengers' => 0,
+        ]);
+
+        Schedule::factory()->create([
+            'bus_id' => $bus->id,
+            'service_date' => now()->addDays(2)->toDateString(),
+            'departure_time' => '09:00:00',
+            'status' => Schedule::STATUS_ON_TIME,
+        ]);
+
+        $response = $this->postJson('/admin/api/maintenance', [
+            'bus_id' => $bus->id,
+            'type' => 'Preventive Maintenance',
+            'technician_name' => 'John Dela Cruz',
+            'description' => 'Legacy schedule should not block maintenance.',
+            'scheduled_at' => now()->addDays(2)->setTime(8, 30)->format('Y-m-d\TH:i'),
+            'expected_duration_minutes' => 180,
+        ]);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('success', true);
+
         $bus->refresh();
         $this->assertEquals('maintenance', $bus->status);
     }

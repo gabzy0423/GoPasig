@@ -14,7 +14,15 @@ window.FleetOverviewConfig = {
 // Global DOM State
 let previewMapInstance = null;
 let previewBusesMarkers = [];
-let myComplianceChart = null;
+
+function escapeOverviewHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
 
 // Clock updates
 (function() {
@@ -31,8 +39,13 @@ let myComplianceChart = null;
         const hoursStr = String(hours).padStart(2, '0');
         el.textContent = `${hoursStr}:${minutes}:${seconds} ${ampm}`;
     }
-    setInterval(updateClock, 1000);
     updateClock();
+
+    if (window.GoPasigFleetModules?.registerPoller) {
+        window.GoPasigFleetModules.registerPoller('overview', 'clock', updateClock, 1000);
+    } else {
+        setInterval(updateClock, 1000);
+    }
 })();
 
 // Fetch and Update Overview Dashboard
@@ -44,7 +57,6 @@ async function fetchOverviewDashboardData() {
         
         updateOverviewDOM(data);
         updatePreviewMapMarkers(data.buses);
-        updateComplianceChart(data.scheduleCompliance.compliance_pct);
     } catch (error) {
         console.error('Failed to fetch refreshed overview stats:', error);
     }
@@ -126,21 +138,22 @@ function updateOverviewDOM(data) {
             item.innerHTML = `
                 <div class="flex items-center justify-between">
                     ${severityBadge}
-                    <span class="text-[11px] text-slate-400 font-semibold">${timeDiff}</span>
+                    <span class="text-[11px] text-slate-400 font-semibold">${escapeOverviewHtml(timeDiff)}</span>
                 </div>
                 <div>
-                    <h4 class="text-[13px] font-bold text-slate-800 leading-snug">${incident.title}</h4>
+                    <h4 class="text-[13px] font-bold text-slate-800 leading-snug">${escapeOverviewHtml(incident.title)}</h4>
                     <p class="text-[11.5px] text-slate-500 font-medium mt-0.5 flex items-center gap-1">
                         <i class="ti ti-map-pin text-[13px] text-slate-400"></i>
-                        <span>${incident.location} · ${incident.affected_route}</span>
+                        <span>${escapeOverviewHtml(incident.location)} | ${escapeOverviewHtml(incident.affected_route)}</span>
                     </p>
                 </div>
                 <div class="pt-1">
-                    <button onclick="resolveIncidentAction('${incident.id}')" class="w-full h-7 border border-slate-200 text-[11px] font-extrabold text-slate-700 hover:bg-white bg-slate-100/50 hover:border-slate-300 rounded transition cursor-pointer text-center flex items-center justify-center gap-1 uppercase tracking-wider">
+                    <button type="button" data-resolve-incident class="w-full h-7 border border-slate-200 text-[11px] font-extrabold text-slate-700 hover:bg-white bg-slate-100/50 hover:border-slate-300 rounded transition cursor-pointer text-center flex items-center justify-center gap-1 uppercase tracking-wider">
                         <span>Resolve Incident</span>
                     </button>
                 </div>
             `;
+            item.querySelector('[data-resolve-incident]')?.addEventListener('click', () => resolveIncidentAction(incident.id));
             incidentsFeed.appendChild(item);
         });
     } else {
@@ -158,7 +171,7 @@ function updateOverviewDOM(data) {
     }
 
     // 3. Map status update
-    document.getElementById('map-status-bus-count').innerText = `${data.activeCount} buses on-route · Updated just now`;
+    document.getElementById('map-status-bus-count').innerText = `${data.activeCount} buses on-route | Updated just now`;
 
     // 4. Route Health cards
     const routeHealthContainer = document.getElementById('route-health-container');
@@ -182,7 +195,8 @@ function updateOverviewDOM(data) {
                            </span>`;
         }
 
-        const progressPct = route.scheduled_trips > 0 ? (route.completed_trips / route.scheduled_trips) * 100 : 0;
+        const progressPct = route.started_trips > 0 ? (route.completed_trips / route.started_trips) * 100 : 0;
+        const headwayLabel = route.avg_headway_label || 'No data';
 
         const routeDiv = document.createElement('div');
         routeDiv.className = 'p-3 bg-white border border-slate-100 rounded-lg hover:border-slate-200 transition-colors space-y-2';
@@ -199,7 +213,7 @@ function updateOverviewDOM(data) {
             <div class="grid grid-cols-3 gap-2 text-[11.5px] text-slate-500 font-semibold">
                 <div>Active: <strong class="text-slate-700 font-bold font-mono">${route.buses_on_route} buses</strong></div>
                 <div>Trips done: <strong class="text-slate-700 font-bold font-mono">${route.completed_trips}</strong></div>
-                <div class="text-right">Avg headway: <strong class="text-slate-700 font-bold font-mono">${route.avg_headway}m</strong></div>
+                <div class="text-right">Actual headway: <strong class="text-slate-700 font-bold font-mono">${escapeOverviewHtml(headwayLabel)}</strong></div>
             </div>
             <div class="w-full bg-[#E6E5E0] h-1 rounded-full overflow-hidden">
                 <div class="h-full rounded-full" style="width: ${progressPct}%; background-color: ${route.route_color}"></div>
@@ -208,13 +222,15 @@ function updateOverviewDOM(data) {
         routeHealthContainer.appendChild(routeDiv);
     });
 
-    // 5. Schedule Compliance text
-    document.getElementById('compliance-pct-text').innerText = data.scheduleCompliance.compliance_pct + '%';
-    document.getElementById('compliance-chart-center-pct').innerText = data.scheduleCompliance.compliance_pct + '%';
-    document.getElementById('compliance-on-time-count').innerText = data.scheduleCompliance.on_time;
-    document.getElementById('compliance-delayed-count').innerText = data.scheduleCompliance.delayed;
-    document.getElementById('compliance-cancelled-count').innerText = data.scheduleCompliance.cancelled;
-    document.getElementById('compliance-as-of-info').innerText = `Based on ${data.scheduleCompliance.trips_evaluated} trips evaluated as of ${data.scheduleCompliance.as_of}`;
+    // 5. Actual Trip outcomes today
+    const outcomes = data.tripOutcomes || {};
+    document.getElementById('trip-outcomes-run').innerText = outcomes.trips_run ?? 0;
+    document.getElementById('trip-outcomes-ongoing').innerText = outcomes.ongoing ?? 0;
+    document.getElementById('trip-outcomes-completed').innerText = outcomes.completed ?? 0;
+    document.getElementById('trip-outcomes-dispatched').innerText = outcomes.dispatched ?? 0;
+    document.getElementById('trip-outcomes-cancelled').innerText = outcomes.cancelled ?? 0;
+    document.getElementById('trip-outcomes-latest').innerText = outcomes.latest_activity || 'No trip activity today';
+    document.getElementById('trip-outcomes-as-of').innerText = outcomes.as_of || '--';
 
     // 6. Recent Activities
     const activityContainer = document.getElementById('recent-activity-container');
@@ -234,10 +250,10 @@ function updateOverviewDOM(data) {
             activityRow.innerHTML = `
                 <span class="absolute h-2 w-2 rounded-full border-2 border-white shadow-sm -left-[20.5px] z-10" style="background-color: ${nodeColor}"></span>
                 <div class="flex-1 min-w-0">
-                    <span class="text-[13px] text-slate-700 font-semibold">${activity.description}</span>
+                    <span class="text-[13px] text-slate-700 font-semibold">${escapeOverviewHtml(activity.description)}</span>
                 </div>
                 <div class="shrink-0 text-right sm:pl-4">
-                    <span class="text-[11.5px] text-slate-400 font-bold font-mono">${activity.timestamp}</span>
+                    <span class="text-[11.5px] text-slate-400 font-bold font-mono">${escapeOverviewHtml(activity.timestamp)}</span>
                 </div>
             `;
             activityContainer.appendChild(activityRow);
@@ -255,10 +271,10 @@ function updateOverviewDOM(data) {
     if (tripSelect) {
         const currentVal = tripSelect.value;
         tripSelect.innerHTML = '<option value="">Select an ongoing trip...</option>';
-        data.ongoingTrips.forEach(trip => {
+        (data.ongoingTrips || []).forEach(trip => {
             const opt = document.createElement('option');
             opt.value = trip.id;
-            opt.innerText = `${trip.plate_number} • ${trip.driver_name} • ${trip.route_name}`;
+            opt.innerText = `${trip.plate_number} | ${trip.driver_name} | ${trip.route_name}`;
             tripSelect.appendChild(opt);
         });
         tripSelect.value = currentVal;
@@ -277,39 +293,6 @@ function getRelativeTime(isoString) {
     const hours = Math.floor(minutes / 60);
     if (hours < 24) return `${hours}h ago`;
     return date.toLocaleDateString();
-}
-
-// Compliance Doughnut Chart
-function updateComplianceChart(pct) {
-    const canvas = document.getElementById('complianceChart');
-    if (!canvas) return;
-
-    if (myComplianceChart) {
-        myComplianceChart.destroy();
-    }
-
-    myComplianceChart = new Chart(canvas.getContext('2d'), {
-        type: 'doughnut',
-        data: {
-            datasets: [{
-                data: [pct, 100 - pct],
-                backgroundColor: ['#003F87', '#E6E5E0'],
-                borderWidth: 0
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            cutout: '76%',
-            layout: {
-                padding: 0
-            },
-            plugins: {
-                legend: { display: false },
-                tooltip: { enabled: false }
-            }
-        }
-    });
 }
 
 // Leaflet Preview Map
@@ -446,10 +429,9 @@ function openLogIncidentModal() {
         modal.classList.add('flex');
         
         // Reset form
-        document.getElementById('incident-title-input').value = '';
-        document.getElementById('incident-severity-input').value = 'Medium';
-        document.getElementById('incident-location-input').value = '';
-        document.getElementById('incident-route-input').selectedIndex = 0;
+        document.getElementById('incident-trip-id').value = '';
+        document.getElementById('incident-type-input').selectedIndex = 0;
+        document.getElementById('incident-description-input').value = '';
         clearFormErrors('incident-form');
     }
 }
@@ -467,22 +449,17 @@ async function submitIncidentForm(event) {
     event.preventDefault();
     clearFormErrors('incident-form');
 
-    const title = document.getElementById('incident-title-input').value.trim();
-    const severity = document.getElementById('incident-severity-input').value;
-    const location = document.getElementById('incident-location-input').value.trim();
-    const routeId = document.getElementById('incident-route-input').value;
+    const tripId = document.getElementById('incident-trip-id').value;
+    const type = document.getElementById('incident-type-input').value;
+    const description = document.getElementById('incident-description-input').value.trim();
 
     let hasErrors = false;
-    if (title.length < 3) {
-        showFieldError('incident-title-input', 'Ang description ay dapat kahit 3 characters man lang.');
+    if (!tripId) {
+        showFieldError('incident-trip-id', 'Select an official ongoing trip.');
         hasErrors = true;
     }
-    if (!location) {
-        showFieldError('incident-location-input', 'Pakilagay ang lokasyon.');
-        hasErrors = true;
-    }
-    if (!routeId) {
-        showFieldError('incident-route-input', 'Pumili ng apektadong ruta.');
+    if (description.length < 5) {
+        showFieldError('incident-description-input', 'Description must be at least 5 characters.');
         hasErrors = true;
     }
 
@@ -496,10 +473,9 @@ async function submitIncidentForm(event) {
                 'X-CSRF-TOKEN': window.FleetOverviewConfig.csrfToken
             },
             body: JSON.stringify({
-                title: title,
-                severity: severity,
-                location: location,
-                route_id: routeId
+                trip_id: tripId,
+                type: type,
+                description: description
             })
         });
 
@@ -623,14 +599,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Render initial charts/maps if database is loaded
     if (window.GoPasigOverviewInitialData) {
         const initData = window.GoPasigOverviewInitialData;
-        updateComplianceChart(initData.scheduleCompliance.compliance_pct);
         setTimeout(() => {
             initOverviewPreviewMap(initData.routes, initData.buses);
         }, 150);
     }
 
-    // Set polling interval: every 30 seconds
-    setInterval(fetchOverviewDashboardData, 30000);
+    if (window.GoPasigFleetModules?.registerPoller) {
+        window.GoPasigFleetModules.registerPoller('overview', 'operational-data', fetchOverviewDashboardData, 30000);
+    } else {
+        setInterval(fetchOverviewDashboardData, 30000);
+    }
 });
 
 

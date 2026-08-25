@@ -12,12 +12,11 @@ class SpatialMonitoringEngine
 {
     public function __construct(
         protected GeofenceEngine $geofenceEngine,
-        protected GeofenceHandlerRegistry $registry,
-        protected RouteCorridorEngine $corridorEngine
+        protected GeofenceHandlerRegistry $registry
     ) {}
 
     /**
-     * Coordinate geofence handler strategies and route corridor evaluations.
+     * Coordinate the active geofence handler strategies.
      */
     public function process(VehiclePosition $position, SpatialContext $context): void
     {
@@ -33,11 +32,6 @@ class SpatialMonitoringEngine
             $result = $this->geofenceEngine->check($coord, $geofence, $position->bus_id);
             $handler = $this->registry->get($geofence->type);
             $handler->handle($position, $geofence, $result, $context->trip);
-        }
-
-        // 3. Route Corridor Adherence
-        if ($context->trip && $context->corridorSource !== 'missing_variant_corridor') {
-            $this->corridorEngine->check($position, $coord, $context->corridor, $context->trip);
         }
     }
 }
